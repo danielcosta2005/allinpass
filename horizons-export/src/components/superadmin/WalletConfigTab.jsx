@@ -405,7 +405,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         app_base_url: window.location.origin,
       };
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-teste`, {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-pass`, {
         method: 'POST',
         mode: 'cors',
         headers: {

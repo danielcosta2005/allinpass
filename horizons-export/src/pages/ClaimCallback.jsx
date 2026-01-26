@@ -71,7 +71,7 @@ export default function ClaimCallback() {
 
         // 2) Pede destination + passToken no modo JSON
         const url =
-          `${supabaseUrl}/functions/v1/universal-teste?c=${encodeURIComponent(c)}&mode=json`;
+          `${supabaseUrl}/functions/v1/universal-link?c=${encodeURIComponent(c)}&mode=json`;
 
         const res = await fetch(url, {
           method: 'GET',
