@@ -72,7 +72,7 @@ const Login = () => {
               Carteira 4.9
             </h1>
             <p className="text-center text-gray-600 mb-8">
-              Painel Administrativo
+              Painel Deficit
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
