@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { Loader2 } from 'lucide-react';
 
@@ -29,8 +29,21 @@ function getGoogleSub(user) {
   );
 }
 
+function isIOSUA(ua) {
+  return /iPhone|iPad|iPod/i.test(ua || '');
+}
+
+function looksLikePkPass(url) {
+  if (!url) return false;
+  return /\.pkpass(\?|$)/i.test(url) || /pkpass/i.test(url);
+}
+
 export default function ClaimCallback() {
   const [error, setError] = useState(null);
+  const [destination, setDestination] = useState(null);
+  const [needsUserTap, setNeedsUserTap] = useState(false);
+
+  const ua = useMemo(() => navigator.userAgent, []);
 
   useEffect(() => {
     let unsub = null;
@@ -42,7 +55,6 @@ export default function ClaimCallback() {
         return;
       }
 
-      // 1) Garantir sessão (OAuth acabou de acontecer)
       let { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
@@ -64,12 +76,11 @@ export default function ClaimCallback() {
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL não definido.');
 
-        // Pegue sessão "fresca" aqui (garante user + identities)
         const { data: { session }, error: sessErr } = await supabase.auth.getSession();
         if (sessErr) throw new Error(sessErr.message || 'Falha ao obter sessão.');
         if (!session?.access_token) throw new Error('Sessão ausente após OAuth.');
 
-        // 2) Pede destination + passToken no modo JSON
+        // 1) Chama universal-link em JSON
         const url =
           `${supabaseUrl}/functions/v1/universal-link?c=${encodeURIComponent(c)}&mode=json`;
 
@@ -90,15 +101,17 @@ export default function ClaimCallback() {
           throw new Error(`${msg}. Body=${text || ''}`);
         }
 
-        const destination = json?.destination;
+        const dest = json?.destination;
         const passToken = json?.passToken;
 
-        if (!destination || typeof destination !== 'string') {
+        if (!dest || typeof dest !== 'string') {
           throw new Error(`universal-link não retornou 'destination'. Body=${text || ''}`);
         }
+        if (!passToken || typeof passToken !== 'string') {
+          throw new Error(`universal-link não retornou 'passToken'. Body=${text || ''}`);
+        }
 
-        // 3) Salvar SOMENTE nome + email (e google_sub obrigatório pro teu schema)
-        //    -> em user_passes.metadata.claim
+        // 2) Salva nome + email (+ google_sub obrigatório pro seu schema/triggers)
         const user = session.user;
         const name = pickDisplayName(user) || null;
         const email = user?.email || null;
@@ -111,26 +124,17 @@ export default function ClaimCallback() {
           );
         }
 
-        if (!passToken || typeof passToken !== 'string') {
-          // Se o universal-teste não retornar passToken, não temos como endereçar o user_passes com segurança.
-          throw new Error(
-            `universal-link não retornou 'passToken'. Body=${text || ''}`
-          );
-        }
-
         const claimPatch = {
-          ua: navigator.userAgent,
+          ua,
           claim: {
             name,
             email,
             user_id: user?.id || null,
             google_sub: googleSub,
             claimed_at: new Date().toISOString(),
-          },
+          }
         };
 
-        // Atualiza apenas a linha do token (não mexe em nada do resto)
-        // Se metadata já existir, você pode preferir mesclar (RPC). Aqui é o update simples.
         const { error: upErr } = await supabase
           .from('user_passes')
           .update({ metadata: claimPatch, user_id: user?.id ?? null })
@@ -140,8 +144,27 @@ export default function ClaimCallback() {
           throw new Error(`Falha ao salvar metadata em user_passes: ${upErr.message}`);
         }
 
-        // 4) Redireciona para carteira
-        window.location.replace(destination);
+        // 3) Redireciona (com fallback para Apple)
+        setDestination(dest);
+
+        const ios = isIOSUA(ua);
+        const pkpass = looksLikePkPass(dest);
+
+        // Em iOS, downloads/Wallet às vezes exigem gesto do usuário.
+        if (ios && pkpass) {
+          // Tenta automático; se o iOS bloquear, mostramos botão.
+          try {
+            window.location.assign(dest);
+            // Se não navegar (bloqueio), o usuário ainda vê o fallback abaixo.
+            setTimeout(() => setNeedsUserTap(true), 900);
+          } catch {
+            setNeedsUserTap(true);
+          }
+          return;
+        }
+
+        // Para Google (e demais), redirect direto costuma funcionar
+        window.location.replace(dest);
       } catch (e) {
         console.error(e);
         setError(e?.message || 'Falha ao concluir o resgate.');
@@ -153,7 +176,9 @@ export default function ClaimCallback() {
     return () => {
       if (unsub) unsub.unsubscribe();
     };
-  }, []);
+  }, [ua]);
+
+  const showAppleTap = needsUserTap && destination;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
@@ -161,10 +186,30 @@ export default function ClaimCallback() {
         {!error ? (
           <>
             <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <h1 className="text-lg font-semibold">Finalizando autenticação…</h1>
+            <h1 className="text-lg font-semibold">Finalizando cadastro…</h1>
             <p className="text-sm text-gray-600 mt-2">
-              Salvando seu nome e email e abrindo sua carteira.
+              Estamos abrindo sua carteira para adicionar o passe.
             </p>
+
+            {showAppleTap && (
+              <div className="mt-6">
+                <p className="text-sm text-gray-600 mb-3">
+                  No iPhone, pode ser necessário tocar para abrir o Apple Wallet.
+                </p>
+
+                <a
+                  href={destination}
+                  className="inline-flex items-center justify-center w-full rounded-full bg-black text-white py-3 font-semibold"
+                  rel="noopener noreferrer"
+                >
+                  Abrir no Apple Wallet
+                </a>
+
+                <p className="text-xs text-gray-500 mt-3 break-words">
+                  Se não abrir, copie e cole este link no Safari: {destination}
+                </p>
+              </div>
+            )}
           </>
         ) : (
           <>
