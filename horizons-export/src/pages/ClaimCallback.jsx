@@ -1,179 +1,245 @@
-import React, { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
-import { Loader2 } from 'lucide-react';
+// src/pages/ClaimCallback.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 
-function getCFromUrl() {
-  const u = new URL(window.location.href);
-  return u.searchParams.get('c');
+// ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+function getSearchParam(search, key) {
+  if (!search) return null;
+  const s = search.startsWith("?") ? search.slice(1) : search;
+  const parts = s.split("&").filter(Boolean);
+  for (const p of parts) {
+    const eq = p.indexOf("=");
+    const k = eq >= 0 ? p.slice(0, eq) : p;
+    const v = eq >= 0 ? p.slice(eq + 1) : "";
+    if (decodeURIComponent(k) === key) return decodeURIComponent(v || "");
+  }
+  return null;
 }
 
-function pickDisplayName(user) {
-  const m = user?.user_metadata || {};
-  return (
-    m.full_name ||
-    m.name ||
-    [m.given_name, m.family_name].filter(Boolean).join(' ') ||
-    ''
-  );
+function toDisplayError(err) {
+  if (!err) return "Erro desconhecido.";
+  if (typeof err === "string") return err;
+  if (typeof err?.message === "string") return err.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }
 
-function getGoogleSub(user) {
-  const identities = user?.identities || [];
-  const google = identities.find((i) => i.provider === 'google');
-  return (
-    google?.identity_data?.sub ||
-    google?.id ||
-    user?.user_metadata?.sub ||
-    user?.app_metadata?.provider_id ||
-    null
-  );
+function hasAuthCodeInUrl() {
+  try {
+    const u = new URL(window.location.href);
+    // OAuth code costuma vir em query (?code=...)
+    if (u.searchParams.get("code")) return true;
+
+    // Alguns fluxos podem vir no hash (#...code=...)
+    if (u.hash && u.hash.includes("code=")) return true;
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function cleanCallbackUrlKeepOnlyC() {
+  // ✅ remove code/state/etc. e mantém só ?c=...
+  try {
+    const u = new URL(window.location.href);
+
+    const c =
+      u.searchParams.get("c") ||
+      u.searchParams.get("short_code") ||
+      null;
+
+    const newUrl = c
+      ? `${u.pathname}?c=${encodeURIComponent(c)}`
+      : `${u.pathname}`;
+
+    window.history.replaceState({}, document.title, newUrl);
+  } catch {
+    // nada
+  }
+}
+
+async function waitForSession({ timeoutMs = 3500 } = {}) {
+  // Espera a sessão existir (resolve casos em que o exchange é async/race)
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    const { data, error } = await supabase.auth.getSession();
+    if (!error && data?.session?.access_token) return data.session;
+    // pequena pausa
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  // último tiro: tenta via onAuthStateChange por um instante
+  return await new Promise((resolve) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.access_token) {
+        data.subscription.unsubscribe();
+        resolve(session);
+      }
+    });
+
+    setTimeout(() => {
+      data.subscription.unsubscribe();
+      resolve(null);
+    }, 1200);
+  });
 }
 
 export default function ClaimCallback() {
-  const [error, setError] = useState(null);
+  const nav = useNavigate();
+  const loc = useLocation();
 
-  useEffect(() => {
-    let unsub = null;
+  const [status, setStatus] = useState("finalizando autenticação...");
+  const [details, setDetails] = useState(null);
 
-    const run = async () => {
-      const c = getCFromUrl();
-      if (!c) {
-        setError("Parâmetro 'c' ausente no callback.");
-        return;
-      }
+  const didRun = useRef(false);
 
-      // 1) Garantir sessão (OAuth acabou de acontecer)
-      let { data: { session } } = await supabase.auth.getSession();
+  const shortCode = useMemo(() => {
+    return (
+      getSearchParam(loc.search, "c") ||
+      getSearchParam(loc.search, "short_code") ||
+      null
+    );
+  }, [loc.search]);
 
-      if (!session?.access_token) {
-        const { data } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-          if (event === 'SIGNED_IN' && newSession?.access_token) {
-            data.subscription.unsubscribe();
-            await continueFlow(c);
-          }
-        });
-        unsub = data.subscription;
-        return;
-      }
-
-      await continueFlow(c);
-    };
-
-    const continueFlow = async (c) => {
-      try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        if (!supabaseUrl) throw new Error('VITE_SUPABASE_URL não definido.');
-
-        // Pegue sessão "fresca" aqui (garante user + identities)
-        const { data: { session }, error: sessErr } = await supabase.auth.getSession();
-        if (sessErr) throw new Error(sessErr.message || 'Falha ao obter sessão.');
-        if (!session?.access_token) throw new Error('Sessão ausente após OAuth.');
-
-        // 2) Pede destination + passToken no modo JSON
-        const url =
-          `${supabaseUrl}/functions/v1/universal-link?c=${encodeURIComponent(c)}&mode=json`;
-
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            Accept: 'application/json',
-          },
-        });
-
-        const text = await res.text();
-        let json = null;
-        try { json = JSON.parse(text); } catch {}
-
-        if (!res.ok) {
-          const msg = json?.message || json?.error || `HTTP ${res.status} ao chamar universal-link`;
-          throw new Error(`${msg}. Body=${text || ''}`);
-        }
-
-        const destination = json?.destination;
-        const passToken = json?.passToken;
-
-        if (!destination || typeof destination !== 'string') {
-          throw new Error(`universal-link não retornou 'destination'. Body=${text || ''}`);
-        }
-
-        // 3) Salvar SOMENTE nome + email (e google_sub obrigatório pro teu schema)
-        //    -> em user_passes.metadata.claim
-        const user = session.user;
-        const name = pickDisplayName(user) || null;
-        const email = user?.email || null;
-        const googleSub = getGoogleSub(user);
-
-        if (!googleSub) {
-          throw new Error(
-            'Não consegui extrair o google_sub do Google OAuth. ' +
-            'Sem isso não dá pra sincronizar customers (google_sub é NOT NULL).'
-          );
-        }
-
-        if (!passToken || typeof passToken !== 'string') {
-          // Se o universal-teste não retornar passToken, não temos como endereçar o user_passes com segurança.
-          throw new Error(
-            `universal-link não retornou 'passToken'. Body=${text || ''}`
-          );
-        }
-
-        const claimPatch = {
-          ua: navigator.userAgent,
-          claim: {
-            name,
-            email,
-            user_id: user?.id || null,
-            google_sub: googleSub,
-            claimed_at: new Date().toISOString(),
-          },
-        };
-
-        // Atualiza apenas a linha do token (não mexe em nada do resto)
-        // Se metadata já existir, você pode preferir mesclar (RPC). Aqui é o update simples.
-        const { error: upErr } = await supabase
-          .from('user_passes')
-          .update({ metadata: claimPatch, user_id: user?.id ?? null })
-          .eq('pass_token', passToken);
-
-        if (upErr) {
-          throw new Error(`Falha ao salvar metadata em user_passes: ${upErr.message}`);
-        }
-
-        // 4) Redireciona para carteira
-        window.location.replace(destination);
-      } catch (e) {
-        console.error(e);
-        setError(e?.message || 'Falha ao concluir o resgate.');
-      }
-    };
-
-    run();
-
-    return () => {
-      if (unsub) unsub.unsubscribe();
-    };
+  const fullUrl = useMemo(() => {
+    try {
+      return window.location.href;
+    } catch {
+      return "";
+    }
   }, []);
 
+  useEffect(() => {
+    if (didRun.current) return;
+    didRun.current = true;
+
+    (async () => {
+      try {
+        setStatus("validando retorno do login...");
+
+        if (!shortCode) {
+          throw new Error(
+            "Faltou o parâmetro ?c=... no callback. O redirectTo do login deve ser /claim/callback?c=SEU_SHORT_CODE."
+          );
+        }
+
+        // 1) Se houver code, troca por sessão
+        const hasCode = hasAuthCodeInUrl();
+
+        if (hasCode) {
+          const { error: exErr } = await supabase.auth.exchangeCodeForSession(fullUrl);
+          if (exErr) {
+            console.log("[ClaimCallback] exchangeCodeForSession error:", exErr);
+            // não limpamos URL aqui — ainda pode precisar do code
+          }
+        }
+
+        // 2) Aguarda sessão existir
+        const session = await waitForSession({ timeoutMs: 4500 });
+
+        if (!session?.access_token) {
+          throw new Error(
+            "Não foi possível obter a sessão após o login. " +
+              "Verifique Redirect URLs no Supabase e no Google, e se cookies estão permitidos."
+          );
+        }
+
+        // ✅ CRÍTICO: só agora, com sessão confirmada, limpamos o code/state da URL
+        // Isso evita: "invalid request: both auth code and access token provided"
+        cleanCallbackUrlKeepOnlyC();
+
+        setStatus("sessão ok. gerando destino do passe...");
+
+        // 3) Chama universal-link em modo JSON
+        const universalUrl =
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/universal-link` +
+          `?c=${encodeURIComponent(shortCode)}&mode=json`;
+
+        const uRes = await fetch(universalUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            Accept: "application/json",
+          },
+        });
+
+        const uJson = await uRes.json().catch(() => ({}));
+
+        if (!uRes.ok) {
+          console.log("[ClaimCallback] universal-link error:", uRes.status, uJson);
+          throw new Error(
+            `universal-link falhou (HTTP ${uRes.status}): ${
+              uJson?.error || uJson?.message || "sem detalhes"
+            }`
+          );
+        }
+
+        const destinationRaw = uJson?.destination || null;
+        if (!destinationRaw) {
+          throw new Error("universal-link não retornou 'destination'.");
+        }
+
+        const destination = String(destinationRaw);
+
+        setStatus("redirecionando para a carteira...");
+        setDetails({
+          shortCode,
+          destinationPreview:
+            destination.slice(0, 120) + (destination.length > 120 ? "…" : ""),
+          passTokenPreview:
+            typeof uJson?.passToken === "string"
+              ? uJson.passToken.slice(0, 12) + "…"
+              : null,
+        });
+
+        window.location.href = destination;
+      } catch (e) {
+        console.error("[ClaimCallback] FAILED:", e);
+        setStatus("não foi possível finalizar. veja detalhes abaixo.");
+        setDetails({
+          shortCode,
+          error: toDisplayError(e),
+          url: fullUrl ? fullUrl.slice(0, 300) + (fullUrl.length > 300 ? "…" : "") : null,
+          hint:
+            "Se o erro citar 'both auth code and access token', o code não foi limpo no momento certo. " +
+            "Se citar sessão ausente, verifique Redirect URLs no Supabase/Google.",
+        });
+
+        if (shortCode) {
+          setTimeout(() => {
+            nav(`/claim/${encodeURIComponent(shortCode)}`, { replace: true });
+          }, 3500);
+        }
+      }
+    })();
+  }, [fullUrl, nav, shortCode]);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl border shadow p-6 text-center">
-        {!error ? (
-          <>
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <h1 className="text-lg font-semibold">Finalizando autenticação…</h1>
-            <p className="text-sm text-gray-600 mt-2">
-              Salvando seu cadastro.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="text-lg font-semibold text-red-600">
-              Falha ao concluir o resgate
-            </h1>
-            <p className="text-sm text-gray-600 mt-2 break-words">{error}</p>
-          </>
-        )}
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow p-6">
+        <div className="text-lg font-semibold text-gray-900">
+          Estamos abrindo sua carteira…
+        </div>
+        <div className="mt-2 text-sm text-gray-600">{status}</div>
+
+        {details ? (
+          <pre className="mt-4 text-xs bg-gray-100 rounded-lg p-3 overflow-auto">
+            {JSON.stringify(details, null, 2)}
+          </pre>
+        ) : null}
+
+        <div className="mt-4 text-xs text-gray-500">
+          Se isso ficar preso, normalmente é <b>redirectTo sem ?c=...</b> ou{" "}
+          <b>Redirect URLs</b> faltando no Supabase/Google.
+        </div>
       </div>
     </div>
   );
