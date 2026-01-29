@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { ScanLine, Video, VideoOff, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import {
+  ScanLine,
+  Video,
+  VideoOff,
+  CheckCircle,
+  XCircle,
+  Loader2,
+  AlertTriangle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import QrScanner from "qr-scanner";
@@ -8,21 +16,15 @@ import { supabase } from "@/lib/supabaseClient";
 
 QrScanner.WORKER_PATH = new URL("qr-scanner/qr-scanner-worker.min.js", import.meta.url).toString();
 
-// Aceita:
-// - token puro (pass_token)
-// - URL que contenha token em ?token=... ou ?t=... ou ?s=...
-// - URL onde o último segmento do path seja o token
+// Aceita token puro (pass_token) ou URL contendo token
 function extractPassToken(qrData) {
   const raw = String(qrData ?? "").trim();
   if (!raw) return null;
 
-  if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-    return raw;
-  }
+  if (!raw.startsWith("http://") && !raw.startsWith("https://")) return raw;
 
   try {
     const u = new URL(raw);
-
     const sp = u.searchParams;
     const byQuery =
       sp.get("token") ||
@@ -66,13 +68,76 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const [lastScanRaw, setLastScanRaw] = useState("");
   const [lastScanToken, setLastScanToken] = useState("");
 
+  // ✅ Anti-replay UI state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmPayload, setConfirmPayload] = useState(null);
+  // confirmPayload: { passToken, challenge, seconds_since_last_scan, last_scan_at }
+
+  const stopScan = useCallback(() => {
+    try {
+      scanner?.stop();
+    } catch {}
+    setIsScanning(false);
+  }, [scanner]);
+
+  const startScan = useCallback(() => {
+    if (!scanner) return;
+    scanner
+      .start()
+      .then(() => {
+        setIsScanning(true);
+        setScanResult(null);
+      })
+      .catch((err) => {
+        console.error(err);
+        toast({
+          title: "Erro na Câmera",
+          description: "Não foi possível acessar a câmera. Verifique as permissões.",
+          variant: "destructive",
+        });
+      });
+  }, [scanner]);
+
+  const callScannerVisit = useCallback(
+    async ({ projectId, passToken, confirm, challenge }) => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const { data, error } = await supabase.functions.invoke("scanner-visit", {
+        body: {
+          projectId,
+          qrData: passToken,
+          confirm: !!confirm,
+          challenge: challenge || null,
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (error) throw error;
+      if (!data) throw new Error("Resposta vazia da Edge Function.");
+
+      if (data.error) {
+        if (data.error === "wrong_project") {
+          throw new Error(
+            `${data.message}\n\nEsperado: ${data.expected_project_id}\nRecebido: ${data.received_project_id}`
+          );
+        }
+        throw new Error(data.message || data.error);
+      }
+
+      return data;
+    },
+    []
+  );
+
   const onScan = useCallback(
     async (result) => {
       if (isProcessing) return;
 
       setIsProcessing(true);
-      scanner?.stop();
-      setIsScanning(false);
+      stopScan();
 
       try {
         const txt = normalizeScanResult(result);
@@ -84,43 +149,37 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         console.info("[ScannerTab] QR lido:", { raw: txt, token: passToken });
         console.info("[ScannerTab] projectId enviado:", establishmentProjectId);
 
-        if (!passToken) {
-          throw new Error("QR Code inválido: não encontrei o token do passe.");
-        }
+        if (!passToken) throw new Error("QR Code inválido: não encontrei o token do passe.");
+        if (!establishmentProjectId) throw new Error("ProjectId do estabelecimento não encontrado no painel.");
 
-        if (!establishmentProjectId) {
-          throw new Error("ProjectId do estabelecimento não encontrado no painel.");
-        }
-
-        // sessão do staff
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          throw new Error("Sessão expirada. Faça login novamente.");
-        }
-
-        const { data, error } = await supabase.functions.invoke("scanner-visit", {
-          body: {
-            projectId: establishmentProjectId,
-            qrData: passToken,
-          },
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
+        const data = await callScannerVisit({
+          projectId: establishmentProjectId,
+          passToken,
+          confirm: false,
         });
 
-        if (error) throw error;
-        if (!data) throw new Error("Resposta vazia da Edge Function.");
+        // ✅ Se backend pedir confirmação (scan recente)
+        if (data.requires_confirmation) {
+          setConfirmPayload({
+            passToken,
+            challenge: data.challenge,
+            seconds_since_last_scan: data.seconds_since_last_scan,
+            last_scan_at: data.last_scan_at,
+          });
+          setConfirmOpen(true);
 
-        if (data.error) {
-          // se backend mandar mismatch, mostrar informação útil
-          if (data.error === "wrong_project") {
-            throw new Error(
-              `${data.message}\n\nEsperado: ${data.expected_project_id}\nRecebido: ${data.received_project_id}`
-            );
-          }
-          throw new Error(data.message || data.error);
+          toast({
+            title: "Atenção ⚠️",
+            description: `Este passe foi escaneado há pouco tempo (${Math.max(
+              0,
+              Number(data.seconds_since_last_scan || 0)
+            )}s). Confirme para prosseguir.`,
+          });
+
+          return;
         }
 
+        // ✅ Fluxo normal: registrado
         setScanResult({ success: true, data });
 
         const expFmt = formatBRDateShort(data.expires_at);
@@ -144,7 +203,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         }, 5000);
       }
     },
-    [establishmentProjectId, isProcessing, scanner]
+    [establishmentProjectId, isProcessing, stopScan, callScannerVisit]
   );
 
   useEffect(() => {
@@ -163,24 +222,59 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
 
   const toggleScan = () => {
     if (!scanner) return;
-    if (isScanning) {
-      scanner.stop();
-      setIsScanning(false);
-    } else {
-      scanner
-        .start()
-        .then(() => {
-          setIsScanning(true);
-          setScanResult(null);
-        })
-        .catch((err) => {
-          console.error(err);
-          toast({
-            title: "Erro na Câmera",
-            description: "Não foi possível acessar a câmera. Verifique as permissões.",
-            variant: "destructive",
-          });
-        });
+    if (confirmOpen) return; // evita ligar câmera enquanto o modal está aberto
+    if (isScanning) stopScan();
+    else startScan();
+  };
+
+  // ✅ Ação do modal
+  const handleConfirm = async (yes) => {
+    const payload = confirmPayload;
+    setConfirmOpen(false);
+    setConfirmPayload(null);
+
+    if (!yes) {
+      toast({
+        title: "Operação cancelada",
+        description: "Ok — não registramos nada. Pode escanear novamente.",
+      });
+      setIsProcessing(false);
+      startScan();
+      return;
+    }
+
+    // Se "Sim": chama edge function com confirm + challenge
+    setIsProcessing(true);
+    try {
+      const data = await callScannerVisit({
+        projectId: establishmentProjectId,
+        passToken: payload?.passToken,
+        confirm: true,
+        challenge: payload?.challenge,
+      });
+
+      setScanResult({ success: true, data });
+
+      const expFmt = formatBRDateShort(data.expires_at);
+      const resetText = data.reset === true ? " (expirado → reset + renovado)" : "";
+
+      toast({
+        title: "Visita Registrada (confirmada) ✅",
+        description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
+      });
+    } catch (error) {
+      setScanResult({ success: false, error: error?.message || String(error) });
+      toast({
+        title: "Erro ao Confirmar",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => {
+        setIsProcessing(false);
+        setScanResult(null);
+        startScan();
+      }, 2000);
     }
   };
 
@@ -195,9 +289,11 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
 
         <div className="relative w-full aspect-square max-w-md mx-auto bg-gray-900 rounded-2xl overflow-hidden shadow-inner">
           <video ref={videoRef} className="w-full h-full object-cover" />
+
+          {/* Overlay principal (igual ao seu, mas respeita confirmOpen) */}
           <div
             className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white p-4 transition-opacity"
-            style={{ opacity: isScanning ? 0 : 1 }}
+            style={{ opacity: isScanning && !confirmOpen ? 0 : 1 }}
           >
             {isProcessing && <Loader2 className="w-16 h-16 animate-spin text-purple-400" />}
 
@@ -225,19 +321,59 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
               </motion.div>
             )}
 
-            {!isProcessing && !scanResult && (
+            {!isProcessing && !scanResult && !confirmOpen && (
               <>
                 <ScanLine className="w-16 h-16 text-purple-400 mb-4" />
                 <p className="text-center">Aponte a câmera para o QR Code do cliente.</p>
               </>
             )}
           </div>
+
+          {/* ✅ Modal de confirmação (overlay) */}
+          {confirmOpen && (
+            <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
+              <div className="w-full max-w-sm bg-white text-gray-900 rounded-2xl p-5 shadow-2xl border border-purple-100">
+                <div className="flex items-center gap-3 mb-3">
+                  <AlertTriangle className="w-6 h-6 text-yellow-500" />
+                  <h3 className="text-lg font-semibold">Passe escaneado recentemente</h3>
+                </div>
+
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  Esse passe foi escaneado há{" "}
+                  <b>{Math.max(0, Number(confirmPayload?.seconds_since_last_scan || 0))}s</b>.
+                  <br />
+                  Deseja prosseguir com a operação?
+                </p>
+
+                <div className="mt-4 flex gap-3">
+                  <Button
+                    onClick={() => handleConfirm(false)}
+                    className="flex-1 bg-gray-200 text-gray-900 hover:bg-gray-300"
+                    disabled={isProcessing}
+                  >
+                    Não
+                  </Button>
+                  <Button
+                    onClick={() => handleConfirm(true)}
+                    className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600"
+                    disabled={isProcessing}
+                  >
+                    Sim
+                  </Button>
+                </div>
+
+                <p className="mt-3 text-[11px] text-gray-500 break-all">
+                  Token: {String(confirmPayload?.passToken || "").slice(0, 10)}…
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-6 flex justify-center">
           <Button
             onClick={toggleScan}
-            disabled={isProcessing}
+            disabled={isProcessing || confirmOpen}
             className={`w-full max-w-md gap-2 text-lg py-6 transition-all duration-300 ${
               isScanning ? "bg-red-600 hover:bg-red-700" : "bg-gradient-to-r from-purple-600 to-indigo-600"
             }`}
