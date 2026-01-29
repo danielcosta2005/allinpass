@@ -1,3 +1,4 @@
+// src/pages/ClaimCallback.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
@@ -45,8 +46,36 @@ function cleanUrlKeepOnlyC(c) {
   try {
     const u = new URL(window.location.href);
     const pathname = u.pathname;
-    window.history.replaceState({}, document.title, `${pathname}?c=${encodeURIComponent(c)}`);
+    window.history.replaceState(
+      {},
+      document.title,
+      `${pathname}?c=${encodeURIComponent(c)}`
+    );
   } catch {}
+}
+
+// ✅ base62 e device_key persistido no localStorage (evita duplicatas)
+function base62Random(len = 24) {
+  const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const bytes = new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+function getOrCreateDeviceKey() {
+  const KEY = "device_key_v1";
+  try {
+    const existing = window.localStorage.getItem(KEY);
+    if (existing && existing.length >= 12) return existing;
+    const created = base62Random(24);
+    window.localStorage.setItem(KEY, created);
+    return created;
+  } catch {
+    // se localStorage falhar por qualquer motivo, ainda gera um dk (menos ideal, mas funciona)
+    return base62Random(24);
+  }
 }
 
 export default function ClaimCallback() {
@@ -72,26 +101,33 @@ export default function ClaimCallback() {
 
         setPhase("Validando sessão…");
 
-        // 1) tenta sessão (rápido, pra não travar)
         const sessResp = await withTimeout(supabase.auth.getSession(), 1200);
         let accessToken = sessResp?.data?.session?.access_token || null;
 
-        // 2) se não veio sessão, usa token do hash (iPhone costuma vir assim)
         if (!accessToken) {
           const hp = parseHashParams(window.location.hash || "");
           if (hp.access_token) {
             accessToken = hp.access_token;
-            setWarning("Sessão não respondeu a tempo; usando token retornado na URL (iPhone).");
+            setWarning(
+              "Sessão não respondeu a tempo; usando token retornado na URL (iPhone)."
+            );
           }
         }
 
         if (!accessToken) {
-          throw new Error("Não consegui obter access_token (nem por sessão, nem pelo hash da URL).");
+          throw new Error(
+            "Não consegui obter access_token (nem por sessão, nem pelo hash da URL)."
+          );
         }
 
         setPhase("Chamando universal-link…");
 
-        const url = `${sbUrl}/functions/v1/universal-link?c=${encodeURIComponent(c)}&mode=json`;
+        const dk = getOrCreateDeviceKey();
+
+        const url = `${sbUrl}/functions/v1/universal-link?c=${encodeURIComponent(
+          c
+        )}&mode=json&dk=${encodeURIComponent(dk)}`;
+
         const res = await fetch(url, {
           method: "GET",
           headers: {
@@ -102,12 +138,17 @@ export default function ClaimCallback() {
 
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(`universal-link falhou (HTTP ${res.status}): ${json?.error || json?.message || "sem detalhes"}`);
+          throw new Error(
+            `universal-link falhou (HTTP ${res.status}): ${
+              json?.error || json?.message || "sem detalhes"
+            }`
+          );
         }
 
-        if (!json?.destination) throw new Error("universal-link não retornou destination.");
+        if (!json?.destination) {
+          throw new Error("universal-link não retornou destination.");
+        }
 
-        // 3) limpa a URL pra não deixar token no hash visível
         cleanUrlKeepOnlyC(c);
 
         setPhase("Redirecionando…");
@@ -134,7 +175,9 @@ export default function ClaimCallback() {
           </>
         ) : (
           <>
-            <h1 className="text-lg font-semibold text-red-600">Falha ao concluir o resgate</h1>
+            <h1 className="text-lg font-semibold text-red-600">
+              Falha ao concluir o resgate
+            </h1>
             <p className="text-sm text-gray-600 mt-2 break-words">{error}</p>
           </>
         )}
