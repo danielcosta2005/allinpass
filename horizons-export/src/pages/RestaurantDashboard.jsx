@@ -27,7 +27,7 @@ import React, {useState} from 'react';
       return (
         <>
           <Helmet>
-            <title>Painel do Estabelecimento - Carteira 4.9</title>
+            <title>Painel do Estabelecimento - All In Pass</title>
             <meta name="description" content="Gerencie seu programa de fidelidade" />
           </Helmet>
           <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
@@ -40,7 +40,7 @@ import React, {useState} from 'react';
                     </div>
                     <div>
                       <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                        Carteira 4.9
+                        All In Pass
                       </h1>
                       <p className="text-xs text-gray-600">Painel do Projeto</p>
                     </div>

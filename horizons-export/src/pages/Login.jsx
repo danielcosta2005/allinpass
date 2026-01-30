@@ -49,8 +49,8 @@ const Login = () => {
   return (
     <>
       <Helmet>
-        <title>Login - Carteira 4.9</title>
-        <meta name="description" content="Acesse o sistema de fidelidade Carteira 4.9" />
+        <title>Login - All In Pass</title>
+        <meta name="description" content="Acesse o sistema de fidelidade All In Pass" />
       </Helmet>
       <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-600/10 via-indigo-600/10 to-pink-600/10"></div>
@@ -69,7 +69,7 @@ const Login = () => {
             </div>
             
             <h1 className="text-3xl font-bold text-center mb-2 bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-              Carteira 4.9
+              All In Pass
             </h1>
             <p className="text-center text-gray-600 mb-8">
               Painel Administrativo
