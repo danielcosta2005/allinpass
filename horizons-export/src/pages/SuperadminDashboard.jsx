@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const SuperadminDashboard = () => {
   const { user, signOut } = useAuth();
+  const [signingOut, setSigningOut] = useState(false);
   const [selectedProject, setSelectedProject] = useState(() => {
     const savedProject = sessionStorage.getItem('superadmin_selected_project')
     return savedProject ? JSON.parse(savedProject) : null;
@@ -78,7 +79,16 @@ const SuperadminDashboard = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={signOut}
+                  onClick={async () => {
+                    if (signingOut) return;
+                    setSigningOut(true);
+                    try {
+                      await signOut();
+                    } finally {
+                      setSigningOut(false);
+                    }
+                  }}
+                  disabled={signingOut}
                   className="gap-2"
                 >
                   <LogOut className="w-4 h-4" />
