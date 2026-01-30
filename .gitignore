@@ -1,3 +1,5 @@
 horizons-export/node_modules
 teste/
-.env
+prompt/
+horizons-export/.env
+
