@@ -25,51 +25,42 @@ const RestaurantDashboard = () => {
     sessionStorage.setItem('restaurant_active_tab', value);
   }
 
-  return (
-    <>
-      <Helmet>
-        <title>Painel do Estabelecimento - Carteira 4.9</title>
-        <meta name="description" content="Gerencie seu programa de fidelidade" />
-      </Helmet>
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
-        <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-3">
-                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-xl">
-                  <Wallet className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                    Carteira 4.9
-                  </h1>
-                  <p className="text-xs text-gray-600">Painel do Projeto</p>
+      return (
+        <>
+          <Helmet>
+            <title>Painel do Estabelecimento - All In Pass</title>
+            <meta name="description" content="Gerencie seu programa de fidelidade" />
+          </Helmet>
+          <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+            <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between items-center h-16">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-xl">
+                      <Wallet className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                        All In Pass
+                      </h1>
+                      <p className="text-xs text-gray-600">Painel do Projeto</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-600">{user?.email}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={signOut}
+                      className="gap-2"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sair
+                    </Button>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">{user?.email}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    if (signingOut) return;
-                    setSigningOut(true);
-                    try {
-                      await signOut();
-                    } finally {
-                      setSigningOut(false);
-                    }
-                  }}
-                  disabled={signingOut}
-                  className="gap-2"
-                >
-                  <LogOut className="w-4 h-4" />
-                  Sair
-                </Button>
-              </div>
-            </div>
-          </div>
-        </nav>
+            </nav>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {!projectId ? (
