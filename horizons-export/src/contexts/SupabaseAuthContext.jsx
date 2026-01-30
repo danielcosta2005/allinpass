@@ -59,12 +59,12 @@ export const AuthProvider = ({ children }) => {
   // ✅ Não sequestrar fluxo público de claim/callback
   const isClaimOrCallbackPath = useCallback(() => {
     const p = window.location.pathname || '';
-    return p.startsWith('/claim') || p.startsWith('/auth/callback');
+    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
   }, []);
 
   useEffect(() => {
     const publicPassRoutes =
-      /^\/c\/[a-fA-F0-9-]+\/me|^\/me|^\/c\/[a-fA-F0-9-]+\/[a-fA-F0-9-]+|^\/auth\/callback|^\/claim/;
+      /^\/c\/[a-fA-F0-9-]+\/me|^\/me|^\/c\/[a-fA-F0-9-]+\/[a-fA-F0-9-]+|^\/auth\/callback|^\/claim|^\/thanks/;
 
     const handleAuthStateChange = async (event, currentSession) => {
       if (!initialized) setInitialized(true);

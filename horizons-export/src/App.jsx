@@ -13,6 +13,8 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Loader2 } from 'lucide-react';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
+import ClaimThanks from "@/pages/ClaimThanks";
+
 
 // ✅ NOVOS imports
 import WalletClaimCard from '@/pages/WalletClaimCard';
@@ -49,7 +51,7 @@ export default function App() {
   return (
     <>
       <Helmet>
-        <title>Carteira 4.9 - Programa de Fidelidade Digital</title>
+        <title>All In Pass - Programa de Fidelidade Digital</title>
         <meta name="description" content="Sistema completo de fidelidade com Apple Wallet e Google Wallet" />
       </Helmet>
 
@@ -69,6 +71,7 @@ export default function App() {
         <Route path="/:slug" element={<PassPage />} />
 
         <Route path="/nao-autorizado" element={<Unauthorized />} />
+        <Route path="/thanks" element={<ClaimThanks />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<AuthRedirect />} />

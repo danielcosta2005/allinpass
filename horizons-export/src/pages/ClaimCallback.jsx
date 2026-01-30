@@ -108,9 +108,9 @@ export default function ClaimCallback() {
           const hp = parseHashParams(window.location.hash || "");
           if (hp.access_token) {
             accessToken = hp.access_token;
-            setWarning(
-              "Sessão não respondeu a tempo; usando token retornado na URL (iPhone)."
-            );
+            //setWarning(
+              //"Sessão não respondeu a tempo; usando token retornado na URL (iPhone)."
+            //);
           }
         }
 
@@ -120,7 +120,7 @@ export default function ClaimCallback() {
           );
         }
 
-        setPhase("Chamando universal-link…");
+        setPhase("Estamos abrindo sua carteira…");
 
         const dk = getOrCreateDeviceKey();
 
@@ -152,7 +152,51 @@ export default function ClaimCallback() {
         cleanUrlKeepOnlyC(c);
 
         setPhase("Redirecionando…");
-        window.location.replace(json.destination);
+        
+        const THANKS_URL = `/thanks?c=${encodeURIComponent(c)}`;
+
+        // ✅ Só redireciona para /thanks se a página ficou hidden pelo menos 1x.
+        // Isso evita "obrigado antes de abrir o Wallet".
+        let sawHidden = false;
+
+        const onVis = () => {
+          if (document.hidden) {
+            sawHidden = true;
+            return;
+          }
+          // voltamos a ficar visíveis
+          if (sawHidden) {
+            cleanup();
+            window.location.replace(THANKS_URL);
+          }
+        };
+
+        const onPageHide = () => {
+          // Em iOS, pagehide costuma acontecer quando troca de app
+          sawHidden = true;
+        };
+
+        const cleanup = () => {
+          document.removeEventListener("visibilitychange", onVis);
+          window.removeEventListener("pagehide", onPageHide);
+          window.clearTimeout(fallbackTimer);
+        };
+
+        document.addEventListener("visibilitychange", onVis);
+        window.addEventListener("pagehide", onPageHide);
+
+        // ✅ Fallback: se o Wallet NÃO abriu (não ficou hidden), espera mais tempo.
+        // 4.5s é curto demais no iOS; use 12–15s.
+        const fallbackTimer = window.setTimeout(() => {
+          cleanup();
+          // Só manda pro thanks se ainda estamos visíveis (indicando que não saímos pro Wallet)
+          if (!document.hidden) {
+            window.location.replace(THANKS_URL);
+          }
+        }, 15000);
+
+        // Agora sim: tenta abrir o destino (Wallet/pkpass)
+        window.location.assign(json.destination);
       } catch (e) {
         setError(e?.message || "Falha ao concluir o resgate.");
       }
