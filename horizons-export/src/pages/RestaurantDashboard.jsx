@@ -28,7 +28,7 @@ const RestaurantDashboard = () => {
       return (
         <>
           <Helmet>
-            <title>Painel do Estabelecimento - AllIn Pass</title>
+            <title>Painel do Estabelecimento - Allin Pass</title>
             <meta name="description" content="Gerencie seu programa de fidelidade" />
           </Helmet>
           <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
@@ -41,7 +41,7 @@ const RestaurantDashboard = () => {
                     </div>
                     <div>
                       <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                        AllIn Pass
+                        Allin Pass
                       </h1>
                       <p className="text-xs text-gray-600">Painel do Projeto</p>
                     </div>

@@ -6,7 +6,7 @@ export default function Unauthorized() {
   return (
     <>
       <Helmet>
-        <title>Acesso Negado - AllIn Pass</title>
+        <title>Acesso Negado - Allin Pass</title>
         <meta name="description" content="Página de acesso não autorizado." />
       </Helmet>
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-red-50 via-white to-red-100 text-center p-4">

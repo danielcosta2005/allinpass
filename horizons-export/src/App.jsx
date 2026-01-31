@@ -51,7 +51,7 @@ export default function App() {
   return (
     <>
       <Helmet>
-        <title>AllIn Pass - Programa de Fidelidade Digital</title>
+        <title>Allin Pass - Programa de Fidelidade Digital</title>
         <meta name="description" content="Sistema completo de fidelidade com Apple Wallet e Google Wallet" />
       </Helmet>
 
