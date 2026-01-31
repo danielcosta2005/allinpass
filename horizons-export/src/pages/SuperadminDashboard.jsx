@@ -56,7 +56,7 @@ const SuperadminDashboard = () => {
   return (
     <>
       <Helmet>
-        <title>Painel Administrativo - All In Pass</title>
+        <title>Painel Administrativo - AllIn Pass</title>
         <meta name="description" content="Gerencie projetos, usuários e configurações do sistema" />
       </Helmet>
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
@@ -69,7 +69,7 @@ const SuperadminDashboard = () => {
                 </div>
                 <div>
                   <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                    All In Pass
+                    AllIn Pass
                   </h1>
                   <p className="text-xs text-gray-600">Painel Administrativo</p>
                 </div>
