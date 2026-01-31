@@ -61,170 +61,162 @@ function normalizeScanResult(result) {
 
 const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const videoRef = useRef(null);
-  const [scanner, setScanner] = useState(null);
+  const scannerRef = useRef(null);
+
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastScanRaw, setLastScanRaw] = useState("");
   const [lastScanToken, setLastScanToken] = useState("");
 
-  // ✅ Anti-replay UI state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmPayload, setConfirmPayload] = useState(null);
-  // confirmPayload: { passToken, challenge, seconds_since_last_scan, last_scan_at }
 
-  const stopScan = useCallback(() => {
+  const stopScan = useCallback(async () => {
     try {
-      scanner?.stop();
+      await scannerRef.current?.stop(); // aguarda parar de verdade
     } catch {}
     setIsScanning(false);
-  }, [scanner]);
+  }, []);
 
-  const startScan = useCallback(() => {
-    if (!scanner) return;
-    scanner
-      .start()
-      .then(() => {
-        setIsScanning(true);
-        setScanResult(null);
-      })
-      .catch((err) => {
-        console.error(err);
-        toast({
-          title: "Erro na Câmera",
-          description: "Não foi possível acessar a câmera. Verifique as permissões.",
-          variant: "destructive",
-        });
+  const startScan = useCallback(async () => {
+    const s = scannerRef.current;
+    if (!s) return;
+
+    try {
+      await s.start();
+      setIsScanning(true);
+      setScanResult(null);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Erro na Câmera",
+        description: "Não foi possível acessar a câmera. Verifique as permissões.",
+        variant: "destructive",
       });
-  }, [scanner]);
-
-  const callScannerVisit = useCallback(
-    async ({ projectId, passToken, confirm, challenge }) => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
-
-      const { data, error } = await supabase.functions.invoke("scanner-visit", {
-        body: {
-          projectId,
-          qrData: passToken,
-          confirm: !!confirm,
-          challenge: challenge || null,
-        },
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (error) throw error;
-      if (!data) throw new Error("Resposta vazia da Edge Function.");
-
-      if (data.error) {
-        if (data.error === "wrong_project") {
-          throw new Error(
-            `${data.message}\n\nEsperado: ${data.expected_project_id}\nRecebido: ${data.received_project_id}`
-          );
-        }
-        throw new Error(data.message || data.error);
-      }
-
-      return data;
-    },
-    []
-  );
-
-  const onScan = useCallback(
-    async (result) => {
-      if (isProcessing) return;
-
-      setIsProcessing(true);
-      stopScan();
-
-      try {
-        const txt = normalizeScanResult(result);
-        const passToken = extractPassToken(txt);
-
-        setLastScanRaw(txt);
-        setLastScanToken(passToken || "");
-
-        console.info("[ScannerTab] QR lido:", { raw: txt, token: passToken });
-        console.info("[ScannerTab] projectId enviado:", establishmentProjectId);
-
-        if (!passToken) throw new Error("QR Code inválido: não encontrei o token do passe.");
-        if (!establishmentProjectId) throw new Error("ProjectId do estabelecimento não encontrado no painel.");
-
-        const data = await callScannerVisit({
-          projectId: establishmentProjectId,
-          passToken,
-          confirm: false,
-        });
-
-        // ✅ Se backend pedir confirmação (scan recente)
-        if (data.requires_confirmation) {
-          setConfirmPayload({
-            passToken,
-            challenge: data.challenge,
-            seconds_since_last_scan: data.seconds_since_last_scan,
-            last_scan_at: data.last_scan_at,
-          });
-          setConfirmOpen(true);
-
-          toast({
-            title: "Atenção ⚠️",
-            description: `Este passe foi escaneado há pouco tempo (${Math.max(
-              0,
-              Number(data.seconds_since_last_scan || 0)
-            )}s). Confirme para prosseguir.`,
-          });
-
-          return;
-        }
-
-        // ✅ Fluxo normal: registrado
-        setScanResult({ success: true, data });
-
-        const expFmt = formatBRDateShort(data.expires_at);
-        const resetText = data.reset === true ? " (expirado → reset + renovado)" : "";
-
-        toast({
-          title: "Visita Registrada! 🎉",
-          description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
-        });
-      } catch (error) {
-        setScanResult({ success: false, error: error?.message || String(error) });
-        toast({
-          title: "Erro ao Registrar Visita",
-          description: error?.message || String(error),
-          variant: "destructive",
-        });
-      } finally {
-        setTimeout(() => {
-          setIsProcessing(false);
-          setScanResult(null);
-        }, 5000);
-      }
-    },
-    [establishmentProjectId, isProcessing, stopScan, callScannerVisit]
-  );
-
-  useEffect(() => {
-    if (videoRef.current && !scanner) {
-      const qrScanner = new QrScanner(
-        videoRef.current,
-        (result) => onScan(result),
-        { highlightScanRegion: true, highlightCodeOutline: true }
-      );
-      setScanner(qrScanner);
     }
-    return () => {
-      scanner?.destroy();
-    };
-  }, [onScan, scanner]);
+  }, []);
 
-  const toggleScan = () => {
-    if (!scanner) return;
-    if (confirmOpen) return; // evita ligar câmera enquanto o modal está aberto
-    if (isScanning) stopScan();
-    else startScan();
+  const callScannerVisit = useCallback(async ({ projectId, passToken, confirm, challenge }) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
+
+    const { data, error } = await supabase.functions.invoke("scanner-visit", {
+      body: { projectId, qrData: passToken, confirm: !!confirm, challenge: challenge || null },
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+
+    if (error) throw error;
+    if (!data) throw new Error("Resposta vazia da Edge Function.");
+
+    if (data.error) {
+      if (data.error === "wrong_project") {
+        throw new Error(
+          `${data.message}\n\nEsperado: ${data.expected_project_id}\nRecebido: ${data.received_project_id}`
+        );
+      }
+      throw new Error(data.message || data.error);
+    }
+
+    return data;
+  }, []);
+
+  const onScan = useCallback(async (result) => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
+    await stopScan();
+
+    try {
+      const txt = normalizeScanResult(result);
+      const passToken = extractPassToken(txt);
+
+      setLastScanRaw(txt);
+      setLastScanToken(passToken || "");
+
+      if (!passToken) throw new Error("QR Code inválido: não encontrei o token do passe.");
+      if (!establishmentProjectId) throw new Error("ProjectId do estabelecimento não encontrado no painel.");
+
+      const data = await callScannerVisit({
+        projectId: establishmentProjectId,
+        passToken,
+        confirm: false,
+      });
+
+      if (data.requires_confirmation) {
+        setConfirmPayload({
+          passToken,
+          challenge: data.challenge,
+          seconds_since_last_scan: data.seconds_since_last_scan,
+          last_scan_at: data.last_scan_at,
+        });
+        setConfirmOpen(true);
+
+        toast({
+          title: "Atenção ⚠️",
+          description: `Este passe foi escaneado há pouco tempo (${Math.max(
+            0,
+            Number(data.seconds_since_last_scan || 0)
+          )}s). Confirme para prosseguir.`,
+        });
+
+        return;
+      }
+
+      setScanResult({ success: true, data });
+
+      const expFmt = formatBRDateShort(data.expires_at);
+      const resetText = data.reset === true ? " (expirado → reset + renovado)" : "";
+
+      toast({
+        title: "Visita Registrada! 🎉",
+        description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
+      });
+    } catch (error) {
+      setScanResult({ success: false, error: error?.message || String(error) });
+      toast({
+        title: "Erro ao Registrar Visita",
+        description: error?.message || String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setTimeout(() => {
+        setIsProcessing(false);
+        setScanResult(null);
+      }, 5000);
+    }
+  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit]);
+
+  // ✅ guarda sempre a versão mais recente do handler
+  const onScanRef = useRef(onScan);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
+  // ✅ cria o scanner uma única vez
+  useEffect(() => {
+    if (!videoRef.current) return;
+
+    const qrScanner = new QrScanner(
+      videoRef.current,
+      (result) => onScanRef.current(result),
+      { highlightScanRegion: true, highlightCodeOutline: true }
+    );
+
+    scannerRef.current = qrScanner;
+
+    return () => {
+      try {
+        qrScanner.destroy();
+      } catch {}
+      scannerRef.current = null;
+    };
+  }, []);
+
+  const toggleScan = async () => {
+    if (confirmOpen) return;
+    if (isScanning) await stopScan();
+    else await startScan();
   };
 
   // ✅ Ação do modal
