@@ -34,7 +34,7 @@ const NotificationsTab = ({ projectId }) => {
 
   const { toast } = useToast();
 
-  // customers + user_passes
+  // user_passes (fonte principal)
   const [rows, setRows] = useState([]);
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
 
@@ -50,7 +50,7 @@ const NotificationsTab = ({ projectId }) => {
   const [inactiveDays, setInactiveDays] = useState(30);
   const [expiringDays, setExpiringDays] = useState(7);
 
-  // seleção
+  // seleção (agora por user_passes.id)
   const [selectedCustomerIds, setSelectedCustomerIds] = useState(() => new Set());
 
   // mensagem
@@ -109,6 +109,43 @@ const NotificationsTab = ({ projectId }) => {
     return "";
   }
 
+  function getClaim(meta) {
+    if (!meta || typeof meta !== "object") return null;
+    const claim = meta.claim;
+    if (!claim || typeof claim !== "object") return null;
+    return claim;
+  }
+
+  function getDisplayName(meta) {
+    const claim = getClaim(meta);
+    const name = claim?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : "(Sem nome)";
+  }
+
+  function getEmail(meta) {
+    const claim = getClaim(meta);
+    const email = claim?.email;
+    return typeof email === "string" && email.trim() ? email.trim() : "-";
+  }
+
+  function getGoogleSub(meta) {
+    const claim = getClaim(meta);
+    const gs = claim?.google_sub;
+    return typeof gs === "string" && gs.trim() ? gs.trim() : "";
+  }
+
+  function getPoints(meta) {
+    if (!meta || typeof meta !== "object") return 0;
+    const points = meta.points;
+    return typeof points === "number" && Number.isFinite(points) ? points : 0;
+  }
+
+  // Normaliza relação (pode vir objeto ou array)
+  function normalizeRel(v) {
+    if (!v) return null;
+    return Array.isArray(v) ? (v[0] ?? null) : v;
+  }
+
   async function getAuthHeader() {
     try {
       if (!supabase) return `Bearer ${supabaseAnonKey}`;
@@ -136,25 +173,31 @@ const NotificationsTab = ({ projectId }) => {
 
     setIsLoadingCustomers(true);
     try {
+      // ✅ project_id vem de passes.project_id (via user_passes.pass_id -> passes.id)
+      // ✅ exclui install_status = removed direto na query
       const { data, error } = await supabase
-        .from("customers")
+        .from("user_passes")
         .select(
           [
             "id",
-            "project_id",
-            "google_sub",
-            "name",
-            "email",
-            "job_tag",
+            "pass_token",
+            "pass_type",
+            "metadata",
+            "issued_at",
+            "expires_at",
             "created_at",
-            "updated_at",
-            "visits",
-            "pass_status",
-            "user_pass_id",
-            "user_passes!customers_user_pass_id_fkey(id, pass_token, pass_type, metadata, issued_at, expires_at, install_status, installed_at, removed_at, device_key, google_object_id, google_class_id, pass_id, project_id)",
+            "install_status",
+            "installed_at",
+            "removed_at",
+            "device_key",
+            "google_object_id",
+            "google_class_id",
+            "pass_id",
+            "passes(project_id)",
           ].join(",")
         )
-        .eq("project_id", projectId)
+        .eq("passes.project_id", projectId)
+        .eq("install_status", "installed")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -165,8 +208,9 @@ const NotificationsTab = ({ projectId }) => {
       toast({
         variant: "destructive",
         title: "Erro ao carregar customers",
-        description: err?.message || "Falha inesperada ao buscar customers + user_passes.",
+        description: err?.message || "Falha inesperada ao buscar user_passes + passes.project_id.",
       });
+      setRows([]);
     } finally {
       setIsLoadingCustomers(false);
     }
@@ -237,20 +281,23 @@ const NotificationsTab = ({ projectId }) => {
     const inactivityCutoff = daysAgo(inactiveDays);
     const expiringCutoff = daysFromNow(expiringDays);
 
-    return (rows || []).filter((r) => {
-      const c = r;
-      const p = r?.user_passes || null;
+    return (rows || []).filter((p) => {
+      // reforço: nunca exibir removed (mesmo que a query mude no futuro)
+      if (safeLower(p?.install_status) === "removed") return false;
 
-      // busca textual (customers)
+      const meta = p?.metadata ?? null;
+
+      // busca textual (metadata + ids)
       if (searchText.trim()) {
         const q = searchText.trim().toLowerCase();
         const hay =
           [
-            c?.name,
-            c?.email,
-            c?.job_tag,
-            c?.google_sub,
-            String(c?.id || ""),
+            getDisplayName(meta),
+            getEmail(meta),
+            getGoogleSub(meta),
+            p?.pass_type,
+            p?.pass_token,
+            String(p?.id || ""),
           ]
             .map(safeLower)
             .join(" | ") || "";
@@ -258,32 +305,31 @@ const NotificationsTab = ({ projectId }) => {
         if (!hay.includes(q)) return false;
       }
 
-      const passStatus = safeLower(c?.pass_status);
       const expiresAt = toDate(p?.expires_at);
 
       if (segmentPreset === "expired") {
         const expiredByDate = expiresAt ? expiresAt < now : false;
-        const expiredByStatus = passStatus === "expired";
-        return expiredByDate || expiredByStatus;
+        return expiredByDate;
       }
 
       if (segmentPreset === "expiring_soon") {
         if (!expiresAt) return false;
-        return expiresAt >= now && expiresAt <= expiringCutoff;
+
+        const expiresMs = expiresAt.getTime();
+        const nowMs = now.getTime();
+        const cutoffMs = expiringCutoff.getTime();
+
+        return expiresMs >= nowMs && expiresMs <= cutoffMs;
       }
 
       if (segmentPreset === "inactive") {
-        // Regra real: usa tabela visits (mapa lastVisitByUserPassId)
-        // Se não tiver user_pass_id, tratamos como inativo (não dá pra correlacionar visitas).
-        const userPassId = c?.user_pass_id;
+        const userPassId = p?.id;
         if (!userPassId) return true;
 
         const lastVisitIso = lastVisitByUserPassId.get(userPassId) || null;
         const lastVisitAt = toDate(lastVisitIso);
 
-        // se não achou visita na janela, consideramos inativo (há muito tempo ou nunca visitou)
         if (!lastVisitAt) return true;
-
         return lastVisitAt < inactivityCutoff;
       }
 
@@ -291,7 +337,7 @@ const NotificationsTab = ({ projectId }) => {
     });
   }, [rows, searchText, segmentPreset, inactiveDays, expiringDays, lastVisitByUserPassId]);
 
-  const visibleCustomerIds = useMemo(() => new Set(filteredRows.map((r) => r.id)), [filteredRows]);
+  const visibleCustomerIds = useMemo(() => new Set(filteredRows.map((p) => p.id)), [filteredRows]);
 
   const visibleSelectedCount = useMemo(() => {
     let n = 0;
@@ -307,11 +353,11 @@ const NotificationsTab = ({ projectId }) => {
   // =========================
   // Selection actions
   // =========================
-  function toggleRow(customerId) {
+  function toggleRow(passId) {
     setSelectedCustomerIds((prev) => {
       const next = new Set(prev);
-      if (next.has(customerId)) next.delete(customerId);
-      else next.add(customerId);
+      if (next.has(passId)) next.delete(passId);
+      else next.add(passId);
       return next;
     });
   }
@@ -321,9 +367,9 @@ const NotificationsTab = ({ projectId }) => {
       const next = new Set(prev);
 
       if (allVisibleSelected) {
-        filteredRows.forEach((r) => next.delete(r.id));
+        filteredRows.forEach((p) => next.delete(p.id));
       } else {
-        filteredRows.forEach((r) => next.add(r.id));
+        filteredRows.forEach((p) => next.add(p.id));
       }
       return next;
     });
@@ -345,7 +391,7 @@ const NotificationsTab = ({ projectId }) => {
     setTimeout(() => {
       setSelectedCustomerIds(() => {
         const next = new Set();
-        filteredRows.forEach((r) => next.add(r.id));
+        filteredRows.forEach((p) => next.add(p.id));
         return next;
       });
     }, 0);
@@ -377,35 +423,38 @@ const NotificationsTab = ({ projectId }) => {
       import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-    const selected = rows.filter((r) => selectedCustomerIds.has(r.id));
+    const selected = rows.filter((p) => selectedCustomerIds.has(p.id));
 
-    const targets = selected.map((r) => {
-      const c = r;
-      const p = r?.user_passes || null;
+    const targets = selected
+      .filter((p) => safeLower(p?.install_status) === "installed")
+      .map((p) => {
+        const meta = p?.metadata ?? null;
+        const claim = getClaim(meta);
+        const passesRel = normalizeRel(p?.passes);
 
-      return {
-        customer_id: c.id,
-        project_id: c.project_id,
-        user_pass_id: c.user_pass_id,
+        return {
+          project_id: passesRel?.project_id ?? null, // ✅ vem de passes.project_id
+          user_pass_id: p.id,
 
-        // customer info (logs)
-        google_sub: c.google_sub,
-        name: c.name ?? null,
-        email: c.email ?? null,
+          // customer info (logs)
+          google_sub: claim?.google_sub ?? null,
+          name: claim?.name ?? null,
+          email: claim?.email ?? null,
+          points: getPoints(meta),
 
-        // pass info (back escolhe)
-        pass_type: p?.pass_type ?? null,
-        pass_token: p?.pass_token ?? null,
-        device_key: p?.device_key ?? null,
-        google_object_id: p?.google_object_id ?? null,
-        google_class_id: p?.google_class_id ?? null,
-        expires_at: p?.expires_at ?? null,
-        install_status: p?.install_status ?? null,
+          // pass info (back escolhe)
+          pass_type: p?.pass_type ?? null,
+          pass_token: p?.pass_token ?? null,
+          device_key: p?.device_key ?? null,
+          google_object_id: p?.google_object_id ?? null,
+          google_class_id: p?.google_class_id ?? null,
+          expires_at: p?.expires_at ?? null,
+          install_status: p?.install_status ?? null,
 
-        // para debug/observabilidade
-        last_visit_at: c?.user_pass_id ? (lastVisitByUserPassId.get(c.user_pass_id) ?? null) : null,
-      };
-    });
+          // para debug/observabilidade
+          last_visit_at: lastVisitByUserPassId.get(p.id) ?? null,
+        };
+      });
 
     setIsSending(true);
     try {
@@ -464,7 +513,7 @@ const NotificationsTab = ({ projectId }) => {
   const selectedCount = selectedCustomerIds.size;
 
   const previewSelected = useMemo(() => {
-    const selected = rows.filter((r) => selectedCustomerIds.has(r.id));
+    const selected = rows.filter((p) => selectedCustomerIds.has(p.id));
     return selected.slice(0, 5);
   }, [rows, selectedCustomerIds]);
 
@@ -619,8 +668,7 @@ const NotificationsTab = ({ projectId }) => {
                   </th>
                   <th className="p-3">Cliente</th>
                   <th className="p-3">Email</th>
-                  <th className="p-3">Visitas</th>
-                  <th className="p-3">Status</th>
+                  <th className="p-3">Pontos</th>
                   <th className="p-3">Última visita</th>
                   <th className="p-3">Expira em</th>
                   <th className="p-3">Tipo</th>
@@ -629,7 +677,7 @@ const NotificationsTab = ({ projectId }) => {
               <tbody>
                 {(isLoadingCustomers || isLoadingVisits) ? (
                   <tr>
-                    <td className="p-6 text-center text-gray-500" colSpan={8}>
+                    <td className="p-6 text-center text-gray-500" colSpan={7}>
                       <div className="inline-flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Carregando {isLoadingCustomers ? "customers" : "visitas"}...
@@ -638,37 +686,40 @@ const NotificationsTab = ({ projectId }) => {
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td className="p-6 text-center text-gray-500" colSpan={8}>
+                    <td className="p-6 text-center text-gray-500" colSpan={7}>
                       Nenhum customer encontrado com os filtros atuais.
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((r) => {
-                    const c = r;
-                    const p = r?.user_passes || null;
+                  filteredRows.map((p) => {
+                    const meta = p?.metadata ?? null;
 
-                    const lastVisitIso = c?.user_pass_id ? (lastVisitByUserPassId.get(c.user_pass_id) ?? null) : null;
+                    const name = getDisplayName(meta);
+                    const email = getEmail(meta);
+                    const googleSub = getGoogleSub(meta);
+                    const points = getPoints(meta);
+
+                    const lastVisitIso = lastVisitByUserPassId.get(p.id) ?? null;
 
                     return (
-                      <tr key={c.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                      <tr key={p.id} className="border-b last:border-b-0 hover:bg-gray-50">
                         <td className="p-3">
                           <input
                             type="checkbox"
-                            checked={selectedCustomerIds.has(c.id)}
-                            onChange={() => toggleRow(c.id)}
+                            checked={selectedCustomerIds.has(p.id)}
+                            onChange={() => toggleRow(p.id)}
                           />
                         </td>
 
                         <td className="p-3">
-                          <div className="font-medium text-gray-900">{c?.name || "(Sem nome)"}</div>
+                          <div className="font-medium text-gray-900">{name}</div>
                           <div className="text-xs text-gray-500">
-                            sub: {String(c?.google_sub || "").slice(0, 10)}… • id: {String(c?.id || "").slice(0, 8)}…
+                            sub: {String(googleSub || "").slice(0, 10)}… • id: {String(p?.id || "").slice(0, 8)}…
                           </div>
                         </td>
 
-                        <td className="p-3">{c?.email || "-"}</td>
-                        <td className="p-3">{typeof c?.visits === "number" ? c.visits : "-"}</td>
-                        <td className="p-3">{c?.pass_status || "-"}</td>
+                        <td className="p-3">{email}</td>
+                        <td className="p-3">{points}</td>
                         <td className="p-3">{fmtDate(lastVisitIso)}</td>
                         <td className="p-3">{fmtDate(p?.expires_at)}</td>
                         <td className="p-3">{p?.pass_type || "-"}</td>
@@ -738,14 +789,17 @@ const NotificationsTab = ({ projectId }) => {
                   <div className="p-4 bg-white rounded-md border">
                     <div className="text-xs text-gray-500 mb-2">Amostra de selecionados (até 5)</div>
                     <ul className="text-sm text-gray-800 list-disc pl-5 space-y-1">
-                      {previewSelected.map((r) => (
-                        <li key={r.id}>
-                          {r?.name || "(Sem nome)"}{" "}
-                          <span className="text-gray-500">
-                            ({r?.email || "sem email"}) • pass: {r?.user_passes?.pass_type || "-"}
-                          </span>
-                        </li>
-                      ))}
+                      {previewSelected.map((p) => {
+                        const meta = p?.metadata ?? null;
+                        return (
+                          <li key={p.id}>
+                            {getDisplayName(meta)}{" "}
+                            <span className="text-gray-500">
+                              ({getEmail(meta) || "sem email"}) • pass: {p?.pass_type || "-"}
+                            </span>
+                          </li>
+                        );
+                      })}
                       {selectedCount > 5 && (
                         <li className="text-gray-500">… e mais {selectedCount - 5}</li>
                       )}
