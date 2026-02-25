@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bell, Loader2, Send, Filter, RefreshCcw, CheckSquare, Square } from "lucide-react";
+import { Bell, Loader2, Send, Filter, RefreshCcw, CheckSquare, Square, Clock } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
 import { Button } from "@/components/ui/button";
@@ -50,12 +50,16 @@ const NotificationsTab = ({ projectId }) => {
   const [inactiveDays, setInactiveDays] = useState(30);
   const [expiringDays, setExpiringDays] = useState(7);
 
-  // seleção (agora por user_passes.id)
+  // seleção (por user_passes.id)
   const [selectedCustomerIds, setSelectedCustomerIds] = useState(() => new Set());
 
   // mensagem
   const [message, setMessage] = useState("");
   const maxMessageLen = 200;
+
+  // ✅ agendamento (agora fica na coluna do CTA)
+  const [sendMode, setSendMode] = useState("now"); // now | schedule
+  const [scheduledLocal, setScheduledLocal] = useState(""); // datetime-local string
 
   const [isSending, setIsSending] = useState(false);
 
@@ -140,10 +144,12 @@ const NotificationsTab = ({ projectId }) => {
     return typeof points === "number" && Number.isFinite(points) ? points : 0;
   }
 
-  // Normaliza relação (pode vir objeto ou array)
-  function normalizeRel(v) {
-    if (!v) return null;
-    return Array.isArray(v) ? (v[0] ?? null) : v;
+  // local datetime -> ISO UTC
+  function localDateTimeToUtcIso(localStr) {
+    if (!localStr || typeof localStr !== "string") return null;
+    const d = new Date(localStr);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
   }
 
   async function getAuthHeader() {
@@ -173,8 +179,6 @@ const NotificationsTab = ({ projectId }) => {
 
     setIsLoadingCustomers(true);
     try {
-      // ✅ project_id vem de passes.project_id (via user_passes.pass_id -> passes.id)
-      // ✅ exclui install_status = removed direto na query
       const { data, error } = await supabase
         .from("user_passes")
         .select(
@@ -208,7 +212,7 @@ const NotificationsTab = ({ projectId }) => {
     } catch (err) {
       toast({
         variant: "destructive",
-        title: "Erro ao carregar customers",
+        title: "Erro ao carregar passes",
         description: err?.message || "Falha inesperada ao buscar user_passes + passes.project_id.",
       });
       setRows([]);
@@ -221,15 +225,11 @@ const NotificationsTab = ({ projectId }) => {
     if (!supabase) return;
     if (!projectId) return;
 
-    // Janela para “última visita”: escolha pragmática para não puxar o histórico inteiro.
-    // Você pode subir para 730 (2 anos) se quiser.
     const VISITS_LOOKBACK_DAYS = 365;
     const since = daysAgo(VISITS_LOOKBACK_DAYS).toISOString();
 
     setIsLoadingVisits(true);
     try {
-      // A query busca visitas recentes e nós calculamos max(created_at) por user_pass_id no client.
-      // ATENÇÃO: se o volume for gigante, vale evoluir pra RPC/view com MAX/GROUP BY.
       const { data, error } = await supabase
         .from("visits")
         .select("user_pass_id, created_at")
@@ -237,7 +237,7 @@ const NotificationsTab = ({ projectId }) => {
         .not("user_pass_id", "is", null)
         .gte("created_at", since)
         .order("created_at", { ascending: false })
-        .limit(10000); // guarda-corpo; dá pra paginar depois se precisar
+        .limit(10000);
 
       if (error) throw error;
 
@@ -246,8 +246,6 @@ const NotificationsTab = ({ projectId }) => {
         const pid = v.user_pass_id;
         const createdAt = v.created_at;
         if (!pid || !createdAt) continue;
-
-        // como veio order desc, o primeiro de cada pid já é o mais recente
         if (!map.has(pid)) map.set(pid, createdAt);
       }
 
@@ -283,12 +281,10 @@ const NotificationsTab = ({ projectId }) => {
     const expiringCutoff = daysFromNow(expiringDays);
 
     return (rows || []).filter((p) => {
-      // reforço: nunca exibir removed (mesmo que a query mude no futuro)
       if (safeLower(p?.install_status) === "removed") return false;
 
       const meta = p?.metadata ?? null;
 
-      // busca textual (metadata + ids)
       if (searchText.trim()) {
         const q = searchText.trim().toLowerCase();
         const hay =
@@ -308,19 +304,11 @@ const NotificationsTab = ({ projectId }) => {
 
       const expiresAt = toDate(p?.expires_at);
 
-      if (segmentPreset === "expired") {
-        const expiredByDate = expiresAt ? expiresAt < now : false;
-        return expiredByDate;
-      }
+      if (segmentPreset === "expired") return expiresAt ? expiresAt < now : false;
 
       if (segmentPreset === "expiring_soon") {
         if (!expiresAt) return false;
-
-        const expiresMs = expiresAt.getTime();
-        const nowMs = now.getTime();
-        const cutoffMs = expiringCutoff.getTime();
-
-        return expiresMs >= nowMs && expiresMs <= cutoffMs;
+        return expiresAt >= now && expiresAt <= expiringCutoff;
       }
 
       if (segmentPreset === "inactive") {
@@ -348,8 +336,7 @@ const NotificationsTab = ({ projectId }) => {
     return n;
   }, [selectedCustomerIds, visibleCustomerIds]);
 
-  const allVisibleSelected =
-    filteredRows.length > 0 && visibleSelectedCount === filteredRows.length;
+  const allVisibleSelected = filteredRows.length > 0 && visibleSelectedCount === filteredRows.length;
 
   // =========================
   // Selection actions
@@ -366,12 +353,8 @@ const NotificationsTab = ({ projectId }) => {
   function toggleSelectAllVisible() {
     setSelectedCustomerIds((prev) => {
       const next = new Set(prev);
-
-      if (allVisibleSelected) {
-        filteredRows.forEach((p) => next.delete(p.id));
-      } else {
-        filteredRows.forEach((p) => next.add(p.id));
-      }
+      if (allVisibleSelected) filteredRows.forEach((p) => next.delete(p.id));
+      else filteredRows.forEach((p) => next.add(p.id));
       return next;
     });
   }
@@ -388,7 +371,6 @@ const NotificationsTab = ({ projectId }) => {
       setMessage(suggested);
     }
 
-    // auto-seleção dos filtrados
     setTimeout(() => {
       setSelectedCustomerIds(() => {
         const next = new Set();
@@ -399,25 +381,30 @@ const NotificationsTab = ({ projectId }) => {
   }
 
   // =========================
-  // Send segmented notifications
+  // Enqueue notifications
   // =========================
-  async function handleSendSegmented() {
+  async function handleEnqueue() {
     if (!message.trim()) {
-      toast({
-        variant: "destructive",
-        title: "Erro de Validação",
-        description: "A mensagem não pode estar vazia.",
-      });
+      toast({ variant: "destructive", title: "Erro de Validação", description: "A mensagem não pode estar vazia." });
       return;
     }
 
     if (selectedCustomerIds.size === 0) {
-      toast({
-        variant: "destructive",
-        title: "Nada selecionado",
-        description: "Selecione pelo menos 1 cliente para enviar a notificação.",
-      });
+      toast({ variant: "destructive", title: "Nada selecionado", description: "Selecione pelo menos 1 passe." });
       return;
+    }
+
+    let scheduledFor = null;
+    if (sendMode === "schedule") {
+      scheduledFor = localDateTimeToUtcIso(scheduledLocal);
+      if (!scheduledFor) {
+        toast({ variant: "destructive", title: "Agendamento inválido", description: "Selecione data e hora." });
+        return;
+      }
+      if (new Date(scheduledFor).getTime() < Date.now() - 30_000) {
+        toast({ variant: "destructive", title: "Agendamento no passado", description: "Escolha uma data/hora futura." });
+        return;
+      }
     }
 
     const functionsUrl =
@@ -475,12 +462,16 @@ const NotificationsTab = ({ projectId }) => {
       // ✅ body base (mesmos metadados)
       const baseBody = {
         projectId,
+        title: sendMode === "schedule" ? "Envio manual (agendado)" : "Envio manual",
         message: message.trim(),
+        sendMode,
+        scheduledFor,
         segment: {
           preset: segmentPreset,
           inactiveDays,
           expiringDays,
           searchText: searchText.trim() || null,
+          ui: "NotificationsTab(user_passes)",
         },
       };
 
@@ -513,14 +504,14 @@ const NotificationsTab = ({ projectId }) => {
       }
 
       toast({
-        title: "Notificações enviadas!",
-        description: `Mensagem enviada para ${selectedCustomerIds.size} cliente(s).`,
+        title: sendMode === "schedule" ? "Agendado ✅" : "Enfileirado ✅",
+        description: `Criados ${json?.jobs_created ?? 0} job(s). Ignorados (removed): ${json?.skipped?.removed ?? 0}.`,
       });
     } catch (err) {
       toast({
         variant: "destructive",
-        title: "Erro ao Enviar",
-        description: err?.message || "Erro inesperado ao enviar notificações segmentadas.",
+        title: "Erro ao Enfileirar",
+        description: err?.message || "Erro inesperado.",
       });
     } finally {
       setIsSending(false);
@@ -549,7 +540,7 @@ const NotificationsTab = ({ projectId }) => {
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Notificações Segmentadas</h2>
             <p className="text-gray-600 mt-1">
-              Selecione clientes manualmente ou use filtros para segmentar. Depois escreva a mensagem e envie!
+              Selecione clientes/passes manualmente ou use filtros para segmentar. Depois escreva a mensagem e envie!
             </p>
             {lastFetchAt && (
               <p className="text-xs text-gray-500 mt-2">
@@ -564,7 +555,7 @@ const NotificationsTab = ({ projectId }) => {
             className="gap-2"
             onClick={refreshAll}
             disabled={isLoadingCustomers || isLoadingVisits}
-            title="Recarregar customers + visits"
+            title="Recarregar passes + visits"
           >
             {(isLoadingCustomers || isLoadingVisits) ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -581,7 +572,7 @@ const NotificationsTab = ({ projectId }) => {
             <Input
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Buscar por nome, email, job_tag, google_sub ou ID..."
+              placeholder="Buscar por nome, email, google_sub, pass_token ou ID..."
             />
           </div>
 
@@ -700,25 +691,23 @@ const NotificationsTab = ({ projectId }) => {
                     <td className="p-6 text-center text-gray-500" colSpan={7}>
                       <div className="inline-flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Carregando {isLoadingCustomers ? "customers" : "visitas"}...
+                        Carregando {isLoadingCustomers ? "passes" : "visitas"}...
                       </div>
                     </td>
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
                     <td className="p-6 text-center text-gray-500" colSpan={7}>
-                      Nenhum customer encontrado com os filtros atuais.
+                      Nenhum passe encontrado com os filtros atuais.
                     </td>
                   </tr>
                 ) : (
                   filteredRows.map((p) => {
                     const meta = p?.metadata ?? null;
-
                     const name = getDisplayName(meta);
                     const email = getEmail(meta);
                     const googleSub = getGoogleSub(meta);
                     const points = getPoints(meta);
-
                     const lastVisitIso = lastVisitByUserPassId.get(p.id) ?? null;
 
                     return (
@@ -779,24 +768,87 @@ const NotificationsTab = ({ projectId }) => {
               </div>
             </div>
 
+            {/* ✅ Agendamento agora perto do botão */}
+            <div className="p-4 rounded-lg border bg-white space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <Clock className="w-4 h-4" />
+                  Agendamento
+                </div>
+                <span className="text-[11px] text-gray-500">
+                  {sendMode === "schedule" ? "Agendado" : "Imediato"}
+                </span>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={sendMode === "now" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => {
+                    setSendMode("now");
+                    setScheduledLocal(""); // evita “agendamento antigo” por acidente
+                  }}
+                >
+                  Agora
+                </Button>
+
+                <Button
+                  type="button"
+                  variant={sendMode === "schedule" ? "default" : "outline"}
+                  className="flex-1"
+                  onClick={() => setSendMode("schedule")}
+                >
+                  Agendar
+                </Button>
+              </div>
+
+              {sendMode === "schedule" && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-xs text-gray-600">Data e hora</label>
+                    <Input
+                      type="datetime-local"
+                      value={scheduledLocal}
+                      onChange={(e) => setScheduledLocal(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="text-xs text-gray-500">
+                    Prévia:{" "}
+                    <span className="text-gray-800 font-medium">
+                      {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <Dialog>
               <DialogTrigger asChild>
                 <Button
                   size="lg"
                   className="w-full gap-2"
-                  disabled={isSending || selectedCount === 0 || !message.trim()}
+                  disabled={
+                    isSending ||
+                    selectedCount === 0 ||
+                    !message.trim() ||
+                    (sendMode === "schedule" && !scheduledLocal)
+                  }
                 >
                   <Send className="w-4 h-4" />
-                  Revisar e Enviar
+                  Revisar e {sendMode === "schedule" ? "Agendar" : "Enfileirar"}
                 </Button>
               </DialogTrigger>
 
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Confirmar envio segmentado?</DialogTitle>
+                  <DialogTitle>
+                    Confirmar {sendMode === "schedule" ? "agendamento" : "envio"}?
+                  </DialogTitle>
                   <DialogDescription>
-                    Você está prestes a enviar esta mensagem para <b>{selectedCount}</b> cliente(s),
-                    disparando Apple e Google.
+                    Você está prestes a {sendMode === "schedule" ? "agendar" : "enfileirar"} esta mensagem para{" "}
+                    <b>{selectedCount}</b> passe(s), criando jobs Apple e Google.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -805,6 +857,15 @@ const NotificationsTab = ({ projectId }) => {
                     <div className="text-xs text-gray-500 mb-2">Mensagem</div>
                     <p className="whitespace-pre-wrap">{message}</p>
                   </div>
+
+                  {sendMode === "schedule" && (
+                    <div className="p-4 bg-white rounded-md border">
+                      <div className="text-xs text-gray-500 mb-1">Agendado para</div>
+                      <div className="text-sm font-semibold text-gray-800">
+                        {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="p-4 bg-white rounded-md border">
                     <div className="text-xs text-gray-500 mb-2">Amostra de selecionados (até 5)</div>
@@ -828,13 +889,13 @@ const NotificationsTab = ({ projectId }) => {
                 </div>
 
                 <DialogFooter>
-                  <Button onClick={handleSendSegmented} disabled={isSending} className="w-full">
+                  <Button onClick={handleEnqueue} disabled={isSending} className="w-full">
                     {isSending ? (
                       <Loader2 className="w-4 h-4 animate-spin mr-2" />
                     ) : (
                       <Bell className="w-4 h-4 mr-2" />
                     )}
-                    Confirmar e Enviar
+                    Confirmar e {sendMode === "schedule" ? "Agendar" : "Enfileirar"}
                   </Button>
                 </DialogFooter>
               </DialogContent>
