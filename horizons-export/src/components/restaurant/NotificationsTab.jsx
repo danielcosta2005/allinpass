@@ -191,6 +191,7 @@ const NotificationsTab = ({ projectId }) => {
             "expires_at",
             "created_at",
             "install_status",
+            "install_platform",
             "installed_at",
             "removed_at",
             "device_key",
@@ -410,11 +411,56 @@ const NotificationsTab = ({ projectId }) => {
       import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
+    const selected = rows.filter((p) => selectedCustomerIds.has(p.id));
+
+    // ✅ helper de normalização
+    const norm = (v) => String(v ?? "").trim().toLowerCase();
+
+    // ✅ monta targets COMPLETOS (inclui install_platform!)
+    const targets = selected
+      .filter((p) => norm(p?.install_status) === "installed")
+      .map((p) => {
+        const meta = p?.metadata ?? null;
+        const claim = getClaim(meta);
+        const passesRel = normalizeRel(p?.passes);
+
+        return {
+          project_id: passesRel?.project_id ?? null, // ✅ vem de passes.project_id
+          user_pass_id: p.id,
+
+          // customer info (logs)
+          google_sub: claim?.google_sub ?? null,
+          name: claim?.name ?? null,
+          email: claim?.email ?? null,
+          points: getPoints(meta),
+
+          // pass info
+          pass_type: p?.pass_type ?? null, // (loyalty etc) - não decide plataforma
+          pass_token: p?.pass_token ?? null, // Apple usa
+          device_key: p?.device_key ?? null,
+          google_object_id: p?.google_object_id ?? null, // Google usa
+          google_class_id: p?.google_class_id ?? null,
+          expires_at: p?.expires_at ?? null,
+
+          // ✅ aqui está a chave do patch
+          install_status: p?.install_status ?? null,
+          install_platform: p?.install_platform ?? null,
+
+          // para debug/observabilidade
+          last_visit_at: lastVisitByUserPassId.get(p.id) ?? null,
+        };
+      });
+
+    // ✅ separa por plataforma (o correto)
+    const appleTargets = targets.filter((t) => norm(t.install_platform) === "apple");
+    const googleTargets = targets.filter((t) => norm(t.install_platform) === "google");
+
     setIsSending(true);
     try {
       const authHeader = await getAuthHeader();
 
-      const payload = {
+      // ✅ body base (mesmos metadados)
+      const baseBody = {
         projectId,
         title: sendMode === "schedule" ? "Envio manual (agendado)" : "Envio manual",
         message: message.trim(),
@@ -427,18 +473,35 @@ const NotificationsTab = ({ projectId }) => {
           searchText: searchText.trim() || null,
           ui: "NotificationsTab(user_passes)",
         },
-        user_pass_ids: Array.from(selectedCustomerIds),
-        channels: { apple: true, google: true },
       };
 
-      const res = await fetch(`${functionsUrl}/notifications-enqueue`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: authHeader },
-        body: JSON.stringify(payload),
-      });
+      // ✅ envia Apple apenas se tiver targets Apple
+      if (appleTargets.length > 0) {
+        const appleRes = await fetch(`${functionsUrl}/send-apple-segmented-notification`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          body: JSON.stringify({ ...baseBody, targets: appleTargets }),
+        });
 
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || json?.error) throw new Error(json?.error || "Falha ao enfileirar.");
+        const appleJson = await appleRes.json().catch(() => ({}));
+        if (!appleRes.ok || appleJson?.error) {
+          throw new Error(appleJson?.error || "Falha ao enviar notificação segmentada (Apple).");
+        }
+      }
+
+      // ✅ envia Google apenas se tiver targets Google
+      if (googleTargets.length > 0) {
+        const googleRes = await fetch(`${functionsUrl}/send-google-segmented-notification`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          body: JSON.stringify({ ...baseBody, targets: googleTargets }),
+        });
+
+        const googleJson = await googleRes.json().catch(() => ({}));
+        if (!googleRes.ok || googleJson?.error) {
+          throw new Error(googleJson?.error || "Falha ao enviar notificação segmentada (Google).");
+        }
+      }
 
       toast({
         title: sendMode === "schedule" ? "Agendado ✅" : "Enfileirado ✅",
