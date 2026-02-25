@@ -486,7 +486,7 @@ const NotificationsTab = ({ projectId }) => {
 
       // ✅ envia Apple apenas se tiver targets Apple
       if (appleTargets.length > 0) {
-        const appleRes = await fetch(`${functionsUrl}/send-apple-segmented-notification`, {
+        const appleRes = await fetch(`${functionsUrl}/send-apple-notification`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader },
           body: JSON.stringify({ ...baseBody, targets: appleTargets }),
@@ -500,7 +500,7 @@ const NotificationsTab = ({ projectId }) => {
 
       // ✅ envia Google apenas se tiver targets Google
       if (googleTargets.length > 0) {
-        const googleRes = await fetch(`${functionsUrl}/send-google-segmented-notification`, {
+        const googleRes = await fetch(`${functionsUrl}/send-google-notification`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authHeader },
           body: JSON.stringify({ ...baseBody, targets: googleTargets }),
