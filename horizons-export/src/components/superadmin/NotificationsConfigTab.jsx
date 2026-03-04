@@ -184,7 +184,7 @@ export default function NotificationsConfigTab({ projectId }) {
 
       toast({
         title: "Configuração salva",
-        description: "Limite atualizado e janela reiniciada (notifications_exp atualizado).",
+        description: "Limite atualizado e data de expiração reiniciada.",
       });
     } catch (err) {
       toast({
