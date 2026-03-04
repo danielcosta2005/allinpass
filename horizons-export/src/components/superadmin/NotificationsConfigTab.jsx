@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 
-import { Loader2, Shield, Bell, RefreshCcw, Save, Infinity } from "lucide-react";
+import { Loader2, Shield, Bell, RefreshCcw, Save, Infinity, Hash, Gauge, Lock } from "lucide-react";
 
 // -----------------------------
 // Helpers de data (sem libs)
@@ -41,14 +41,37 @@ export default function NotificationsConfigTab({ projectId }) {
   const [isUnlimited, setIsUnlimited] = useState(true);
   const [limitValue, setLimitValue] = useState(""); // string para Input
 
-  const expLabel = useMemo(() => toLocalDateTimeLabel(row?.notifications_exp), [row]);
+  const expLabel = useMemo(
+    () => toLocalDateTimeLabel(row?.notifications_exp),
+    [row]
+  );
 
+  const createdAtLabel = useMemo(
+    () => toLocalDateTimeLabel(row?.created_at),
+    [row]
+  );
+
+  // Preferir coluna do banco (notifications_remaining). Se não existir, calcula.
   const remainingLabel = useMemo(() => {
-    // Como você removeu a coluna notifications_remaining, calculamos aqui para exibir:
     if (!row) return "—";
+
+    // Se a coluna existir no row, usamos.
+    if (row.notifications_remaining !== undefined && row.notifications_remaining !== null) {
+      return String(row.notifications_remaining);
+    }
+
+    // Se for ilimitado
     if (row.notifications_limit == null) return "Ilimitado";
-    const remaining = Number(row.notifications_limit) - Number(row.recent_notifications_sent || 0);
+
+    const remaining =
+      Number(row.notifications_limit) - Number(row.recent_notifications_sent || 0);
     return Number.isFinite(remaining) ? String(remaining) : "—";
+  }, [row]);
+
+  const limitDisplay = useMemo(() => {
+    return row?.notifications_limit == null
+      ? "Ilimitado"
+      : String(row?.notifications_limit ?? "—");
   }, [row]);
 
   async function ensureRowExists() {
@@ -64,6 +87,7 @@ export default function NotificationsConfigTab({ projectId }) {
           total_notifications_sent: 0,
           recent_notifications_sent: 0,
           notifications_exp: expIso,
+          created_at: new Date().toISOString(),
         },
         { onConflict: "project_id" }
       )
@@ -136,23 +160,19 @@ export default function NotificationsConfigTab({ projectId }) {
     }
 
     // Regra do requisito: ao mudar limit, atualiza notifications_exp
-    // Interpretação prática: recomeça a janela a partir de agora -> expira no próximo mês (início do próximo mês)
     const newExpIso = computeNextMonthExpIso();
 
     setSaving(true);
     try {
+      const payload = {
+        project_id: projectId,
+        notifications_limit: newLimit,
+        notifications_exp: newExpIso,
+      };
+
       const { data, error } = await supabase
         .from("projects_notifications")
-        .upsert(
-          {
-            project_id: projectId,
-            notifications_limit: newLimit,
-            notifications_exp: newExpIso,
-            // Se você quiser também "zerar" a janela ao alterar limite, descomente:
-            // recent_notifications_sent: 0,
-          },
-          { onConflict: "project_id" }
-        )
+        .upsert(payload, { onConflict: "project_id" })
         .select("*")
         .single();
 
@@ -177,9 +197,6 @@ export default function NotificationsConfigTab({ projectId }) {
     }
   }
 
-  const limitDisplay =
-    row?.notifications_limit == null ? "Ilimitado" : String(row.notifications_limit ?? "—");
-
   return (
     <div className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -191,7 +208,7 @@ export default function NotificationsConfigTab({ projectId }) {
               Controle de Notificações
             </h2>
             <p className="text-gray-600 mt-1">
-              Visualize o uso do projeto e defina o limite mensal (NULL = ilimitado).
+              Visualize o uso do projeto e defina o limite mensal.
             </p>
           </div>
 
@@ -228,12 +245,15 @@ export default function NotificationsConfigTab({ projectId }) {
               <div className="rounded-lg border bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Limite mensal</p>
-                  <Infinity className="h-4 w-4 text-gray-400" />
+
+                  {row?.notifications_limit == null ? (
+                    <Infinity className="h-4 w-4 text-gray-400" />
+                  ) : (
+                    <Lock className="h-4 w-4 text-gray-400" />
+                  )}
                 </div>
                 <p className="text-2xl font-bold text-gray-900 mt-2">{limitDisplay}</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  NULL = ilimitado (definido pelo superadmin)
-                </p>
+                <p className="text-xs text-gray-500 mt-1">Definido por um administrador</p>
               </div>
 
               <div className="rounded-lg border bg-white p-5 shadow-sm">
@@ -241,24 +261,29 @@ export default function NotificationsConfigTab({ projectId }) {
                   <p className="text-sm text-gray-500">Notificações Enviadas</p>
                   <Bell className="h-4 w-4 text-gray-400" />
                 </div>
+
                 <p className="text-2xl font-bold text-gray-900 mt-2">
-                  {row?.recent_notifications_sent ?? 0}
+                  {row?.recent_notifications_sent ?? 0}{" "}
+                  <span className="text-base font-semibold text-gray-600">
+                    ({remainingLabel} restantes)
+                  </span>
                 </p>
+
                 <p className="text-xs text-gray-500 mt-1">
-                  Expira em: <span className="font-medium">{expLabel}</span>
+                  Reinicia em: <span className="font-medium">{expLabel}</span>
                 </p>
               </div>
 
               <div className="rounded-lg border bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Total histórico</p>
-                  <Bell className="h-4 w-4 text-gray-400" />
+                  <Gauge className="h-4 w-4 text-gray-400" />
                 </div>
                 <p className="text-2xl font-bold text-gray-900 mt-2">
                   {row?.total_notifications_sent ?? 0}
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Restantes (calc): <span className="font-medium">{remainingLabel}</span>
+                  Desde: <span className="font-medium">{createdAtLabel}</span>
                 </p>
               </div>
             </div>
@@ -268,8 +293,7 @@ export default function NotificationsConfigTab({ projectId }) {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Configurar limite</h3>
                 <p className="text-sm text-gray-500">
-                  Ao salvar, o <span className="font-medium">notifications_exp</span> será atualizado para reiniciar
-                  a janela.
+                  Clique em "Salvar" após estabelecer o limite de notificações.
                 </p>
               </div>
 
@@ -290,7 +314,7 @@ export default function NotificationsConfigTab({ projectId }) {
 
               <div className="space-y-2">
                 <Label htmlFor="limit" className="text-sm font-medium">
-                  Limite mensal (X)
+                  Limite mensal:
                 </Label>
                 <Input
                   id="limit"
@@ -304,9 +328,7 @@ export default function NotificationsConfigTab({ projectId }) {
                   placeholder={isUnlimited ? "Ilimitado" : "Ex: 500"}
                   className="max-w-sm"
                 />
-                <p className="text-xs text-gray-500">
-                  Dica: defina 0 para bloquear envios. Ilimitado é NULL.
-                </p>
+                <p className="text-xs text-gray-500">Estabeleça um limite para este projeto.</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
