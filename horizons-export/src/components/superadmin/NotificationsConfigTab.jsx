@@ -19,14 +19,9 @@ function toLocalDateTimeLabel(iso) {
   return d.toLocaleString();
 }
 
-// Próximo "início de mês + 1 mês" (expira no início do próximo mês)
-function computeNextMonthExpIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-11
-  // início do próximo mês
-  const firstOfNextMonth = new Date(year, month + 1, 1, 0, 0, 0, 0);
-  return firstOfNextMonth.toISOString();
+//Expira 30 dias depois do save
+function computeRollingExpIso(days = 30) {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 export default function NotificationsConfigTab({ projectId }) {
@@ -159,8 +154,20 @@ export default function NotificationsConfigTab({ projectId }) {
       newLimit = n;
     }
 
-    // Regra do requisito: ao mudar limit, atualiza notifications_exp
-    const newExpIso = computeNextMonthExpIso();
+    const currentLimit = row?.notifications_limit ?? null;
+    const hasLimitChanged = currentLimit !== newLimit;
+
+    if (!hasLimitChanged) {
+      toast({
+        title: "Sem alterações",
+        description:
+          "Nnhuma mudança feita, altere o limite mensal antes de clicar em salvar",
+      });
+      return;
+    }
+
+    // expira 30 dias depois
+    const newExpIso = computeRollingExpIso(30);
 
     setSaving(true);
     try {
@@ -168,6 +175,9 @@ export default function NotificationsConfigTab({ projectId }) {
         project_id: projectId,
         notifications_limit: newLimit,
         notifications_exp: newExpIso,
+
+        // isso garante que "reiniciou a janela" de verdade
+        recent_notifications_sent: 0,
       };
 
       const { data, error } = await supabase
@@ -182,9 +192,12 @@ export default function NotificationsConfigTab({ projectId }) {
       setIsUnlimited(data.notifications_limit == null);
       setLimitValue(data.notifications_limit == null ? "" : String(data.notifications_limit));
 
+      // ✅ força UI a buscar do banco (útil se houver view/trigger/coluna gerada)
+      await fetchConfig();
+
       toast({
         title: "Configuração salva",
-        description: "Limite atualizado e data de expiração reiniciada.",
+        description: "Limite atualizado e janela reiniciada (contagem mensal zerada).",
       });
     } catch (err) {
       toast({
