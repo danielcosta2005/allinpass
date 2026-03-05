@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, QrCode, ScanLine, BarChart3, Wallet, Users, History, Bell } from 'lucide-react';
+import { LogOut, QrCode, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import QRTab from '@/components/restaurant/QRTab';
@@ -10,10 +10,13 @@ import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsTab from '@/components/restaurant/NotificationsTab';
+import NotificationsManager from '@/components/restaurant/NotificationsManager';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useToast } from '@/components/ui/use-toast';
 
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
+  const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => {
@@ -23,44 +26,70 @@ const RestaurantDashboard = () => {
   const handleTabChange = (value) => {
     setActiveTab(value);
     sessionStorage.setItem('restaurant_active_tab', value);
+  };
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+
+    try {
+      await signOut();
+      try { sessionStorage.removeItem('restaurant_active_tab'); } catch (_) {}
+    } catch (e) {
+      console.error('[logout] erro ao sair', e);
+      toast({
+        title: 'Não foi possível sair agora',
+        description: 'Tente novamente. Se persistir, recarregue a página.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSigningOut(false);
+    }
   }
 
-      return (
-        <>
-          <Helmet>
-            <title>Painel do Estabelecimento - Allin Pass</title>
-            <meta name="description" content="Gerencie seu programa de fidelidade" />
-          </Helmet>
-          <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
-            <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex justify-between items-center h-16">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-xl">
-                      <Wallet className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                      <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                        Allin Pass
-                      </h1>
-                      <p className="text-xs text-gray-600">Painel do Projeto</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-600">{user?.email}</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={signOut}
-                      className="gap-2"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Sair
-                    </Button>
-                  </div>
+  return (
+    <>
+      <Helmet>
+        <title>Painel do Estabelecimento - Allin Pass</title>
+        <meta name="description" content="Gerencie seu programa de fidelidade" />
+      </Helmet>
+
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+        <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center gap-3">
+                <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-xl">
+                  <Wallet className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                    Allin Pass
+                  </h1>
+                  <p className="text-xs text-gray-600">Painel do Projeto</p>
                 </div>
               </div>
-            </nav>
+
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">{user?.email}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="gap-2"
+                >
+                  {signingOut ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <LogOut className="w-4 h-4" />
+                  )}
+                  Sair
+                </Button>
+              </div>
+            </div>
+          </div>
+        </nav>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {!projectId ? (
@@ -79,7 +108,7 @@ const RestaurantDashboard = () => {
               transition={{ duration: 0.5 }}
             >
               <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:w-auto lg:inline-grid">
+                <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
                   <TabsTrigger value="kpis" className="gap-2">
                     <BarChart3 className="w-4 h-4" />
                     KPIs
@@ -104,6 +133,10 @@ const RestaurantDashboard = () => {
                     <History className="w-4 h-4" />
                     Visitas
                   </TabsTrigger>
+                  <TabsTrigger value="notifications-manager" className="gap-2">
+                    <Bell className="w-4 h-4" />
+                    Gerenciar Notificações
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="kpis">
@@ -123,6 +156,9 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
+                </TabsContent>
+                <TabsContent value="notifications-manager">
+                  <NotificationsManager projectId={projectId} />
                 </TabsContent>
               </Tabs>
             </motion.div>

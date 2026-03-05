@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -13,14 +21,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  // Proteções contra "desconectar toda hora" em falhas transitórias
-  // - Se refresh falhar uma vez, pode ser rede. Se falhar repetidamente em pouco tempo, encerra.
+  // Proteções contra falhas transitórias de refresh
   const REFRESH_FAIL_WINDOW_MS = 60_000;
   const REFRESH_FAIL_MAX = 2;
 
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+
+  // ✅ Lock para evitar logout concorrente
+  const logoutInFlightRef = useRef(false);
 
   const clearAuthState = useCallback(() => {
     setUser(null);
@@ -29,24 +39,99 @@ export const AuthProvider = ({ children }) => {
     setProjectId(null);
   }, []);
 
+  const clearUiState = useCallback(() => {
+    try {
+      sessionStorage.removeItem('superadmin_selected_project');
+      sessionStorage.removeItem('superadmin_active_tab');
+      sessionStorage.removeItem('restaurant_active_tab');
+      sessionStorage.removeItem('__auth_refresh_fail');
+    } catch (_) {
+      // ignore
+    }
+  }, []);
+
+  // ✅ Remove o token do Supabase do storage manualmente (hard logout local)
+  const hardClearSupabaseStorage = useCallback(() => {
+    try {
+      // supabase-js v2 geralmente expõe isso
+      const key = supabase?.auth?.storageKey;
+
+      if (key) {
+        localStorage.removeItem(key);
+        return;
+      }
+
+      // fallback (bem comum): sb-<project-ref>-auth-token
+      // tenta inferir do supabaseUrl (se o cliente expuser)
+      const url = supabase?.supabaseUrl || '';
+      const match = String(url).match(/^https:\/\/([a-z0-9]+)\.supabase\.co/i);
+      const projectRef = match?.[1];
+
+      if (projectRef) {
+        localStorage.removeItem(`sb-${projectRef}-auth-token`);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }, []);
+
+  // ✅ Não sequestrar fluxo público de claim/callback
+  const isClaimOrCallbackPath = useCallback(() => {
+    const p = window.location.pathname || '';
+    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
+  }, []);
+
+  /**
+   * ✅ Logout robusto:
+   * - Se token estiver expirado/quase, NÃO chama /logout (evita 403 session_not_found)
+   * - Sempre limpa local (storage + state + UI) e navega
+   */
   const forceLogout = useCallback(
     async (reason = 'Sua sessão expirou. Faça login novamente.') => {
-      try {
-        // Não depende de sessão server-side existir (evita o "session_id claim does not exist")
-        await supabase.auth.signOut({ scope: 'local' });
-      } catch (_) {
-        // Mesmo que falhe, garantimos o reset local
-      } finally {
-        clearAuthState();
+      if (logoutInFlightRef.current) return;
+      logoutInFlightRef.current = true;
 
-        // Limpa estados de UI que podem "prender" no dashboard
+      try {
+        let currentSession = null;
+
         try {
-          sessionStorage.removeItem('superadmin_selected_project');
-          sessionStorage.removeItem('superadmin_active_tab');
-          sessionStorage.removeItem('restaurant_active_tab');
+          const { data } = await supabase.auth.getSession();
+          currentSession = data?.session ?? null;
         } catch (_) {
-          // ignore
+          currentSession = null;
         }
+
+        const nowSec = Math.floor(Date.now() / 1000);
+        const expiresAt = Number(currentSession?.expires_at ?? 0);
+
+        // Se estiver expirado ou muito perto (ex.: <= 30s), pular logout server-side pra evitar 403.
+        const shouldSkipServerLogout = !currentSession || !expiresAt || expiresAt <= nowSec + 30;
+
+        if (!shouldSkipServerLogout) {
+          const { error } = await supabase.auth.signOut({ scope: 'local' });
+
+          // session_not_found -> ok, a gente segue
+          if (error) {
+            const status = error?.status;
+            const code = error?.code;
+            const msg = String(error?.message ?? '').toLowerCase();
+
+            const isSessionNotFound =
+              status === 403 &&
+              (code === 'session_not_found' ||
+                (msg.includes('session') && msg.includes('does not exist')));
+
+            if (!isSessionNotFound) {
+              // erro real -> não trava logout local, só loga
+              console.error('[auth] signOut error', error);
+            }
+          }
+        }
+
+        // ✅ Hard logout local SEMPRE
+        hardClearSupabaseStorage();
+        clearAuthState();
+        clearUiState();
 
         setLoading(false);
         setInitialized(true);
@@ -55,9 +140,15 @@ export const AuthProvider = ({ children }) => {
           navigate('/login', { replace: true });
         }
 
+        // opcional: toast só quando for manual
+        if (reason === 'Você saiu da conta.') {
+          toast({ title: 'Logout realizado', description: reason });
+        }
+      } finally {
+        logoutInFlightRef.current = false;
       }
     },
-    [clearAuthState, navigate, toast]
+    [clearAuthState, clearUiState, hardClearSupabaseStorage, navigate, toast]
   );
 
   const getProfileAndProject = useCallback(async (currentUser) => {
@@ -99,12 +190,6 @@ export const AuthProvider = ({ children }) => {
     return { role: currentRole, projectId: null };
   }, []);
 
-  // ✅ Não sequestrar fluxo público de claim/callback
-  const isClaimOrCallbackPath = useCallback(() => {
-    const p = window.location.pathname || '';
-    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
-  }, []);
-
   useEffect(() => {
     const publicPassRoutes =
       /^\/c\/[a-fA-F0-9-]+\/me|^\/me|^\/c\/[a-fA-F0-9-]+\/[a-fA-F0-9-]+|^\/auth\/callback|^\/claim|^\/thanks/;
@@ -112,19 +197,14 @@ export const AuthProvider = ({ children }) => {
     const handleAuthStateChange = async (event, currentSession) => {
       if (!initialized) setInitialized(true);
 
-      // ✅ Quando o refresh do token falha, a sessão pode ficar "zumbi".
-      // Tratamos de forma determinística.
       if (event === 'TOKEN_REFRESH_FAILED') {
-        // Se estiver offline, pode ser falha de rede: não derruba na primeira.
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
 
         let failInfo = { count: 0, firstAt: Date.now() };
         try {
           const raw = sessionStorage.getItem('__auth_refresh_fail');
           if (raw) failInfo = JSON.parse(raw);
-        } catch (_) {
-          // ignore
-        }
+        } catch (_) {}
 
         const now = Date.now();
         const withinWindow = now - (failInfo.firstAt || now) <= REFRESH_FAIL_WINDOW_MS;
@@ -134,11 +214,8 @@ export const AuthProvider = ({ children }) => {
 
         try {
           sessionStorage.setItem('__auth_refresh_fail', JSON.stringify(nextInfo));
-        } catch (_) {
-          // ignore
-        }
+        } catch (_) {}
 
-        // Offline: avisa e deixa o app tentar recuperar quando a rede voltar.
         if (offline && nextInfo.count < REFRESH_FAIL_MAX) {
           toast({
             title: 'Sem conexão',
@@ -150,14 +227,12 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        // Repetiu dentro da janela: encerra.
         if (nextInfo.count >= REFRESH_FAIL_MAX) {
           try { sessionStorage.removeItem('__auth_refresh_fail'); } catch (_) {}
           await forceLogout('Sua sessão expirou. Faça login novamente.');
           return;
         }
 
-        // Primeira falha (provável rede): não derruba ainda.
         toast({
           title: 'Problema ao manter a sessão',
           description: 'Tentando reconectar… se persistir, você será redirecionado para login.',
@@ -175,11 +250,10 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
 
       if (currentUser) {
-        // Reset do contador se a sessão está saudável novamente
         try { sessionStorage.removeItem('__auth_refresh_fail'); } catch (_) {}
+
         const { role: newRole } = await getProfileAndProject(currentUser);
 
-        // ✅ CRÍTICO: se estiver em claim/callback, NÃO redireciona pro dashboard
         if (isClaimOrCallbackPath()) {
           setLoading(false);
           setInitialized(true);
@@ -197,7 +271,6 @@ export const AuthProvider = ({ children }) => {
         setRole(null);
         setProjectId(null);
 
-        // ✅ Se não há usuário, não dependa do evento exato.
         if (!publicPassRoutes.test(location.pathname) && location.pathname !== '/login') {
           navigate('/login', { replace: true });
         }
@@ -252,9 +325,9 @@ export const AuthProvider = ({ children }) => {
 
     if (error) {
       toast({
-        variant: "destructive",
-        title: "Sign up Failed",
-        description: error.message || "Something went wrong",
+        variant: 'destructive',
+        title: 'Sign up Failed',
+        description: error.message || 'Something went wrong',
       });
     }
 
@@ -266,9 +339,9 @@ export const AuthProvider = ({ children }) => {
 
     if (error) {
       toast({
-        variant: "destructive",
-        title: "Sign in Failed",
-        description: error.message || "Something went wrong",
+        variant: 'destructive',
+        title: 'Sign in Failed',
+        description: error.message || 'Something went wrong',
       });
     }
 
