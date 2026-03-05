@@ -523,19 +523,13 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
       transition={{ duration: 0.35 }}
       className="space-y-6"
     >
-      <div className="bg-white p-6 rounded-lg shadow-sm border space-y-6">
+      <div className="bg-white p-6 rounded-lg shadow-xl border space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-gray-800">Notificações Segmentadas</h2>
             <p className="text-gray-600 mt-1">
               Selecione clientes/passes manualmente ou use filtros para segmentar. Depois escreva a mensagem e envie!
             </p>
-            {lastFetchAt && (
-              <p className="text-xs text-gray-500 mt-2">
-                Última atualização: {fmtDateTime(lastFetchAt)}
-                {isLoadingVisits ? " • carregando visitas..." : ""}
-              </p>
-            )}
           </div>
 
           <Button
@@ -652,7 +646,7 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
         </div>
 
         {/* Tabela */}
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-hidden shadow-md">
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-gray-50 border-b">
@@ -746,7 +740,7 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
           </div>
 
           <div className="lg:col-span-4 space-y-3">
-            <div className="p-4 rounded-lg border bg-gray-50">
+            <div className="p-4 rounded-lg border bg-gray-50 shadow-md">
               <div className="text-sm font-semibold text-gray-800 mb-1">Resumo do envio</div>
               <div className="text-sm text-gray-700">
                 Selecionados: <span className="font-semibold">{selectedCount}</span>
@@ -757,7 +751,7 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
             </div>
 
             {/* ✅ Agendamento agora perto do botão */}
-            <div className="p-4 rounded-lg border bg-white space-y-3">
+            <div className="p-4 rounded-lg border bg-white shadow-md space-y-3">
               <div className="flex items-center justify-between">
                 <div className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
                   <Clock className="w-4 h-4" />

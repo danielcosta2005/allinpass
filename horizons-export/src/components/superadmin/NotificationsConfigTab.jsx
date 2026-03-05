@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -211,7 +212,12 @@ export default function NotificationsConfigTab({ projectId }) {
   }
 
   return (
-    <div className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border"
+    >
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
@@ -243,19 +249,19 @@ export default function NotificationsConfigTab({ projectId }) {
 
         {/* Body */}
         {loading ? (
-          <div className="rounded-lg border bg-white p-6 shadow-sm flex items-center gap-3">
+          <div className="rounded-lg border bg-white p-6 shadow-md flex items-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span className="text-gray-700">Carregando configuração...</span>
           </div>
         ) : !projectId ? (
-          <div className="rounded-lg border bg-white p-6 shadow-sm">
+          <div className="rounded-lg border bg-white p-6 shadow-md">
             <p className="text-gray-700">Selecione um projeto para configurar.</p>
           </div>
         ) : (
           <>
             {/* Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Limite mensal</p>
 
@@ -269,7 +275,7 @@ export default function NotificationsConfigTab({ projectId }) {
                 <p className="text-xs text-gray-500 mt-1">Definido por um administrador</p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Notificações Enviadas</p>
                   <Bell className="h-4 w-4 text-gray-400" />
@@ -287,7 +293,7 @@ export default function NotificationsConfigTab({ projectId }) {
                 </p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Total histórico</p>
                   <Gauge className="h-4 w-4 text-gray-400" />
@@ -302,7 +308,7 @@ export default function NotificationsConfigTab({ projectId }) {
             </div>
 
             {/* Form */}
-            <div className="rounded-lg border bg-white p-6 shadow-sm space-y-4">
+            <div className="rounded-lg border bg-white p-6 shadow-md space-y-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Configurar limite</h3>
                 <p className="text-sm text-gray-500">
@@ -358,6 +364,6 @@ export default function NotificationsConfigTab({ projectId }) {
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

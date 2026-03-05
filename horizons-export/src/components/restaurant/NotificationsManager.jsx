@@ -42,7 +42,7 @@ function cn(...classes) {
 // Fallback Card (se você não tiver shadcn Card ainda)
 function Box({ className, children }) {
   return (
-    <div className={cn("rounded-xl border bg-white text-gray-900 shadow", className)}>
+    <div className={cn("rounded-xl border bg-white text-gray-900 shadow-lg", className)}>
       {children}
     </div>
   );
@@ -342,7 +342,12 @@ export default function NotificationsManager({ projectId }) {
   // UI
   // =========================
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="space-y-6"
+    >
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -358,7 +363,8 @@ export default function NotificationsManager({ projectId }) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Box>
+        <motion.div className="h-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+        <Box className="h-full">
           <BoxHeader>
             <BoxTitle>Limite mensal</BoxTitle>
           </BoxHeader>
@@ -378,8 +384,10 @@ export default function NotificationsManager({ projectId }) {
             </div>
           </BoxContent>
         </Box>
+        </motion.div>
 
-        <Box>
+        <motion.div className="h-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+        <Box className="h-full">
           <BoxHeader>
             <BoxTitle>Total enviado (histórico)</BoxTitle>
           </BoxHeader>
@@ -394,8 +402,10 @@ export default function NotificationsManager({ projectId }) {
             )}
           </BoxContent>
         </Box>
+        </motion.div>
 
-        <Box>
+        <motion.div className="h-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        <Box className="h-full">
           <BoxHeader>
             <BoxTitle>Enviado no mês atual</BoxTitle>
           </BoxHeader>
@@ -414,8 +424,10 @@ export default function NotificationsManager({ projectId }) {
             )}
           </BoxContent>
         </Box>
+        </motion.div>
 
-        <Box>
+        <motion.div className="h-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+        <Box className="h-full">
           <BoxHeader>
             <BoxTitle>Restante até o limite</BoxTitle>
           </BoxHeader>
@@ -433,6 +445,7 @@ export default function NotificationsManager({ projectId }) {
             </div>
           </BoxContent>
         </Box>
+        </motion.div>
       </div>
 
       {/* Campaigns table */}
@@ -612,6 +625,6 @@ export default function NotificationsManager({ projectId }) {
           )}
         </BoxContent>
       </Box>
-    </div>
+    </motion.div>
   );
 }

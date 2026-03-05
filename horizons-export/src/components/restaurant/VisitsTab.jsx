@@ -30,14 +30,15 @@ const VisitsTab = ({ projectId }) => {
   }, [fetchVisits]);
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="space-y-6"
+    >
       <h2 className="text-2xl font-bold">Histórico de Visitas</h2>
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
-      >
+      <div className="bg-white rounded-2xl p-6 shadow-xl border border-purple-100">
         {loading ? (
            <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : visits.length > 0 ? (
@@ -72,8 +73,8 @@ const VisitsTab = ({ projectId }) => {
             <p className="mt-2">Nenhuma visita registrada neste projeto ainda.</p>
           </div>
         )}
-      </motion.div>
-    </div>
+      </div>
+    </motion.div>
   );
 };
 

@@ -113,10 +113,7 @@ const RestaurantDashboard = () => {
                     <BarChart3 className="w-4 h-4" />
                     KPIs
                   </TabsTrigger>
-                  <TabsTrigger value="notifications" className="gap-2">
-                    <Bell className="w-4 h-4" />
-                    Notificações
-                  </TabsTrigger>
+                  
                   <TabsTrigger value="scanner" className="gap-2">
                     <ScanLine className="w-4 h-4" />
                     Scanner
@@ -132,6 +129,10 @@ const RestaurantDashboard = () => {
                   <TabsTrigger value="visits" className="gap-2">
                     <History className="w-4 h-4" />
                     Visitas
+                  </TabsTrigger>
+                  <TabsTrigger value="notifications" className="gap-2">
+                    <Bell className="w-4 h-4" />
+                    Notificações
                   </TabsTrigger>
                   <TabsTrigger value="notifications-manager" className="gap-2">
                     <Bell className="w-4 h-4" />
