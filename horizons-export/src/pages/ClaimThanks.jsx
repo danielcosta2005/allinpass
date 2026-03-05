@@ -28,7 +28,7 @@ export default function ClaimThanks() {
 
         <div className="mt-5 space-y-3">
           <p className="text-xs text-gray-500 mt-2">
-            Dica: no iPhone, procure em “Carteira”. No Android, em “Google Wallet”.
+            Dica: no iPhone procure em “Carteira” e no Android em “Google Wallet”. Lembre de habilitar as notificações!
           </p>
         </div>
       </div>
