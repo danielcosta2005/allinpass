@@ -10,6 +10,7 @@ import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsTab from '@/components/restaurant/NotificationsTab';
+import NotificationsManager from '@/components/restaurant/NotificationsManager';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -107,7 +108,7 @@ const RestaurantDashboard = () => {
               transition={{ duration: 0.5 }}
             >
               <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-6 lg:w-auto lg:inline-grid">
+                <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
                   <TabsTrigger value="kpis" className="gap-2">
                     <BarChart3 className="w-4 h-4" />
                     KPIs
@@ -132,6 +133,10 @@ const RestaurantDashboard = () => {
                     <History className="w-4 h-4" />
                     Visitas
                   </TabsTrigger>
+                  <TabsTrigger value="notifications-manager" className="gap-2">
+                    <Bell className="w-4 h-4" />
+                    Gerenciar Notificações
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="kpis">
@@ -151,6 +156,9 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
+                </TabsContent>
+                <TabsContent value="notifications-manager">
+                  <NotificationsManager projectId={projectId} />
                 </TabsContent>
               </Tabs>
             </motion.div>
