@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Bell, Loader2, Send, Filter, RefreshCcw, CheckSquare, Square, Clock } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
@@ -43,6 +43,7 @@ const NotificationsTab = ({ projectId }) => {
   const [isLoadingVisits, setIsLoadingVisits] = useState(false);
 
   const [lastFetchAt, setLastFetchAt] = useState(null);
+  const [notificationsConfig, setNotificationsConfig] = useState(null);
 
   // filtros
   const [searchText, setSearchText] = useState("");
@@ -86,6 +87,11 @@ const NotificationsTab = ({ projectId }) => {
 
   function safeLower(v) {
     return typeof v === "string" ? v.toLowerCase() : "";
+  }
+
+  function safeNumber(n) {
+    const v = Number(n);
+    return Number.isFinite(v) ? v : 0;
   }
 
   function fmtDate(v) {
@@ -262,9 +268,32 @@ const NotificationsTab = ({ projectId }) => {
     }
   }
 
+  async function fetchNotificationsConfig() {
+    if (!supabase || !projectId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("projects_notifications")
+        .select(
+          "project_id, notifications_limit, recent_notifications_sent, notifications_remaining, notifications_exp",
+        )
+        .eq("project_id", projectId)
+        .maybeSingle();
+
+      if (error) throw error;
+      setNotificationsConfig(data || null);
+    } catch (err) {
+      setNotificationsConfig(null);
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar limite de notificacoes",
+        description: err?.message || "Falha inesperada ao buscar notifications_remaining.",
+      });
+    }
+  }
+
   async function refreshAll() {
-    await fetchCustomersWithPass();
-    await fetchVisitsSummary();
+    await Promise.all([fetchCustomersWithPass(), fetchVisitsSummary(), fetchNotificationsConfig()]);
   }
 
   useEffect(() => {
@@ -390,9 +419,16 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
     import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
-  const user_pass_ids = Array.from(selectedCustomerIds)
-    .map((v) => String(v ?? "").trim())
-    .filter(Boolean);
+  const user_pass_ids = allowedRows.map((p) => String(p?.id ?? "").trim()).filter(Boolean);
+
+  if (user_pass_ids.length === 0) {
+    toast({
+      variant: "destructive",
+      title: "Limite excedido",
+      description: "Nao ha passes disponiveis para enfileirar no limite atual.",
+    });
+    return;
+  }
 
   setIsSending(true);
   try {
@@ -427,7 +463,9 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
 
     toast({
       title: sendMode === "schedule" ? "Agendado ✅" : "Enfileirado ✅",
-      description: `Criados ${json?.jobs_created ?? 0} job(s). Ignorados (removed): ${json?.skipped?.removed ?? 0}.`,
+      description: isOverLimit
+        ? `Criados ${json?.jobs_created ?? 0} job(s). Ignorados por limite: ${ignoredCount}.`
+        : `Criados ${json?.jobs_created ?? 0} job(s).`,
     });
 
     if (sendMode === "schedule") setScheduledLocal("");
@@ -446,11 +484,37 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
   // Preview selected
   // =========================
   const selectedCount = selectedCustomerIds.size;
+  const selectedRows = useMemo(
+    () => rows.filter((p) => selectedCustomerIds.has(p.id)),
+    [rows, selectedCustomerIds]
+  );
+
+  const limitInfo = useMemo(() => {
+    const limit = notificationsConfig?.notifications_limit;
+    const isUnlimited = limit === null || limit === undefined;
+    const remainingRaw = notificationsConfig?.notifications_remaining;
+    const remainingFallback = safeNumber(limit) - safeNumber(notificationsConfig?.recent_notifications_sent);
+    const remaining = isUnlimited ? null : Math.max(0, safeNumber(remainingRaw ?? remainingFallback));
+    return { isUnlimited, remaining };
+  }, [notificationsConfig]);
+
+  const allowedCount = useMemo(() => {
+    if (limitInfo.isUnlimited) return selectedCount;
+    return Math.max(0, Math.min(selectedCount, limitInfo.remaining ?? 0));
+  }, [limitInfo, selectedCount]);
+
+  const ignoredCount = Math.max(0, selectedCount - allowedCount);
+  const isOverLimit = ignoredCount > 0;
+  const allowedRows = useMemo(() => selectedRows.slice(0, allowedCount), [selectedRows, allowedCount]);
+  const ignoredRows = useMemo(() => selectedRows.slice(allowedCount), [selectedRows, allowedCount]);
 
   const previewSelected = useMemo(() => {
-    const selected = rows.filter((p) => selectedCustomerIds.has(p.id));
-    return selected.slice(0, 5);
-  }, [rows, selectedCustomerIds]);
+    return allowedRows.slice(0, 5);
+  }, [allowedRows]);
+
+  const previewIgnored = useMemo(() => {
+    return ignoredRows.slice(0, 5);
+  }, [ignoredRows]);
 
   return (
     <motion.div
@@ -771,8 +835,17 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
                     Confirmar {sendMode === "schedule" ? "agendamento" : "envio"}?
                   </DialogTitle>
                   <DialogDescription>
-                    Você está prestes a {sendMode === "schedule" ? "agendar" : "enfileirar"} esta mensagem para{" "}
-                    <b>{selectedCount}</b> passe(s), criando jobs Apple e Google.
+                    {!isOverLimit ? (
+                      <>
+                        Você está prestes a {sendMode === "schedule" ? "agendar" : "enfileirar"} esta mensagem para{" "}
+                        <b>{selectedCount}</b> passe(s), criando jobs Apple e Google.
+                      </>
+                    ) : (
+                      <span className="text-red-600 font-semibold">
+                        Atanção: Voce esta prestes a enfileirar esta mensagem para {selectedCount} passes,{" "}
+                        {ignoredCount} serão ignorados (limite excedido).
+                      </span>
+                    )}
                   </DialogDescription>
                 </DialogHeader>
 
@@ -791,8 +864,8 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
                     </div>
                   )}
 
-                  <div className="p-4 bg-white rounded-md border">
-                    <div className="text-xs text-gray-500 mb-2">Amostra de selecionados (até 5)</div>
+                  <div className="p-4 bg-green-50 rounded-md border border-green-200">
+                    <div className="text-xs text-gray-500 mb-2">Amostra de selecionados</div>
                     <ul className="text-sm text-gray-800 list-disc pl-5 space-y-1">
                       {previewSelected.map((p) => {
                         const meta = p?.metadata ?? null;
@@ -805,11 +878,34 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
                           </li>
                         );
                       })}
-                      {selectedCount > 5 && (
-                        <li className="text-gray-500">… e mais {selectedCount - 5}</li>
+                      {allowedCount > 5 && (
+                        <li className="text-gray-500">... e mais {allowedCount - 5}</li>
                       )}
+                      {allowedCount === 0 && <li className="text-gray-500">Nenhum passe sera enfileirado.</li>}
                     </ul>
                   </div>
+
+                  {isOverLimit && (
+                    <div className="p-4 bg-red-50 rounded-md border border-red-200">
+                      <div className="text-xs text-red-700 mb-2">Amostra de ignorados</div>
+                      <ul className="text-sm text-red-900 list-disc pl-5 space-y-1">
+                        {previewIgnored.map((p) => {
+                          const meta = p?.metadata ?? null;
+                          return (
+                            <li key={p.id}>
+                              {getDisplayName(meta)}{" "}
+                              <span className="text-red-700">
+                                ({getEmail(meta) || "sem email"}) • pass: {p?.pass_type || "-"}
+                              </span>
+                            </li>
+                          );
+                        })}
+                        {ignoredCount > 5 && (
+                          <li className="text-red-700">... e mais {ignoredCount - 5}</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <DialogFooter>
@@ -845,3 +941,5 @@ console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString()
 };
 
 export default NotificationsTab;
+
+
