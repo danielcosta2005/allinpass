@@ -9,8 +9,7 @@ import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
-import NotificationsTab from '@/components/restaurant/NotificationsTab';
-import NotificationsManager from '@/components/restaurant/NotificationsManager';
+import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -134,17 +133,13 @@ const RestaurantDashboard = () => {
                     <Bell className="w-4 h-4" />
                     Notificações
                   </TabsTrigger>
-                  <TabsTrigger value="notifications-manager" className="gap-2">
-                    <Bell className="w-4 h-4" />
-                    Gerenciar Notificações
-                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="kpis">
                   <KPIsTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="notifications">
-                  <NotificationsTab projectId={projectId} />
+                  <NotificationsDashboard projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
@@ -158,9 +153,6 @@ const RestaurantDashboard = () => {
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
                 </TabsContent>
-                <TabsContent value="notifications-manager">
-                  <NotificationsManager projectId={projectId} />
-                </TabsContent>
               </Tabs>
             </motion.div>
           )}
@@ -171,3 +163,4 @@ const RestaurantDashboard = () => {
 };
 
 export default RestaurantDashboard;
+
