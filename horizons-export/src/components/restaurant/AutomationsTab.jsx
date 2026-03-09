@@ -171,9 +171,9 @@ export default function AutomationsTab() {
         <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-xl font-semibold text-gray-900">Automacoes</h3>
+              <h3 className="text-xl font-semibold text-gray-900">Automações</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Crie regras para enviar notificacoes automaticamente com base no comportamento dos passes.
+                Crie regras para enviar notificações automaticamente com base no comportamento dos passes.
               </p>
             </div>
             <Button onClick={startCreate} className="gap-2">
@@ -186,7 +186,7 @@ export default function AutomationsTab() {
         {automations.length === 0 ? (
           <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
             <Bot className="mx-auto h-10 w-10 text-gray-400" />
-            <p className="mt-4 text-base font-medium text-gray-800">Voce nao possui automacoes</p>
+            <p className="mt-4 text-base font-medium text-gray-800">Voce nao possui automações</p>
             <Button onClick={startCreate} className="mt-4 gap-2">
               <Plus className="h-4 w-4" />
               Criar
@@ -241,7 +241,7 @@ export default function AutomationsTab() {
       className="space-y-4"
     >
       <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg">
-        <h3 className="text-xl font-semibold text-gray-900">Nova automacao</h3>
+        <h3 className="text-xl font-semibold text-gray-900">Nova automação</h3>
         <p className="mt-1 text-sm text-gray-600">
           Defina o trigger, ajuste a mensagem e salve para habilitar o envio automatico.
         </p>
@@ -270,7 +270,7 @@ export default function AutomationsTab() {
               <Zap className="h-4 w-4" />
               Trigger
             </div>
-            <p className="mb-3 text-sm text-gray-600">Selecione o evento que inicia a automacao.</p>
+            <p className="mb-3 text-sm text-gray-600">Selecione o evento que inicia a automação.</p>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
@@ -352,9 +352,9 @@ export default function AutomationsTab() {
               <Bot className="h-4 w-4" />
               Action
             </div>
-            <p className="mb-4 text-sm text-gray-600">Salvar automacao para executar a notificacao automaticamente.</p>
+            <p className="mb-4 text-sm text-gray-600">Salvar automação para executar a notificação automaticamente.</p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={saveAutomation}>Salvar automacao</Button>
+              <Button onClick={saveAutomation}>Salvar automação</Button>
               <Button variant="outline" onClick={() => setIsCreating(false)}>
                 Cancelar
               </Button>

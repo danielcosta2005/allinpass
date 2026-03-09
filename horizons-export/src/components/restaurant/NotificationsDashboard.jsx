@@ -14,10 +14,10 @@ export default function NotificationsDashboard({ projectId }) {
       <div className="rounded-xl border bg-white p-4 shadow-sm">
         <div className="flex items-center gap-2">
           <Bell className="h-5 w-5 text-indigo-600" />
-          <h2 className="text-lg font-semibold text-gray-900">Central de Notificacoes</h2>
+          <h2 className="text-lg font-semibold text-gray-900">Central de Notificações</h2>
         </div>
         <p className="mt-1 text-sm text-gray-600">
-          Gerencie envios manuais, acompanhe campanhas e construa automacoes em um unico lugar.
+          Gerencie envios manuais, acompanhe campanhas e construa automações em um unico lugar.
         </p>
       </div>
 
@@ -33,7 +33,7 @@ export default function NotificationsDashboard({ projectId }) {
           </TabsTrigger>
           <TabsTrigger value="automations" className="gap-2">
             <Bell className="h-4 w-4" />
-            Automacoes
+            Automações
           </TabsTrigger>
         </TabsList>
 
