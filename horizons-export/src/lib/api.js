@@ -66,9 +66,80 @@ export async function listLocations(projectId) {
   const { data, error } = await supabase.from('locations').select('*').eq('project_id', projectId).order('label');
   if (error) throw error; return data || [];
 }
+export async function geocodeAddress(address, limit = 5) {
+  const query = String(address ?? '').trim();
+  if (!query) return [];
+  const normalizedLimit = Math.min(Math.max(Number(limit) || 5, 1), 5);
+
+  const { data, error } = await supabase.functions.invoke('geocode-search', {
+    body: { address: query, limit: normalizedLimit },
+  });
+
+  if (error) throw error;
+  if (!data) return [];
+  if (data?.ok === false) {
+    throw new Error(data?.error || 'Falha ao geocodificar endereço.');
+  }
+
+  const rawResults = Array.isArray(data)
+    ? data
+    : Array.isArray(data.results)
+      ? data.results
+      : Array.isArray(data.data)
+        ? data.data
+        : [];
+
+  return rawResults
+    .map((item, index) => {
+      const lat = Number(item?.lat ?? item?.latitude);
+      const lng = Number(item?.lon ?? item?.lng ?? item?.long ?? item?.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+      return {
+        id: String(item?.place_id ?? item?.id ?? `${lat}:${lng}:${index}`),
+        address: String(item?.display_name ?? item?.formatted_address ?? item?.address ?? '').trim(),
+        lat,
+        lng,
+        long: lng,
+        raw: item,
+      };
+    })
+    .filter(Boolean);
+}
 export async function addLocation(projectId, payload) {
-  const { data, error } = await supabase.from('locations')
-    .insert({ project_id: projectId, ...payload }).select('*').single();
+  const lat = payload?.lat == null || payload?.lat === '' ? null : Number(payload.lat);
+  const lngSource = payload?.lng ?? payload?.long;
+  const lng = lngSource == null || lngSource === '' ? null : Number(lngSource);
+  const radius = Number(payload?.radius ?? 100);
+  const coordinates = {
+    lat: Number.isFinite(lat) ? lat : null,
+    radius: Number.isFinite(radius) ? radius : 100,
+  };
+  const longitude = Number.isFinite(lng) ? lng : null;
+
+  let { data, error } = await supabase.from('locations')
+    .insert({
+      project_id: projectId,
+      label: payload?.label ?? null,
+      address: payload?.address ?? null,
+      ...coordinates,
+      lng: longitude,
+    }).select('*').single();
+
+  if (error && /column .*lng.* does not exist/i.test(error.message || '')) {
+    const retry = await supabase.from('locations')
+      .insert({
+        project_id: projectId,
+        label: payload?.label ?? null,
+        address: payload?.address ?? null,
+        ...coordinates,
+        long: longitude,
+      }).select('*').single();
+
+    data = retry.data;
+    error = retry.error;
+  }
+
   if (error) throw error; return data;
 }
 export async function deleteLocation(id) {
