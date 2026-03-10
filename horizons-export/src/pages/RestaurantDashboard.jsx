@@ -9,8 +9,7 @@ import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
-import NotificationsTab from '@/components/restaurant/NotificationsTab';
-import NotificationsManager from '@/components/restaurant/NotificationsManager';
+import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -54,7 +53,7 @@ const RestaurantDashboard = () => {
         <meta name="description" content="Gerencie seu programa de fidelidade" />
       </Helmet>
 
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
+      <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-purple-50 via-white to-indigo-50">
         <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
@@ -91,7 +90,7 @@ const RestaurantDashboard = () => {
           </div>
         </nav>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
           {!projectId ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -113,10 +112,7 @@ const RestaurantDashboard = () => {
                     <BarChart3 className="w-4 h-4" />
                     KPIs
                   </TabsTrigger>
-                  <TabsTrigger value="notifications" className="gap-2">
-                    <Bell className="w-4 h-4" />
-                    Notificações
-                  </TabsTrigger>
+                  
                   <TabsTrigger value="scanner" className="gap-2">
                     <ScanLine className="w-4 h-4" />
                     Scanner
@@ -133,9 +129,9 @@ const RestaurantDashboard = () => {
                     <History className="w-4 h-4" />
                     Visitas
                   </TabsTrigger>
-                  <TabsTrigger value="notifications-manager" className="gap-2">
+                  <TabsTrigger value="notifications" className="gap-2">
                     <Bell className="w-4 h-4" />
-                    Gerenciar Notificações
+                    Notificações
                   </TabsTrigger>
                 </TabsList>
 
@@ -143,7 +139,7 @@ const RestaurantDashboard = () => {
                   <KPIsTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="notifications">
-                  <NotificationsTab projectId={projectId} />
+                  <NotificationsDashboard projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
@@ -157,9 +153,6 @@ const RestaurantDashboard = () => {
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
                 </TabsContent>
-                <TabsContent value="notifications-manager">
-                  <NotificationsManager projectId={projectId} />
-                </TabsContent>
               </Tabs>
             </motion.div>
           )}
@@ -170,3 +163,4 @@ const RestaurantDashboard = () => {
 };
 
 export default RestaurantDashboard;
+
