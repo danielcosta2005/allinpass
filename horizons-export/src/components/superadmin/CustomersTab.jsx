@@ -187,7 +187,12 @@ const CustomersTab = ({ projectId }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="space-y-6"
+    >
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Clientes</h2>
         <Button onClick={handleExport} variant="outline" className="gap-2">
@@ -196,7 +201,7 @@ const CustomersTab = ({ projectId }) => {
         </Button>
       </div>
 
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100">
+      <div className="bg-white rounded-2xl p-6 shadow-xl border border-purple-100">
         <h3 className="text-lg font-bold mb-4">Lista de Clientes do Projeto</h3>
 
         {loading ? (
@@ -261,7 +266,7 @@ const CustomersTab = ({ projectId }) => {
                             className="bg-gray-50"
                           >
                             <td colSpan={6} className="px-6 py-4">
-                              <div className="rounded-xl border bg-white">
+                              <div className="rounded-xl border bg-white shadow-md">
                                 <div className="flex items-center justify-between px-4 py-3 border-b">
                                   <div className="text-sm font-semibold">Passes do cliente</div>
                                   <div className="text-xs text-gray-500">
@@ -346,8 +351,8 @@ const CustomersTab = ({ projectId }) => {
             <p className="mt-2">Nenhum cliente cadastrado neste projeto ainda.</p>
           </div>
         )}
-      </motion.div>
-    </div>
+      </div>
+    </motion.div>
   );
 };
 

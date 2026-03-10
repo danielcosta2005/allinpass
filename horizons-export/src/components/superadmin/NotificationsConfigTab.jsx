@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabaseClient";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -19,14 +20,9 @@ function toLocalDateTimeLabel(iso) {
   return d.toLocaleString();
 }
 
-// Próximo "início de mês + 1 mês" (expira no início do próximo mês)
-function computeNextMonthExpIso() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-11
-  // início do próximo mês
-  const firstOfNextMonth = new Date(year, month + 1, 1, 0, 0, 0, 0);
-  return firstOfNextMonth.toISOString();
+//Expira 30 dias depois do save
+function computeRollingExpIso(days = 30) {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 export default function NotificationsConfigTab({ projectId }) {
@@ -159,8 +155,20 @@ export default function NotificationsConfigTab({ projectId }) {
       newLimit = n;
     }
 
-    // Regra do requisito: ao mudar limit, atualiza notifications_exp
-    const newExpIso = computeNextMonthExpIso();
+    const currentLimit = row?.notifications_limit ?? null;
+    const hasLimitChanged = currentLimit !== newLimit;
+
+    if (!hasLimitChanged) {
+      toast({
+        title: "Sem alterações",
+        description:
+          "Nnhuma mudança feita, altere o limite mensal antes de clicar em salvar",
+      });
+      return;
+    }
+
+    // expira 30 dias depois
+    const newExpIso = computeRollingExpIso(30);
 
     setSaving(true);
     try {
@@ -168,6 +176,9 @@ export default function NotificationsConfigTab({ projectId }) {
         project_id: projectId,
         notifications_limit: newLimit,
         notifications_exp: newExpIso,
+
+        // isso garante que "reiniciou a janela" de verdade
+        recent_notifications_sent: 0,
       };
 
       const { data, error } = await supabase
@@ -182,9 +193,12 @@ export default function NotificationsConfigTab({ projectId }) {
       setIsUnlimited(data.notifications_limit == null);
       setLimitValue(data.notifications_limit == null ? "" : String(data.notifications_limit));
 
+      // ✅ força UI a buscar do banco (útil se houver view/trigger/coluna gerada)
+      await fetchConfig();
+
       toast({
         title: "Configuração salva",
-        description: "Limite atualizado e data de expiração reiniciada.",
+        description: "Limite atualizado e janela reiniciada (contagem mensal zerada).",
       });
     } catch (err) {
       toast({
@@ -198,7 +212,12 @@ export default function NotificationsConfigTab({ projectId }) {
   }
 
   return (
-    <div className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border">
+    <motion.div
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border"
+    >
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
@@ -230,19 +249,19 @@ export default function NotificationsConfigTab({ projectId }) {
 
         {/* Body */}
         {loading ? (
-          <div className="rounded-lg border bg-white p-6 shadow-sm flex items-center gap-3">
+          <div className="rounded-lg border bg-white p-6 shadow-md flex items-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin" />
             <span className="text-gray-700">Carregando configuração...</span>
           </div>
         ) : !projectId ? (
-          <div className="rounded-lg border bg-white p-6 shadow-sm">
+          <div className="rounded-lg border bg-white p-6 shadow-md">
             <p className="text-gray-700">Selecione um projeto para configurar.</p>
           </div>
         ) : (
           <>
             {/* Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Limite mensal</p>
 
@@ -256,7 +275,7 @@ export default function NotificationsConfigTab({ projectId }) {
                 <p className="text-xs text-gray-500 mt-1">Definido por um administrador</p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Notificações Enviadas</p>
                   <Bell className="h-4 w-4 text-gray-400" />
@@ -274,7 +293,7 @@ export default function NotificationsConfigTab({ projectId }) {
                 </p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-sm">
+              <div className="rounded-lg border bg-white p-5 shadow-md">
                 <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-500">Total histórico</p>
                   <Gauge className="h-4 w-4 text-gray-400" />
@@ -289,7 +308,7 @@ export default function NotificationsConfigTab({ projectId }) {
             </div>
 
             {/* Form */}
-            <div className="rounded-lg border bg-white p-6 shadow-sm space-y-4">
+            <div className="rounded-lg border bg-white p-6 shadow-md space-y-4">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">Configurar limite</h3>
                 <p className="text-sm text-gray-500">
@@ -345,6 +364,6 @@ export default function NotificationsConfigTab({ projectId }) {
           </>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
