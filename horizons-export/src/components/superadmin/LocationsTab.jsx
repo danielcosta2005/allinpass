@@ -341,9 +341,9 @@ const LocationsTab = ({ projectId }) => {
                     <p className="text-sm text-gray-600">
                       {shortAddress || 'Sem endereço salvo'}
                     </p>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-gray-400 text-xs mt-2">
                       {(Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng ?? location.long)))
-                        ? `${location.lat}, ${location.lng ?? location.long}`
+                        ? `( ${location.lat}, ${location.lng ?? location.long} )`
                         : 'Coordenadas não definidas'}
                     </p>
                   </div>
