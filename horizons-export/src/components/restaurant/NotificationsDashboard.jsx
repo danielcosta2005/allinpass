@@ -46,7 +46,7 @@ export default function NotificationsDashboard({ projectId }) {
         </TabsContent>
 
         <TabsContent value="automations">
-          <AutomationsTab />
+          <AutomationsTab projectId={projectId} />
         </TabsContent>
       </Tabs>
     </div>

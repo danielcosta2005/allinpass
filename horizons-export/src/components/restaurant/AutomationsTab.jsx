@@ -1,10 +1,12 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { motion } from "framer-motion";
-import { Bot, Plus, Sparkles, Zap } from "lucide-react";
+import { Bot, Loader2, Plus, Sparkles, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
 
 const TRIGGER_OPTIONS = [
   {
@@ -49,13 +51,14 @@ function triggerSummary(triggerId, value) {
   return `Quando o cliente ficar ${value} ${option.unit} sem visitar`;
 }
 
-function Toggle({ checked, onChange }) {
+function Toggle({ checked, onChange, disabled }) {
   return (
     <button
       type="button"
       onClick={onChange}
+      disabled={disabled}
       aria-pressed={checked}
-      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
         checked ? "bg-indigo-500" : "bg-gray-300"
       }`}
     >
@@ -90,15 +93,74 @@ function FlowConnector() {
   );
 }
 
-export default function AutomationsTab() {
+export default function AutomationsTab({ projectId }) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const functionsUrl =
+    import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
+    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+
+  const supabase = useMemo(() => {
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: true, autoRefreshToken: true },
+    });
+  }, [supabaseUrl, supabaseAnonKey]);
+
+  const { toast } = useToast();
+
   const [automations, setAutomations] = useState([]);
+  const [isLoadingAutomations, setIsLoadingAutomations] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [activeBox, setActiveBox] = useState("trigger");
+  const [updatingStatusId, setUpdatingStatusId] = useState(null);
   const [triggerId, setTriggerId] = useState(TRIGGER_OPTIONS[0].id);
   const [triggerValue, setTriggerValue] = useState(TRIGGER_OPTIONS[0].defaultValue);
   const [message, setMessage] = useState(buildSuggestedMessage(TRIGGER_OPTIONS[0].id, TRIGGER_OPTIONS[0].defaultValue));
 
   const selectedTrigger = useMemo(() => optionById(triggerId), [triggerId]);
+
+  async function getAuthHeader() {
+    try {
+      if (!supabase) return `Bearer ${supabaseAnonKey}`;
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token;
+      return token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
+    } catch {
+      return `Bearer ${supabaseAnonKey}`;
+    }
+  }
+
+  async function fetchAutomations() {
+    if (!supabase || !projectId) return;
+
+    setIsLoadingAutomations(true);
+    try {
+      const { data, error } = await supabase
+        .from("automations")
+        .select("id, project_id, type, quantity, message, status, created_at, updated_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setAutomations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar automacoes",
+        description: err?.message || "Falha ao buscar automacoes no Supabase.",
+      });
+      setAutomations([]);
+    } finally {
+      setIsLoadingAutomations(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchAutomations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, supabase]);
 
   function startCreate() {
     const nextOption = TRIGGER_OPTIONS[0];
@@ -134,30 +196,91 @@ export default function AutomationsTab() {
     }
   }
 
-  function saveAutomation() {
+  async function saveAutomation() {
+    if (!projectId) {
+      toast({
+        variant: "destructive",
+        title: "Projeto invalido",
+        description: "Nao foi possivel identificar o project_id.",
+      });
+      return;
+    }
+
     const finalMessage = message.trim() || buildSuggestedMessage(triggerId, triggerValue);
+    setIsSaving(true);
 
-    const newAutomation = {
-      id: `automation-${Date.now()}`,
-      triggerId,
-      triggerLabel: selectedTrigger.label,
-      triggerValue,
-      message: finalMessage,
-      active: true,
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const authHeader = await getAuthHeader();
+      const payload = {
+        project_id: projectId,
+        type: triggerId,
+        quantity: Number(triggerValue),
+        message: finalMessage,
+        status: "on",
+      };
 
-    setAutomations((prev) => [newAutomation, ...prev]);
-    setIsCreating(false);
+      const res = await fetch(`${functionsUrl}/create-automation`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authHeader,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.success || !json?.automation) {
+        throw new Error(json?.error || json?.details || "Falha ao criar automacao.");
+      }
+
+      setAutomations((prev) => [json.automation, ...prev]);
+      setIsCreating(false);
+      toast({
+        title: "Automacao criada",
+        description: "A automacao foi salva com status on.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao criar automacao",
+        description: err?.message || "Erro inesperado ao chamar create-automation.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  function toggleAutomation(automationId) {
-    setAutomations((prev) =>
-      prev.map((item) => {
-        if (item.id !== automationId) return item;
-        return { ...item, active: !item.active };
-      }),
-    );
+  async function toggleAutomation(automationId) {
+    if (!supabase || !projectId) return;
+    const target = automations.find((item) => item.id === automationId);
+    if (!target) return;
+
+    const nextStatus = target.status === "on" ? "off" : "on";
+    setUpdatingStatusId(automationId);
+
+    try {
+      const { data, error } = await supabase
+        .from("automations")
+        .update({ status: nextStatus, updated_at: new Date().toISOString() })
+        .eq("id", automationId)
+        .eq("project_id", projectId)
+        .select("id, project_id, type, quantity, message, status, created_at, updated_at")
+        .single();
+
+      if (error) throw error;
+
+      setAutomations((prev) =>
+        prev.map((item) => (item.id === automationId ? data : item)),
+      );
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao atualizar status",
+        description: err?.message || "Nao foi possivel alterar o status da automacao.",
+      });
+    } finally {
+      setUpdatingStatusId(null);
+    }
   }
 
   if (!isCreating) {
@@ -176,18 +299,23 @@ export default function AutomationsTab() {
                 Crie regras para enviar notificações automaticamente com base no comportamento dos passes.
               </p>
             </div>
-            <Button onClick={startCreate} className="gap-2">
+            <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
               <Plus className="h-4 w-4" />
               Criar
             </Button>
           </div>
         </div>
 
-        {automations.length === 0 ? (
+        {isLoadingAutomations ? (
+          <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+            <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
+            <p className="mt-3 text-sm text-gray-600">Carregando automações...</p>
+          </div>
+        ) : automations.length === 0 ? (
           <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
             <Bot className="mx-auto h-10 w-10 text-gray-400" />
             <p className="mt-4 text-base font-medium text-gray-800">Voce nao possui automações</p>
-            <Button onClick={startCreate} className="mt-4 gap-2">
+            <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
               <Plus className="h-4 w-4" />
               Criar
             </Button>
@@ -206,21 +334,25 @@ export default function AutomationsTab() {
                 {automations.map((automation) => (
                   <tr key={automation.id} className="border-b last:border-b-0">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{automation.triggerLabel}</p>
+                      <p className="font-medium text-gray-900">{optionById(automation.type).label}</p>
                       <p className="text-xs text-gray-500">
-                        {triggerSummary(automation.triggerId, automation.triggerValue)}
+                        {triggerSummary(automation.type, automation.quantity)}
                       </p>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{automation.message}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <Toggle
-                          checked={automation.active}
+                          checked={automation.status === "on"}
+                          disabled={updatingStatusId === automation.id}
                           onChange={() => toggleAutomation(automation.id)}
                         />
                         <span className="text-xs font-medium text-gray-600">
-                          {automation.active ? "On" : "Off"}
+                          {automation.status === "on" ? "On" : "Off"}
                         </span>
+                        {updatingStatusId === automation.id && (
+                          <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -354,8 +486,11 @@ export default function AutomationsTab() {
             </div>
             <p className="mb-4 text-sm text-gray-600">Salvar automação para executar a notificação automaticamente.</p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={saveAutomation}>Salvar automação</Button>
-              <Button variant="outline" onClick={() => setIsCreating(false)}>
+              <Button onClick={saveAutomation} disabled={isSaving}>
+                {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Salvar automação
+              </Button>
+              <Button variant="outline" onClick={() => setIsCreating(false)} disabled={isSaving}>
                 Cancelar
               </Button>
             </div>
