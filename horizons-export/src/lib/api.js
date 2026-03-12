@@ -11,19 +11,19 @@ export async function getProjectDetails(id) {
   if (error) throw error; return data;
 }
 export async function createProject(payload) {
-    const { data, error: invokeError } = await supabase.functions.invoke('create-project', {
-        body: payload,
-    });
+  const { data, error: invokeError } = await supabase.functions.invoke('create-project', {
+    body: payload,
+  });
 
-    if (invokeError) {
-        throw new Error(invokeError.message);
-    }
+  if (invokeError) {
+    throw new Error(invokeError.message);
+  }
 
-    if (data?.error) {
-        throw new Error(data.error);
-    }
-    
-    return data;
+  if (data?.error) {
+    throw new Error(data.error);
+  }
+
+  return data;
 }
 export async function updateProject(id, payload) {
   const { data, error } = await supabase.from('projects').update(payload).eq('id', id).select('*').single();
@@ -44,13 +44,13 @@ export async function uploadProjectLogo(file) {
 
 /* ---------- Passes ---------- */
 export async function getPassDetailsBySlug(slug) {
-    const { data, error } = await supabase
-        .from('v_passes')
-        .select('*')
-        .eq('serial_number', slug)
-        .single();
-    if (error) throw error;
-    return data;
+  const { data, error } = await supabase
+    .from('v_passes')
+    .select('*')
+    .eq('serial_number', slug)
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 
@@ -161,12 +161,12 @@ export async function listVisits(projectId) {
 
 /* ---------- Scanner & KPIs ---------- */
 export async function scannerVisit(projectId, qrData) {
-    const { data, error } = await supabase.functions.invoke('scanner-visit', {
-        body: { projectId, qrData }
-    });
-    if (error) throw new Error(error.message);
-    if (data.error) throw new Error(data.error);
-    return data;
+  const { data, error } = await supabase.functions.invoke('scanner-visit', {
+    body: { projectId, qrData }
+  });
+  if (error) throw new Error(error.message);
+  if (data.error) throw new Error(data.error);
+  return data;
 }
 export async function getProjectKpis(projectId) {
   const { data, error } = await supabase.rpc('fn_get_project_kpis', { p_project_id: projectId }).single();
@@ -198,7 +198,7 @@ export async function getProjectAnalytics(projectId, startDate, endDate) {
 
 /* ---------- Wallet Config & Templates ---------- */
 export async function listWalletTemplates() {
-    const { data, error } = await supabase.from('wallet_templates').select('*');
-    if (error) throw error;
-    return data || [];
+  const { data, error } = await supabase.from('wallet_templates').select('*');
+  if (error) throw error;
+  return data || [];
 }

@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Apple, Smartphone, Upload, Link as LinkIcon, Save, Settings } from 'lucide-react';
+import { Loader2, Apple, Smartphone, Upload, Link as LinkIcon, Save, Settings, QrCode, Download } from 'lucide-react';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
 import { QRCode } from 'react-qrcode-logo';
 
@@ -41,6 +41,56 @@ function formatExpPreview(v) {
   } catch {
     return "XX/XX";
   }
+}
+
+const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+
+function getAllowedQrHosts() {
+  const rawHosts = import.meta.env.VITE_QR_ALLOWED_HOSTS || "";
+  return new Set(
+    rawHosts
+      .split(",")
+      .map((host) => host.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function isSafeQrUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return false;
+
+  try {
+    const parsed = new URL(rawUrl);
+    const hostname = parsed.hostname.toLowerCase();
+    const isHttps = parsed.protocol === "https:";
+    const isLocalHttp = parsed.protocol === "http:" && LOCAL_DEV_HOSTS.has(hostname);
+
+    if (!isHttps && !isLocalHttp) return false;
+
+    const allowedHosts = getAllowedQrHosts();
+    if (allowedHosts.size > 0) {
+      return allowedHosts.has(hostname);
+    }
+
+    if (typeof window === "undefined") return isHttps || isLocalHttp;
+
+    return parsed.origin === window.location.origin || LOCAL_DEV_HOSTS.has(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeFilenamePart(value) {
+  const normalized = String(value ?? "pass")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const safe = normalized
+    .replace(/[^a-zA-Z0-9-_]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 60);
+
+  return safe || "pass";
 }
 
 const PassPreview = ({ formState, qrPreviewUrl }) => {
@@ -166,84 +216,193 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
   );
 };
 
-const PassesList = ({ passes, loading, onAction }) => (
-  <div className="rounded-lg border">
-    <table className="w-full text-sm">
-      <thead className="bg-gray-50 dark:bg-gray-900/50">
-        <tr>
-          <th className="p-3 text-left font-semibold">Título</th>
-          <th className="p-3 text-left font-semibold">Tipo</th>
-          <th className="p-3 text-left font-semibold">Expira</th>
-          <th className="p-3 text-left font-semibold">Status</th>
-          <th className="p-3 text-center font-semibold">Ações</th>
-        </tr>
-      </thead>
-      <tbody>
-        {loading && (
-          <tr>
-            <td colSpan="5" className="text-center p-8">
-              <Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" />
-            </td>
-          </tr>
-        )}
-        {!loading && passes.length === 0 && (
-          <tr>
-            <td colSpan="5" className="text-center p-8 text-gray-500">
-              Nenhum passe emitido para este projeto.
-            </td>
-          </tr>
-        )}
-        {!loading &&
-          passes.map((pass) => (
-            <tr
-              key={pass.id}
-              className="border-t dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50"
-            >
-              <td className="p-3 font-medium">{pass.title}</td>
-              <td className="p-3">{pass.type}</td>
-              <td className="p-3">
-                {pass.exp_date ? new Date(pass.exp_date).toLocaleDateString() : "-"}
-              </td>
-              <td className="p-3">
-                <span className="bg-green-100 text-green-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
-                  {pass.status || 'Ativo'}
-                </span>
-              </td>
-              <td className="p-3 flex justify-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  // ✅ ESSENCIAL: copiar o link público (qr_url = claim link)
-                  onClick={() => onAction('copy', pass.qr_url)}
-                  title="Copiar Link Único"
-                >
-                  <LinkIcon className="w-4 h-4" />
-                </Button>
+const PassesList = ({ passes, loading, onAction }) => {
+  const { toast } = useToast();
+  const [expandedPassId, setExpandedPassId] = useState(null);
+  const qrContainerRefs = useRef({});
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onAction('apple', pass.apple_url)}
-                  title="Abrir Link Apple"
-                >
-                  <Apple className="w-4 h-4" />
-                </Button>
+  const handleToggleQr = (passId) => {
+    setExpandedPassId((current) => (current === passId ? null : passId));
+  };
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onAction('google', pass.google_jwt)}
-                  title="Abrir Link Google"
-                >
-                  <Smartphone className="w-4 h-4" />
-                </Button>
+  const handleDownloadQr = (pass) => {
+    if (!isSafeQrUrl(pass?.qr_url)) {
+      toast({
+        title: "URL de QR bloqueada",
+        description: "Este link não está na allowlist de hosts permitidos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const container = qrContainerRefs.current[pass.id];
+    const canvas = container?.querySelector("canvas");
+
+    if (!canvas) {
+      toast({
+        title: "QR code indisponível",
+        description: "Não foi possível localizar o canvas para download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const fileName = `${sanitizeFilenamePart(pass.title)}-${sanitizeFilenamePart(pass.id)}.png`;
+
+    const triggerDownload = (href) => {
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast({ title: "QR code baixado com sucesso." });
+    };
+
+    if (typeof canvas.toBlob === "function") {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          toast({
+            title: "Falha no download",
+            description: "Não foi possível exportar o QR code em PNG.",
+            variant: "destructive",
+          });
+          return;
+        }
+        const objectUrl = URL.createObjectURL(blob);
+        triggerDownload(objectUrl);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      }, "image/png");
+      return;
+    }
+
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      triggerDownload(dataUrl);
+    } catch (error) {
+      toast({
+        title: "Falha no download",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  return (
+    <div className="rounded-lg border">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 dark:bg-gray-900/50">
+          <tr>
+            <th className="p-3 text-left font-semibold">Título</th>
+            <th className="p-3 text-left font-semibold">Tipo</th>
+            <th className="p-3 text-left font-semibold">Status</th>
+            <th className="p-3 text-center font-semibold">Ações</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading && (
+            <tr>
+              <td colSpan="4" className="text-center p-8">
+                <Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" />
               </td>
             </tr>
-          ))}
-      </tbody>
-    </table>
-  </div>
-);
+          )}
+          {!loading && passes.length === 0 && (
+            <tr>
+              <td colSpan="4" className="text-center p-8 text-gray-500">
+                Nenhum passe emitido para este projeto.
+              </td>
+            </tr>
+          )}
+          {!loading &&
+            passes.map((pass) => {
+              const isExpanded = expandedPassId === pass.id;
+              const hasQr = Boolean(pass.qr_url);
+              const isSafeQr = hasQr && isSafeQrUrl(pass.qr_url);
+              const canUseQr = hasQr && isSafeQr;
+              const copyButtonTitle = !hasQr
+                ? "Link indisponível"
+                : isSafeQr
+                  ? "Copiar Link Único"
+                  : "Link bloqueado por política de segurança";
+              const qrButtonTitle = !hasQr
+                ? "QR code indisponível"
+                : isSafeQr
+                  ? "Revelar QR Code"
+                  : "QR bloqueado por política de segurança";
+
+              return (
+                <React.Fragment key={pass.id}>
+                  <tr className="border-t dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50">
+                    <td className="p-3 font-medium">{pass.title}</td>
+                    <td className="p-3">{pass.type}</td>
+                    <td className="p-3">
+                      <span className="bg-green-100 text-green-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">
+                        {pass.status || 'Ativo'}
+                      </span>
+                    </td>
+                    <td className="p-3 flex justify-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        // ✅ ESSENCIAL: copiar o link público (qr_url = claim link)
+                        onClick={() => onAction('copy', pass.qr_url)}
+                        title={copyButtonTitle}
+                        disabled={!canUseQr}
+                      >
+                        <LinkIcon className="w-4 h-4" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleQr(pass.id)}
+                        title={qrButtonTitle}
+                        disabled={!canUseQr}
+                      >
+                        <QrCode className="w-4 h-4" />
+                      </Button>
+                    </td>
+                  </tr>
+
+                  {isExpanded && (
+                    <tr className="border-t dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
+                      <td colSpan="4" className="p-4">
+                        <div className="flex justify-center">
+                          {isSafeQr ? (
+                            <div
+                              ref={(node) => {
+                                if (node) qrContainerRefs.current[pass.id] = node;
+                                else delete qrContainerRefs.current[pass.id];
+                              }}
+                              className="flex flex-col items-center gap-3"
+                            >
+                              <div className="bg-white p-3 rounded-md border">
+                                <QRCode value={pass.qr_url} size={140} quietZone={0} bgColor="transparent" />
+                              </div>
+
+                              <Button variant="outline" size="sm" onClick={() => handleDownloadQr(pass)}>
+                                <Download className="w-4 h-4 mr-2" />
+                                Baixar QR Code
+                              </Button>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-500">
+                              QR code indisponível ou bloqueado por política de segurança.
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
 
 const WalletConfigTab = ({ projectId, onBack }) => {
   const { toast } = useToast();
