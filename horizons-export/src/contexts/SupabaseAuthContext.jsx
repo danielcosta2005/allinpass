@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
+const VALID_ROLES = new Set(['superadmin', 'establishment', 'customer']);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -167,12 +168,17 @@ export const AuthProvider = ({ children }) => {
       .single();
 
     if (profileError || !profile) {
-      setRole(null);
+      setRole('unauthorized');
       setProjectId(null);
-      return { role: null, projectId: null };
+      return { role: 'unauthorized', projectId: null };
     }
 
     const currentRole = profile.role;
+    if (!VALID_ROLES.has(currentRole)) {
+      setRole('unauthorized');
+      setProjectId(null);
+      return { role: 'unauthorized', projectId: null };
+    }
     setRole(currentRole);
 
     if (currentRole === 'establishment') {
@@ -254,6 +260,11 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
 
       if (currentUser) {
+        const shouldBlockUiForRoleSync = event === 'SIGNED_IN' || event === 'INITIAL_SESSION';
+        if (shouldBlockUiForRoleSync) {
+          setLoading(true);
+        }
+
         try {
           sessionStorage.removeItem('__auth_refresh_fail');
         } catch (_) {}
@@ -267,7 +278,13 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (event === 'SIGNED_IN') {
+        if (newRole === 'unauthorized') {
+          const shouldRedirectToUnauthorized =
+            currentPath === '/login' || isAuthRequiredPath(currentPath) || event === 'SIGNED_IN';
+          if (shouldRedirectToUnauthorized) {
+            navigate('/nao-autorizado', { replace: true });
+          }
+        } else if (event === 'SIGNED_IN') {
           if (newRole === 'superadmin') {
             navigate('/admin', { replace: true });
           } else if (newRole === 'establishment' || newRole === 'customer') {

@@ -1,8 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import { Helmet } from 'react-helmet';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 export default function Unauthorized() {
+  const navigate = useNavigate();
+  const { user, role, loading, initialized } = useAuth();
+
+  useEffect(() => {
+    if (loading || !initialized || !user) return;
+    if (role === 'superadmin') navigate('/admin', { replace: true });
+    if (role === 'establishment' || role === 'customer') navigate('/org', { replace: true });
+  }, [loading, initialized, user, role, navigate]);
+
   return (
     <>
       <Helmet>

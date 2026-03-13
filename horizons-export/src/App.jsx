@@ -23,7 +23,7 @@ import ClaimCallback from '@/pages/ClaimCallback';
 const AuthRedirect = () => {
   const { role, loading, initialized, user } = useAuth();
 
-  if (loading && !initialized) {
+  if (loading || !initialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -33,6 +33,18 @@ const AuthRedirect = () => {
 
   if (!user && !loading) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (!role) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (role === 'unauthorized') {
+    return <Navigate to="/nao-autorizado" replace />;
   }
 
   if (role === 'superadmin') {
