@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { LogOut, Users, MapPin, Wallet, Settings, LayoutDashboard, Bell, Loader2 } from 'lucide-react';
@@ -20,31 +20,58 @@ const SuperadminDashboard = () => {
   const [signingOut, setSigningOut] = useState(false);
 
   const [selectedProject, setSelectedProject] = useState(() => {
-    const savedProject = sessionStorage.getItem('superadmin_selected_project');
-    return savedProject ? JSON.parse(savedProject) : null;
+    try {
+      const savedProject = sessionStorage.getItem('superadmin_selected_project');
+      return savedProject ? JSON.parse(savedProject) : null;
+    } catch (_) {
+      sessionStorage.removeItem('superadmin_selected_project');
+      return null;
+    }
   });
 
   const [activeTab, setActiveTab] = useState(() => {
-    return sessionStorage.getItem('superadmin_active_tab') || 'dashboard';
+    try {
+      return sessionStorage.getItem('superadmin_active_tab') || 'dashboard';
+    } catch (_) {
+      return 'dashboard';
+    }
   });
 
   const handleTabChange = (value) => {
     setActiveTab(value);
-    sessionStorage.setItem('superadmin_active_tab', value);
+    try {
+      sessionStorage.setItem('superadmin_active_tab', value);
+    } catch (_) {}
   };
 
   const handleSelectProject = (project) => {
     setSelectedProject(project);
     setActiveTab('wallet');
 
-    sessionStorage.setItem('superadmin_selected_project', JSON.stringify(project));
-    sessionStorage.setItem('superadmin_active_tab', 'wallet');
+    try {
+      sessionStorage.setItem('superadmin_selected_project', JSON.stringify(project));
+      sessionStorage.setItem('superadmin_active_tab', 'wallet');
+    } catch (_) {}
   };
 
   const handleBackToProjects = () => {
     setSelectedProject(null);
     setActiveTab('projects');
+    try {
+      sessionStorage.removeItem('superadmin_selected_project');
+      sessionStorage.setItem('superadmin_active_tab', 'projects');
+    } catch (_) {}
   };
+
+  useEffect(() => {
+    const projectDependentTabs = new Set(['wallet', 'notifications', 'members', 'locations', 'customers']);
+    if (!selectedProject && projectDependentTabs.has(activeTab)) {
+      setActiveTab('projects');
+      try {
+        sessionStorage.setItem('superadmin_active_tab', 'projects');
+      } catch (_) {}
+    }
+  }, [selectedProject, activeTab]);
 
   async function handleSignOut() {
     if (signingOut) return;

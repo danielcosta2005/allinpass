@@ -22,11 +22,7 @@ const ProtectedLayout = () => {
 
   // Se existe user mas o role ainda não foi carregado, segura um pouco para não dar "nao-autorizado" indevido
   if (!role) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-white to-indigo-50">
-        <Loader2 className="animate-spin rounded-full h-12 w-12 text-primary" />
-      </div>
-    );
+    return <Navigate to="/nao-autorizado" replace />;
   }
 
   const path = location.pathname;

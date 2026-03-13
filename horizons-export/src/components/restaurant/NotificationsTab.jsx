@@ -1,12 +1,12 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Bell, Loader2, Send, Filter, RefreshCcw, CheckSquare, Square, Clock } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 import {
   Dialog,
@@ -19,18 +19,7 @@ import {
 } from "@/components/ui/dialog";
 
 const NotificationsTab = ({ projectId }) => {
-  // =========================
-  // Supabase client (front)
-  // =========================
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  const supabase = useMemo(() => {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: true, autoRefreshToken: true },
-    });
-  }, [supabaseUrl, supabaseAnonKey]);
 
   const { toast } = useToast();
 
@@ -160,12 +149,12 @@ const NotificationsTab = ({ projectId }) => {
 
   async function getAuthHeader() {
     try {
-      if (!supabase) return `Bearer ${supabaseAnonKey}`;
+      if (!supabaseAnonKey) return '';
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
       return token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
     } catch {
-      return `Bearer ${supabaseAnonKey}`;
+      return supabaseAnonKey ? `Bearer ${supabaseAnonKey}` : '';
     }
   }
 
@@ -173,7 +162,7 @@ const NotificationsTab = ({ projectId }) => {
   // Data loading
   // =========================
   async function fetchCustomersWithPass() {
-    if (!supabase) {
+    if (!supabaseAnonKey) {
       toast({
         variant: "destructive",
         title: "Supabase não configurado",
@@ -228,7 +217,7 @@ const NotificationsTab = ({ projectId }) => {
   }
 
   async function fetchVisitsSummary() {
-    if (!supabase) return;
+    if (!supabaseAnonKey) return;
     if (!projectId) return;
 
     const VISITS_LOOKBACK_DAYS = 365;
@@ -269,7 +258,7 @@ const NotificationsTab = ({ projectId }) => {
   }
 
   async function fetchNotificationsConfig() {
-    if (!supabase || !projectId) return;
+    if (!supabaseAnonKey || !projectId) return;
 
     try {
       const { data, error } = await supabase
@@ -414,7 +403,6 @@ const NotificationsTab = ({ projectId }) => {
 // =========================
 async function handleEnqueue() {
   // validações...
-console.log("✅ HANDLE_ENQUEUE NOVO RODANDO - build:", new Date().toISOString());
   const functionsUrl =
     import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;

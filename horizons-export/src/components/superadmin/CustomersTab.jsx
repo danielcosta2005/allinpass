@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Users, Download, Loader2, Star, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import { listCustomers } from "@/lib/api";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabaseClient";
 
 const CustomersTab = ({ projectId }) => {
   const [customers, setCustomers] = useState([]);
@@ -17,16 +17,7 @@ const CustomersTab = ({ projectId }) => {
   const [passesByCustomerId, setPassesByCustomerId] = useState({});
   const [passesLoadingByCustomerId, setPassesLoadingByCustomerId] = useState({});
 
-  // =========================
-  // Supabase client (front)
-  // =========================
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-  const supabase = useMemo(() => {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey);
-  }, [supabaseUrl, supabaseAnonKey]);
 
   const fetchCustomers = useCallback(async () => {
     if (!projectId) return;
@@ -82,7 +73,7 @@ const CustomersTab = ({ projectId }) => {
       // já carregado
       if (passesByCustomerId[customer.id]) return;
 
-      if (!supabase) {
+      if (!supabaseAnonKey) {
         toast({
           title: "Supabase não configurado",
           description: "Faltam VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY para carregar os passes.",
@@ -182,7 +173,8 @@ const CustomersTab = ({ projectId }) => {
     link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
+    URL.revokeObjectURL(url);
     toast({ title: "Exportação iniciada!" });
   };
 

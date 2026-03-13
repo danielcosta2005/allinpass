@@ -59,7 +59,7 @@ import React, { useEffect, useState } from 'react';
           return;
         }
 
-        const redirectTo = `https://carteira49.com/auth/callback?projectId=${encodeURIComponent(projectId)}`;
+        const redirectTo = `${window.location.origin}/auth/callback?projectId=${encodeURIComponent(projectId)}`;
 
         const { error: oauthError } = await supabase.auth.signInWithOAuth({
           provider: 'google',

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import { motion } from "framer-motion";
 import { Bot, Loader2, Plus, Sparkles, Zap } from "lucide-react";
 
@@ -7,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabaseClient";
 
 const TRIGGER_OPTIONS = [
   {
@@ -94,18 +94,10 @@ function FlowConnector() {
 }
 
 export default function AutomationsTab({ projectId }) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   const functionsUrl =
     import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
-
-  const supabase = useMemo(() => {
-    if (!supabaseUrl || !supabaseAnonKey) return null;
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: true, autoRefreshToken: true },
-    });
-  }, [supabaseUrl, supabaseAnonKey]);
 
   const { toast } = useToast();
 
@@ -123,17 +115,17 @@ export default function AutomationsTab({ projectId }) {
 
   async function getAuthHeader() {
     try {
-      if (!supabase) return `Bearer ${supabaseAnonKey}`;
+      if (!supabaseAnonKey) return "";
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
       return token ? `Bearer ${token}` : `Bearer ${supabaseAnonKey}`;
     } catch {
-      return `Bearer ${supabaseAnonKey}`;
+      return supabaseAnonKey ? `Bearer ${supabaseAnonKey}` : "";
     }
   }
 
   async function fetchAutomations() {
-    if (!supabase || !projectId) return;
+    if (!supabaseAnonKey || !projectId) return;
 
     setIsLoadingAutomations(true);
     try {
@@ -160,7 +152,7 @@ export default function AutomationsTab({ projectId }) {
   useEffect(() => {
     fetchAutomations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, supabase]);
+  }, [projectId, supabaseAnonKey]);
 
   function startCreate() {
     const nextOption = TRIGGER_OPTIONS[0];
@@ -251,7 +243,7 @@ export default function AutomationsTab({ projectId }) {
   }
 
   async function toggleAutomation(automationId) {
-    if (!supabase || !projectId) return;
+    if (!supabaseAnonKey || !projectId) return;
     const target = automations.find((item) => item.id === automationId);
     if (!target) return;
 
