@@ -453,36 +453,6 @@ const LocationsTab = ({ projectId }) => {
                 </Suspense>
               </div>
             </div>
-
-            <div>
-              <Label htmlFor="confirmAddress">Endereço de exibição</Label>
-              <Input
-                id="confirmAddress"
-                value={confirmationData?.addressShort || ''}
-                onChange={(e) => {
-                  const newShortAddress = e.target.value;
-                  setConfirmationData((prev) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      addressShort: newShortAddress,
-                    };
-                  });
-                }}
-                disabled={isSubmittingLocation}
-              />
-              {confirmationData?.partialMatch && (
-                <p className="text-xs text-amber-600 mt-1">
-                  Esse resultado veio como correspondência parcial do Google. Revise a posição antes de salvar.
-                </p>
-              )}
-            </div>
-
-            <p className="text-sm text-gray-600">
-              Coordenadas internas: {Number.isFinite(confirmationLat) && Number.isFinite(confirmationLng)
-                ? `${confirmationLat}, ${confirmationLng}`
-                : 'indisponíveis'}
-            </p>
           </div>
 
           <DialogFooter>
