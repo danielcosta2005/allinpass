@@ -78,7 +78,7 @@ export async function geocodeAddress(address, limit = 5) {
   if (error) throw error;
   if (!data) return [];
   if (data?.ok === false) {
-    throw new Error(data?.error || 'Falha ao geocodificar endereço.');
+    throw new Error(data?.userMessage || data?.error || 'Falha ao geocodificar endereço.');
   }
 
   const rawResults = Array.isArray(data)
@@ -91,16 +91,32 @@ export async function geocodeAddress(address, limit = 5) {
 
   return rawResults
     .map((item, index) => {
-      const lat = Number(item?.lat ?? item?.latitude);
-      const lng = Number(item?.lon ?? item?.lng ?? item?.long ?? item?.longitude);
+      const lat = Number(item?.lat ?? item?.latitude ?? item?.geometry?.location?.lat);
+      const lng = Number(item?.lon ?? item?.lng ?? item?.long ?? item?.longitude ?? item?.geometry?.location?.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
+      const formattedAddress = String(
+        item?.formatted_address ??
+        item?.display_name ??
+        item?.addressFull ??
+        item?.address ??
+        '',
+      ).trim();
+      const placeId = item?.placeId ?? item?.place_id ?? null;
+
       return {
-        id: String(item?.place_id ?? item?.id ?? `${lat}:${lng}:${index}`),
-        address: String(item?.display_name ?? item?.formatted_address ?? item?.address ?? '').trim(),
+        id: String(placeId ?? item?.id ?? `${lat}:${lng}:${index}`),
+        placeId: placeId ? String(placeId) : null,
+        address: formattedAddress,
+        display_name: String(item?.display_name ?? formattedAddress).trim(),
+        formatted_address: formattedAddress,
+        addressShort: String(item?.addressShort ?? '').trim(),
+        addressFull: String(item?.addressFull ?? formattedAddress).trim(),
         lat,
         lng,
         long: lng,
+        partialMatch: Boolean(item?.partialMatch ?? item?.partial_match),
+        locationType: item?.locationType ?? item?.geometry?.location_type ?? null,
         raw: item,
       };
     })
