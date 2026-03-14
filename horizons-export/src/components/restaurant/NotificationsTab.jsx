@@ -179,6 +179,7 @@ const NotificationsTab = ({ projectId }) => {
         .select(
           [
             "id",
+            "project_id",
             "pass_token",
             "pass_type",
             "metadata",
@@ -193,10 +194,9 @@ const NotificationsTab = ({ projectId }) => {
             "google_object_id",
             "google_class_id",
             "pass_id",
-            "passes(project_id)",
           ].join(",")
         )
-        .eq("passes.project_id", projectId)
+        .eq("project_id", projectId)
         .eq("install_status", "installed")
         .order("created_at", { ascending: false });
 
@@ -208,7 +208,7 @@ const NotificationsTab = ({ projectId }) => {
       toast({
         variant: "destructive",
         title: "Erro ao carregar passes",
-        description: err?.message || "Falha inesperada ao buscar user_passes + passes.project_id.",
+        description: err?.message || "Falha inesperada ao buscar user_passes por project_id.",
       });
       setRows([]);
     } finally {
@@ -299,6 +299,7 @@ const NotificationsTab = ({ projectId }) => {
     const expiringCutoff = daysFromNow(expiringDays);
 
     return (rows || []).filter((p) => {
+      if (projectId && p?.project_id && String(p.project_id) !== String(projectId)) return false;
       if (safeLower(p?.install_status) === "removed") return false;
 
       const meta = p?.metadata ?? null;
