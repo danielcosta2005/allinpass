@@ -7,9 +7,61 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Apple, Smartphone, Upload, Link as LinkIcon, Save, Settings, QrCode, Download } from 'lucide-react';
+import {
+  Loader2,
+  Apple,
+  Smartphone,
+  Upload,
+  Link as LinkIcon,
+  Save,
+  Settings,
+  QrCode,
+  Download,
+  Info
+} from 'lucide-react';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
 import { QRCode } from 'react-qrcode-logo';
+
+const IMAGE_UPLOAD_RULES = {
+  appleLogo: {
+    label: 'Logo Apple',
+    helpTitle: 'Logo Apple',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Tamanho permitido: entre 480 × 160 e 1440 × 480',
+      'Recomendação: manter proporção 3:1',
+    ],
+  },
+  googleLogo: {
+    label: 'Logo Google',
+    helpTitle: 'Logo Google',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Formato recomendado: 660 × 660',
+    ],
+    recommendedWidth: 660,
+    recommendedHeight: 660,
+  },
+  appleStrip: {
+    label: 'Apple Strip',
+    helpTitle: 'Apple Strip',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Tamanho permitido: 375 × 144, 750 × 288 ou 1125 × 432',
+      'Recomendado: 1125 × 432',
+    ],
+  },
+  googleHero: {
+    label: 'Google Hero',
+    helpTitle: 'Google Hero',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Formato recomendado: 1032 × 336',
+    ],
+    recommendedWidth: 1032,
+    recommendedHeight: 336,
+  },
+};
 
 const ColorInput = ({ label, ...props }) => (
   <div className="flex flex-col space-y-2">
@@ -29,6 +81,43 @@ const ColorInput = ({ label, ...props }) => (
     </div>
   </div>
 );
+
+const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
+  const rule = IMAGE_UPLOAD_RULES[uploadKey];
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full justify-start whitespace-nowrap px-3"
+        onClick={() => onUpload(uploadKey)}
+      >
+        <Upload className="mr-2 h-4 w-4 shrink-0" />
+        <span className="truncate">{rule.label}</span>
+      </Button>
+
+      <div className="relative group flex items-center">
+        <button
+          type="button"
+          className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
+          aria-label={`Informações sobre ${rule.label}`}
+        >
+          <Info className="h-4 w-4" />
+        </button>
+
+        <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+          <p className="mb-2 text-sm font-semibold text-slate-900">{rule.helpTitle}</p>
+          <div className="space-y-1 text-xs text-slate-600">
+            {rule.helpLines.map((line, index) => (
+              <p key={`${uploadKey}-${index}`}>{line}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function formatExpPreview(v) {
   if (!v) return "XX/XX";
@@ -93,6 +182,141 @@ function sanitizeFilenamePart(value) {
   return safe || "pass";
 }
 
+function isPngFile(file) {
+  if (!file) return false;
+  const mimeOk = file.type === "image/png";
+  const nameOk = file.name.toLowerCase().endsWith(".png");
+  return mimeOk || nameOk;
+}
+
+function getImageDimensions(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+
+    image.onload = () => {
+      resolve({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      });
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Não foi possível ler as dimensões da imagem."));
+    };
+
+    image.src = objectUrl;
+  });
+}
+
+function normalizeWalletDefaults(defaults = {}) {
+  const incomingImages = defaults?.images ?? {};
+  const legacyLogo = incomingImages.logo ?? "";
+
+  return {
+    ...defaults,
+    images: {
+      logo: incomingImages.logo ?? "",
+      icon: incomingImages.icon ?? "",
+      appleLogo: incomingImages.appleLogo ?? legacyLogo ?? "",
+      googleLogo: incomingImages.googleLogo ?? legacyLogo ?? "",
+      appleStrip: incomingImages.appleStrip ?? "",
+      googleHero: incomingImages.googleHero ?? "",
+    },
+  };
+}
+
+function isApproximatelyThreeToOne(width, height) {
+  if (!width || !height) return false;
+  const ratio = width / height;
+  return ratio >= 2.85 && ratio <= 3.15;
+}
+
+function validateAppleLogoDimensions(width, height) {
+  const minWidth = 480;
+  const minHeight = 160;
+  const maxWidth = 1440;
+  const maxHeight = 480;
+
+  if (width < minWidth || height < minHeight || width > maxWidth || height > maxHeight) {
+    return {
+      valid: false,
+      message: `Logo Apple inválida: ${width} × ${height}. Use PNG entre 480 × 160 e 1440 × 480.`,
+    };
+  }
+
+  if (!isApproximatelyThreeToOne(width, height)) {
+    return {
+      valid: true,
+      warning: `Logo Apple enviada com ${width} × ${height}. O upload foi aceito, mas recomenda-se manter proporção próxima de 3:1 para melhor resultado visual.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateAppleStripDimensions(width, height) {
+  const validSizes = [
+    { width: 375, height: 144 },
+    { width: 750, height: 288 },
+    { width: 1125, height: 432 },
+  ];
+
+  const isExactValidSize = validSizes.some(
+    (size) => size.width === width && size.height === height
+  );
+
+  if (!isExactValidSize) {
+    return {
+      valid: false,
+      message: `Apple Strip inválida: ${width} × ${height}. Use exatamente 375 × 144, 750 × 288 ou 1125 × 432.`,
+    };
+  }
+
+  if (!(width === 1125 && height === 432)) {
+    return {
+      valid: true,
+      warning: `Apple Strip enviada com ${width} × ${height}. O upload foi aceito, mas o formato recomendado é 1125 × 432.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateGoogleAsset(uploadKey, width, height) {
+  const rule = IMAGE_UPLOAD_RULES[uploadKey];
+  if (!rule?.recommendedWidth || !rule?.recommendedHeight) {
+    return { valid: true };
+  }
+
+  if (width !== rule.recommendedWidth || height !== rule.recommendedHeight) {
+    return {
+      valid: true,
+      warning: `${rule.label}: recomendado ${rule.recommendedWidth} × ${rule.recommendedHeight}. Sua imagem tem ${width} × ${height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateUploadByKey(uploadKey, width, height) {
+  if (uploadKey === "appleLogo") {
+    return validateAppleLogoDimensions(width, height);
+  }
+
+  if (uploadKey === "appleStrip") {
+    return validateAppleStripDimensions(width, height);
+  }
+
+  if (uploadKey === "googleLogo" || uploadKey === "googleHero") {
+    return validateGoogleAsset(uploadKey, width, height);
+  }
+
+  return { valid: true };
+}
+
 const PassPreview = ({ formState, qrPreviewUrl }) => {
   const [platform, setPlatform] = useState('apple');
   const {
@@ -105,14 +329,22 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
   } = formState;
 
   const { background = '#6c5ce7', text = '#ffffff', label = '#ffffff' } = colors;
-  const { logo: logoUrl, googleHero, appleStrip } = images;
+  const {
+    logo: legacyLogo,
+    appleLogo,
+    googleLogo,
+    googleHero,
+    appleStrip
+  } = images;
+
+  const logoUrl = platform === "apple"
+    ? (appleLogo || legacyLogo)
+    : (googleLogo || legacyLogo);
 
   const pointsFieldKey = dataFields.find(f => f.key.toLowerCase().includes('points'))?.key;
   const pointsValue = pointsFieldKey ? (sampleValues[pointsFieldKey] || '123') : '123';
 
   const expText = `EXPIRA EM ${formatExpPreview(exp_date)}`;
-
-  // ✅ ESSENCIAL: QR deve apontar pro link compartilhável (claim link)
   const qrValue = qrPreviewUrl || formState.qr_url || "https://example.com";
 
   return (
@@ -345,7 +577,6 @@ const PassesList = ({ passes, loading, onAction }) => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        // ✅ ESSENCIAL: copiar o link público (qr_url = claim link)
                         onClick={() => onAction('copy', pass.qr_url)}
                         title={copyButtonTitle}
                         disabled={!canUseQr}
@@ -418,10 +649,16 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     description: '',
     exp_date: '',
     colors: { background: '#6c5ce7', label: '#ffffff', text: '#ffffff' },
-    images: { logo: '', icon: '', googleHero: '', appleStrip: '' },
+    images: {
+      logo: '',
+      icon: '',
+      appleLogo: '',
+      googleLogo: '',
+      googleHero: '',
+      appleStrip: '',
+    },
     dataFields: [],
     sampleValues: {},
-    // opcional: manter um campo local pra preview se quiser
     qr_url: '',
   });
 
@@ -436,6 +673,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         .select('slug')
         .eq('id', pId)
         .single();
+
       if (projectError) throw projectError;
       setProjectSlug(projectData.slug);
 
@@ -448,11 +686,15 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         : { data: null };
 
       if (fromProject.data?.defaults) {
+        const normalizedDefaults = normalizeWalletDefaults(fromProject.data.defaults);
+
         setFormState(prev => ({
           ...prev,
-          ...fromProject.data.defaults,
-          colors: { ...prev.colors, ...fromProject.data.defaults.colors }
+          ...normalizedDefaults,
+          colors: { ...prev.colors, ...(normalizedDefaults.colors ?? {}) },
+          images: { ...prev.images, ...(normalizedDefaults.images ?? {}) },
         }));
+
         toast({ title: "Template do projeto carregado!" });
         return;
       }
@@ -462,25 +704,38 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         .select('defaults')
         .is('project_id', null)
         .single();
+
       if (globalError) throw globalError;
 
       if (globalData?.defaults) {
+        const normalizedDefaults = normalizeWalletDefaults(globalData.defaults);
+
         setFormState(prev => ({
           ...prev,
-          ...globalData.defaults,
-          colors: { ...prev.colors, ...globalData.defaults.colors }
+          ...normalizedDefaults,
+          colors: { ...prev.colors, ...(normalizedDefaults.colors ?? {}) },
+          images: { ...prev.images, ...(normalizedDefaults.images ?? {}) },
         }));
+
         toast({ title: "Template global carregado como fallback." });
       }
     } catch (error) {
-      toast({ title: 'Erro ao carregar template', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Erro ao carregar template',
+        description: error.message,
+        variant: 'destructive'
+      });
     } finally {
       setIsProcessing(false);
     }
   }, [toast]);
 
   const fetchPasses = useCallback(async (pId) => {
-    if (!pId) { setPasses([]); return; }
+    if (!pId) {
+      setPasses([]);
+      return;
+    }
+
     setLoadingPasses(true);
     try {
       const { data, error } = await supabase
@@ -488,10 +743,15 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         .select('*')
         .eq('project_id', pId)
         .order('created_at', { ascending: false });
+
       if (error) throw error;
       setPasses(data || []);
     } catch (error) {
-      toast({ title: 'Erro ao buscar passes', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Erro ao buscar passes',
+        description: error.message,
+        variant: 'destructive'
+      });
     } finally {
       setLoadingPasses(false);
     }
@@ -507,12 +767,14 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const handleFormChange = (path, value) => {
     setFormState(prev => {
       const keys = path.split('.');
-      let tempState = JSON.parse(JSON.stringify(prev));
+      const tempState = JSON.parse(JSON.stringify(prev));
       let current = tempState;
+
       for (let i = 0; i < keys.length - 1; i++) {
         if (current[keys[i]] === undefined) current[keys[i]] = {};
         current = current[keys[i]];
       }
+
       current[keys[keys.length - 1]] = value;
       return tempState;
     });
@@ -524,23 +786,68 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleFileChange = async (event) => {
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file || !uploadingKey) return;
+
+    const rule = IMAGE_UPLOAD_RULES[uploadingKey];
+
+    if (!isPngFile(file)) {
+      toast({
+        title: "Formato inválido",
+        description: `O campo "${rule?.label ?? uploadingKey}" aceita apenas arquivos PNG.`,
+        variant: "destructive",
+      });
+
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setUploadingKey(null);
+      return;
+    }
 
     setIsProcessing(true);
     const path = `${projectId || 'temp'}/${uploadingKey}-${Date.now()}-${file.name}`;
 
     try {
+      let dimensions = null;
+
+      try {
+        dimensions = await getImageDimensions(file);
+      } catch (dimensionError) {
+        console.warn("Não foi possível ler dimensões da imagem:", dimensionError);
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('pass-assets')
-        .upload(path, file, { upsert: true });
+        .upload(path, file, {
+          upsert: true,
+          contentType: 'image/png',
+        });
+
       if (uploadError) throw uploadError;
 
       const { data } = supabase.storage.from('pass-assets').getPublicUrl(path);
       handleFormChange(`images.${uploadingKey}`, data.publicUrl);
+
       toast({ title: "Upload com sucesso!" });
+
+      if (
+        rule &&
+        dimensions &&
+        (
+          dimensions.width !== rule.recommendedWidth ||
+          dimensions.height !== rule.recommendedHeight
+        )
+      ) {
+        toast({
+          title: "Formato recomendado diferente",
+          description: `${rule.label}: recomendado ${rule.recommendedText}. Sua imagem tem ${dimensions.width} × ${dimensions.height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
+        });
+      }
     } catch (error) {
-      toast({ title: "Erro no upload", description: error.message, variant: "destructive" });
+      toast({
+        title: "Erro no upload",
+        description: error.message,
+        variant: "destructive",
+      });
     } finally {
       setIsProcessing(false);
       setUploadingKey(null);
@@ -560,7 +867,6 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         fields: Object.fromEntries(
           formState.dataFields.map(f => [f.key, formState.sampleValues?.[f.key] ?? ''])
         ),
-        // ✅ ESSENCIAL: server monta qr_url (claim link) com domínio correto
         app_base_url: window.location.origin,
       };
 
@@ -577,14 +883,16 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || `Falha na requisição: ${response.status}`);
 
-      // opcional: guardar no formState só pro preview ficar alinhado
       setFormState(prev => ({ ...prev, qr_url: result.qr_url || prev.qr_url }));
-
       setGenerationResult(result);
       setIsModalOpen(true);
       fetchPasses(projectId);
     } catch (error) {
-      toast({ title: 'Erro ao gerar link', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Erro ao gerar link',
+        description: error.message,
+        variant: 'destructive'
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -593,23 +901,38 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const handleSaveDefaults = async () => {
     setIsProcessing(true);
     try {
+      const normalizedDefaultsToSave = normalizeWalletDefaults(formState);
+
       const { error } = await supabase
         .from('wallet_templates')
         .upsert(
-          { project_id: projectId, name: 'Template do Projeto', defaults: formState },
+          {
+            project_id: projectId,
+            name: 'Template do Projeto',
+            defaults: normalizedDefaultsToSave,
+          },
           { onConflict: 'project_id' }
         );
+
       if (error) throw error;
       toast({ title: "Template do projeto salvo com sucesso!" });
     } catch (error) {
-      toast({ title: 'Erro ao salvar template', description: error.message, variant: 'destructive' });
+      toast({
+        title: 'Erro ao salvar template',
+        description: error.message,
+        variant: 'destructive'
+      });
     } finally {
       setIsProcessing(false);
     }
   };
 
   const handlePassesListAction = (action, url) => {
-    if (!url) { toast({ title: 'Link indisponível', variant: 'destructive' }); return; }
+    if (!url) {
+      toast({ title: 'Link indisponível', variant: 'destructive' });
+      return;
+    }
+
     if (action === 'copy') {
       navigator.clipboard.writeText(url);
       toast({ title: "Link copiado!" });
@@ -649,30 +972,71 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
                 <div>
                   <Label>Título</Label>
-                  <Input value={formState.title} onChange={e => handleFormChange('title', e.target.value)} placeholder="Ex: Cartão Fidelidade" />
+                  <Input
+                    value={formState.title}
+                    onChange={e => handleFormChange('title', e.target.value)}
+                    placeholder="Ex: Cartão Fidelidade"
+                  />
                 </div>
 
                 <div>
                   <Label>Descrição</Label>
-                  <Textarea value={formState.description} onChange={e => handleFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um café!" />
+                  <Textarea
+                    value={formState.description}
+                    onChange={e => handleFormChange('description', e.target.value)}
+                    placeholder="Ex: Complete 10 visitas e ganhe um café!"
+                  />
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-2">
-                  <ColorInput label="Fundo" value={formState.colors.background} onChange={e => handleFormChange('colors.background', e.target.value)} />
-                  <ColorInput label="Rótulo" value={formState.colors.label} onChange={e => handleFormChange('colors.label', e.target.value)} />
-                  <ColorInput label="Texto" value={formState.colors.text} onChange={e => handleFormChange('colors.text', e.target.value)} />
+                  <ColorInput
+                    label="Fundo"
+                    value={formState.colors.background}
+                    onChange={e => handleFormChange('colors.background', e.target.value)}
+                  />
+                  <ColorInput
+                    label="Rótulo"
+                    value={formState.colors.label}
+                    onChange={e => handleFormChange('colors.label', e.target.value)}
+                  />
+                  <ColorInput
+                    label="Texto"
+                    value={formState.colors.text}
+                    onChange={e => handleFormChange('colors.text', e.target.value)}
+                  />
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" onClick={() => handleUploadClick('logo')}><Upload className="w-4 h-4 mr-2" /> Logo</Button>
-                  <Button variant="outline" onClick={() => handleUploadClick('icon')}><Upload className="w-4 h-4 mr-2" /> Ícone</Button>
-                  <Button variant="outline" onClick={() => handleUploadClick('googleHero')}><Upload className="w-4 h-4 mr-2" /> Google Hero</Button>
-                  <Button variant="outline" onClick={() => handleUploadClick('appleStrip')}><Upload className="w-4 h-4 mr-2" /> Apple Strip</Button>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <UploadButtonWithInfo
+                    uploadKey="appleLogo"
+                    onUpload={handleUploadClick}
+                  />
+
+                  <UploadButtonWithInfo
+                    uploadKey="googleLogo"
+                    onUpload={handleUploadClick}
+                  />
+
+                  <UploadButtonWithInfo
+                    uploadKey="appleStrip"
+                    onUpload={handleUploadClick}
+                  />
+
+                  <UploadButtonWithInfo
+                    uploadKey="googleHero"
+                    onUpload={handleUploadClick}
+                  />
                 </div>
 
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  className="hidden"
+                  accept=".png,image/png"
+                />
               </div>
             </div>
           </div>
@@ -700,7 +1064,6 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         </div>
       </div>
 
-      {/* ✅ IMPORTANTE: o modal deve mostrar result.qr_url como "Link Único" */}
       <GenerationResultModal isOpen={isModalOpen} setIsOpen={setIsModalOpen} result={generationResult} />
     </div>
   );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect} from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import AuthCallback from '@/pages/AuthCallback';
@@ -59,6 +59,10 @@ const AuthRedirect = () => {
 
 export default function App() {
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    console.log("Build version:", import.meta.env.VITE_BUILD_VERSION);
+  }, []);
 
   return (
     <>

@@ -260,35 +260,46 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
 
       if (currentUser) {
-        const shouldBlockUiForRoleSync = event === 'SIGNED_IN' || event === 'INITIAL_SESSION';
-        if (shouldBlockUiForRoleSync) {
+        const shouldSyncRole =
+          event === 'INITIAL_SESSION' ||
+          !initialized ||
+          !role ||
+          role === 'unauthorized';
+
+        if (shouldSyncRole) {
           setLoading(true);
-        }
 
-        try {
-          sessionStorage.removeItem('__auth_refresh_fail');
-        } catch (_) {}
+          try {
+            sessionStorage.removeItem('__auth_refresh_fail');
+          } catch (_) {}
 
-        const { role: newRole } = await getProfileAndProject(currentUser);
-        if (cancelled) return;
+          const { role: newRole } = await getProfileAndProject(currentUser);
+          if (cancelled) return;
 
-        if (isClaimOrCallbackPath()) {
-          setLoading(false);
-          setInitialized(true);
-          return;
-        }
-
-        if (newRole === 'unauthorized') {
-          const shouldRedirectToUnauthorized =
-            currentPath === '/login' || isAuthRequiredPath(currentPath) || event === 'SIGNED_IN';
-          if (shouldRedirectToUnauthorized) {
-            navigate('/nao-autorizado', { replace: true });
+          if (isClaimOrCallbackPath()) {
+            setLoading(false);
+            setInitialized(true);
+            return;
           }
-        } else if (event === 'SIGNED_IN') {
-          if (newRole === 'superadmin') {
-            navigate('/admin', { replace: true });
-          } else if (newRole === 'establishment' || newRole === 'customer') {
-            navigate('/org', { replace: true });
+
+          if (newRole === 'unauthorized') {
+            const shouldRedirectToUnauthorized =
+              currentPath === '/login' || isAuthRequiredPath(currentPath) || event === 'SIGNED_IN';
+            if (shouldRedirectToUnauthorized) {
+              navigate('/nao-autorizado', { replace: true });
+            }
+          } else if (event === 'SIGNED_IN') {
+            const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
+            const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
+
+            if (newRole === 'superadmin' && !alreadyInAdmin) {
+              navigate('/admin', { replace: true });
+            } else if (
+              (newRole === 'establishment' || newRole === 'customer') &&
+              !alreadyInOrg
+            ) {
+              navigate('/org', { replace: true });
+            }
           }
         }
       } else {
