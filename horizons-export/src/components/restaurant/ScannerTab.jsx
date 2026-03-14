@@ -11,10 +11,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
-import QrScanner from "qr-scanner";
+import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
-
-QrScanner.WORKER_PATH = new URL("qr-scanner/qr-scanner-worker.min.js", import.meta.url).toString();
 
 // Aceita token puro (pass_token) ou URL contendo token
 function extractPassToken(qrData) {
@@ -62,15 +60,27 @@ function normalizeScanResult(result) {
 const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
+  const resetTimerRef = useRef(null);
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [lastScanRaw, setLastScanRaw] = useState("");
-  const [lastScanToken, setLastScanToken] = useState("");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmPayload, setConfirmPayload] = useState(null);
+
+  const clearResetTimer = useCallback(() => {
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearResetTimer();
+    };
+  }, [clearResetTimer]);
 
   const stopScan = useCallback(async () => {
     try {
@@ -131,9 +141,6 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
       const txt = normalizeScanResult(result);
       const passToken = extractPassToken(txt);
 
-      setLastScanRaw(txt);
-      setLastScanToken(passToken || "");
-
       if (!passToken) throw new Error("QR Code inválido: não encontrei o token do passe.");
       if (!establishmentProjectId) throw new Error("ProjectId do estabelecimento não encontrado no painel.");
 
@@ -180,12 +187,13 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         variant: "destructive",
       });
     } finally {
-      setTimeout(() => {
+      clearResetTimer();
+      resetTimerRef.current = window.setTimeout(() => {
         setIsProcessing(false);
         setScanResult(null);
       }, 5000);
     }
-  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit]);
+  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit, clearResetTimer]);
 
   // ✅ guarda sempre a versão mais recente do handler
   const onScanRef = useRef(onScan);
@@ -262,7 +270,8 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         variant: "destructive",
       });
     } finally {
-      setTimeout(() => {
+      clearResetTimer();
+      resetTimerRef.current = window.setTimeout(() => {
         setIsProcessing(false);
         setScanResult(null);
         startScan();

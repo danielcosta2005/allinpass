@@ -81,6 +81,7 @@ function getOrCreateDeviceKey() {
 export default function ClaimCallback() {
   const loc = useLocation();
   const didRun = useRef(false);
+  const cleanupRef = useRef(() => {});
 
   const [phase, setPhase] = useState("Iniciando…");
   const [warning, setWarning] = useState(null);
@@ -181,6 +182,7 @@ export default function ClaimCallback() {
           window.removeEventListener("pagehide", onPageHide);
           window.clearTimeout(fallbackTimer);
         };
+        cleanupRef.current = cleanup;
 
         document.addEventListener("visibilitychange", onVis);
         window.addEventListener("pagehide", onPageHide);
@@ -198,9 +200,14 @@ export default function ClaimCallback() {
         // Agora sim: tenta abrir o destino (Wallet/pkpass)
         window.location.assign(json.destination);
       } catch (e) {
+        cleanupRef.current?.();
         setError(e?.message || "Falha ao concluir o resgate.");
       }
     })();
+
+    return () => {
+      cleanupRef.current?.();
+    };
   }, [c]);
 
   return (

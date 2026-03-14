@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
+const VALID_ROLES = new Set(['superadmin', 'establishment', 'customer']);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -21,7 +22,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  // Proteções contra falhas transitórias de refresh
+  // Protection against transient refresh failures.
   const REFRESH_FAIL_WINDOW_MS = 60_000;
   const REFRESH_FAIL_MAX = 2;
 
@@ -29,8 +30,13 @@ export const AuthProvider = ({ children }) => {
   const location = useLocation();
   const { toast } = useToast();
 
-  // ✅ Lock para evitar logout concorrente
+  // Prevent concurrent logout requests.
   const logoutInFlightRef = useRef(false);
+  const pathnameRef = useRef(location.pathname);
+
+  useEffect(() => {
+    pathnameRef.current = location.pathname;
+  }, [location.pathname]);
 
   const clearAuthState = useCallback(() => {
     setUser(null);
@@ -50,10 +56,9 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ✅ Remove o token do Supabase do storage manualmente (hard logout local)
+  // Remove Supabase token from local storage (hard local logout).
   const hardClearSupabaseStorage = useCallback(() => {
     try {
-      // supabase-js v2 geralmente expõe isso
       const key = supabase?.auth?.storageKey;
 
       if (key) {
@@ -61,8 +66,6 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      // fallback (bem comum): sb-<project-ref>-auth-token
-      // tenta inferir do supabaseUrl (se o cliente expuser)
       const url = supabase?.supabaseUrl || '';
       const match = String(url).match(/^https:\/\/([a-z0-9]+)\.supabase\.co/i);
       const projectRef = match?.[1];
@@ -75,19 +78,25 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  // ✅ Não sequestrar fluxo público de claim/callback
+  // Avoid hijacking public claim/callback flow.
   const isClaimOrCallbackPath = useCallback(() => {
     const p = window.location.pathname || '';
     return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
   }, []);
 
+  // Only these routes strictly require auth.
+  const isAuthRequiredPath = useCallback((pathname) => {
+    const p = String(pathname || '');
+    return p === '/' || p.startsWith('/admin') || p.startsWith('/org');
+  }, []);
+
   /**
-   * ✅ Logout robusto:
-   * - Se token estiver expirado/quase, NÃO chama /logout (evita 403 session_not_found)
-   * - Sempre limpa local (storage + state + UI) e navega
+   * Robust logout:
+   * - Skip server logout if token is expired/almost expired (avoids 403 session_not_found)
+   * - Always clear local state/storage and navigate
    */
   const forceLogout = useCallback(
-    async (reason = 'Sua sessão expirou. Faça login novamente.') => {
+    async (reason = 'Sua sessao expirou. Faca login novamente.') => {
       if (logoutInFlightRef.current) return;
       logoutInFlightRef.current = true;
 
@@ -103,14 +112,11 @@ export const AuthProvider = ({ children }) => {
 
         const nowSec = Math.floor(Date.now() / 1000);
         const expiresAt = Number(currentSession?.expires_at ?? 0);
-
-        // Se estiver expirado ou muito perto (ex.: <= 30s), pular logout server-side pra evitar 403.
         const shouldSkipServerLogout = !currentSession || !expiresAt || expiresAt <= nowSec + 30;
 
         if (!shouldSkipServerLogout) {
           const { error } = await supabase.auth.signOut({ scope: 'local' });
 
-          // session_not_found -> ok, a gente segue
           if (error) {
             const status = error?.status;
             const code = error?.code;
@@ -122,13 +128,11 @@ export const AuthProvider = ({ children }) => {
                 (msg.includes('session') && msg.includes('does not exist')));
 
             if (!isSessionNotFound) {
-              // erro real -> não trava logout local, só loga
               console.error('[auth] signOut error', error);
             }
           }
         }
 
-        // ✅ Hard logout local SEMPRE
         hardClearSupabaseStorage();
         clearAuthState();
         clearUiState();
@@ -140,8 +144,7 @@ export const AuthProvider = ({ children }) => {
           navigate('/login', { replace: true });
         }
 
-        // opcional: toast só quando for manual
-        if (reason === 'Você saiu da conta.') {
+        if (reason === 'Voce saiu da conta.') {
           toast({ title: 'Logout realizado', description: reason });
         }
       } finally {
@@ -165,12 +168,17 @@ export const AuthProvider = ({ children }) => {
       .single();
 
     if (profileError || !profile) {
-      setRole(null);
+      setRole('unauthorized');
       setProjectId(null);
-      return { role: null, projectId: null };
+      return { role: 'unauthorized', projectId: null };
     }
 
     const currentRole = profile.role;
+    if (!VALID_ROLES.has(currentRole)) {
+      setRole('unauthorized');
+      setProjectId(null);
+      return { role: 'unauthorized', projectId: null };
+    }
     setRole(currentRole);
 
     if (currentRole === 'establishment') {
@@ -191,11 +199,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    const publicPassRoutes =
-      /^\/c\/[a-fA-F0-9-]+\/me|^\/me|^\/c\/[a-fA-F0-9-]+\/[a-fA-F0-9-]+|^\/auth\/callback|^\/claim|^\/thanks/;
+    let cancelled = false;
 
     const handleAuthStateChange = async (event, currentSession) => {
-      if (!initialized) setInitialized(true);
+      if (cancelled) return;
 
       if (event === 'TOKEN_REFRESH_FAILED') {
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -218,8 +225,8 @@ export const AuthProvider = ({ children }) => {
 
         if (offline && nextInfo.count < REFRESH_FAIL_MAX) {
           toast({
-            title: 'Sem conexão',
-            description: 'Reconecte à internet para continuar logado.',
+            title: 'Sem conexao',
+            description: 'Reconecte a internet para continuar logado.',
             variant: 'destructive',
           });
           setLoading(false);
@@ -228,14 +235,16 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (nextInfo.count >= REFRESH_FAIL_MAX) {
-          try { sessionStorage.removeItem('__auth_refresh_fail'); } catch (_) {}
-          await forceLogout('Sua sessão expirou. Faça login novamente.');
+          try {
+            sessionStorage.removeItem('__auth_refresh_fail');
+          } catch (_) {}
+          await forceLogout('Sua sessao expirou. Faca login novamente.');
           return;
         }
 
         toast({
-          title: 'Problema ao manter a sessão',
-          description: 'Tentando reconectar… se persistir, você será redirecionado para login.',
+          title: 'Problema ao manter a sessao',
+          description: 'Tentando reconectar... se persistir, voce sera redirecionado para login.',
           variant: 'destructive',
         });
 
@@ -245,14 +254,23 @@ export const AuthProvider = ({ children }) => {
       }
 
       const currentUser = currentSession?.user ?? null;
+      const currentPath = pathnameRef.current;
 
       setUser(currentUser);
       setSession(currentSession);
 
       if (currentUser) {
-        try { sessionStorage.removeItem('__auth_refresh_fail'); } catch (_) {}
+        const shouldBlockUiForRoleSync = event === 'SIGNED_IN' || event === 'INITIAL_SESSION';
+        if (shouldBlockUiForRoleSync) {
+          setLoading(true);
+        }
+
+        try {
+          sessionStorage.removeItem('__auth_refresh_fail');
+        } catch (_) {}
 
         const { role: newRole } = await getProfileAndProject(currentUser);
+        if (cancelled) return;
 
         if (isClaimOrCallbackPath()) {
           setLoading(false);
@@ -260,7 +278,13 @@ export const AuthProvider = ({ children }) => {
           return;
         }
 
-        if (event === 'SIGNED_IN') {
+        if (newRole === 'unauthorized') {
+          const shouldRedirectToUnauthorized =
+            currentPath === '/login' || isAuthRequiredPath(currentPath) || event === 'SIGNED_IN';
+          if (shouldRedirectToUnauthorized) {
+            navigate('/nao-autorizado', { replace: true });
+          }
+        } else if (event === 'SIGNED_IN') {
           if (newRole === 'superadmin') {
             navigate('/admin', { replace: true });
           } else if (newRole === 'establishment' || newRole === 'customer') {
@@ -271,7 +295,7 @@ export const AuthProvider = ({ children }) => {
         setRole(null);
         setProjectId(null);
 
-        if (!publicPassRoutes.test(location.pathname) && location.pathname !== '/login') {
+        if (isAuthRequiredPath(currentPath) && currentPath !== '/login') {
           navigate('/login', { replace: true });
         }
       }
@@ -282,18 +306,27 @@ export const AuthProvider = ({ children }) => {
 
     const checkInitialSession = async () => {
       setLoading(true);
-      const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+
+      const {
+        data: { session: initialSession },
+        error,
+      } = await supabase.auth.getSession();
+
+      if (cancelled) return;
 
       if (error) {
         setLoading(false);
+        setInitialized(true);
         return;
       }
 
       if (!initialSession) {
         clearAuthState();
         setLoading(false);
+        setInitialized(true);
 
-        if (!publicPassRoutes.test(location.pathname) && location.pathname !== '/login') {
+        const currentPath = pathnameRef.current;
+        if (isAuthRequiredPath(currentPath) && currentPath !== '/login') {
           navigate('/login', { replace: true });
         }
         return;
@@ -304,17 +337,21 @@ export const AuthProvider = ({ children }) => {
 
     checkInitialSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(handleAuthStateChange);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, currentSession) => {
+      void handleAuthStateChange(event, currentSession);
+    });
 
     return () => {
-      authListener?.subscription?.unsubscribe();
+      cancelled = true;
+      subscription?.unsubscribe();
     };
   }, [
     getProfileAndProject,
     navigate,
-    location.pathname,
-    initialized,
     isClaimOrCallbackPath,
+    isAuthRequiredPath,
     forceLogout,
     clearAuthState,
     toast,
@@ -349,7 +386,7 @@ export const AuthProvider = ({ children }) => {
   }, [toast]);
 
   const signOutUser = useCallback(async () => {
-    await forceLogout('Você saiu da conta.');
+    await forceLogout('Voce saiu da conta.');
   }, [forceLogout]);
 
   const value = useMemo(() => ({
@@ -369,6 +406,6 @@ export const AuthProvider = ({ children }) => {
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
+  if (context === null) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };
