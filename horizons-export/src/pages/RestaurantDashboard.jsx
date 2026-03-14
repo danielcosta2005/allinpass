@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { LogOut, QrCode, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2 } from 'lucide-react';
@@ -19,13 +19,29 @@ const RestaurantDashboard = () => {
   const [signingOut, setSigningOut] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => {
-    return sessionStorage.getItem('restaurant_active_tab') || 'kpis';
+    try {
+      return sessionStorage.getItem('restaurant_active_tab') || 'kpis';
+    } catch (_) {
+      return 'kpis';
+    }
   });
 
   const handleTabChange = (value) => {
     setActiveTab(value);
-    sessionStorage.setItem('restaurant_active_tab', value);
+    try {
+      sessionStorage.setItem('restaurant_active_tab', value);
+    } catch (_) {}
   };
+
+  useEffect(() => {
+    const allowedTabs = new Set(['kpis', 'scanner', 'qr', 'customers', 'visits', 'notifications']);
+    if (!allowedTabs.has(activeTab)) {
+      setActiveTab('kpis');
+      try {
+        sessionStorage.setItem('restaurant_active_tab', 'kpis');
+      } catch (_) {}
+    }
+  }, [activeTab]);
 
   async function handleSignOut() {
     if (signingOut) return;

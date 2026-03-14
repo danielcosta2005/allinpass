@@ -22,7 +22,7 @@ const AddToWalletButton = ({ passType, pkPass, jwt, className }) => {
     a.download = 'pass.pkpass';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
   };
 
