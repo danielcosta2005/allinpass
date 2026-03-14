@@ -117,7 +117,7 @@ export default function QRTab({ projectId }) {
       downloadLink.download = `qrcode-projeto-${project.id}.png`;
       document.body.appendChild(downloadLink);
       downloadLink.click();
-      document.body.removeChild(downloadLink);
+      downloadLink.remove();
       return;
     }
 

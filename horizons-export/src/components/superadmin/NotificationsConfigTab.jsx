@@ -72,7 +72,7 @@ export default function NotificationsConfigTab({ projectId }) {
 
   async function ensureRowExists() {
     // Cria linha se não existir (sem depender de seed/trigger)
-    const expIso = computeNextMonthExpIso();
+    const expIso = computeRollingExpIso(30);
 
     const { data: inserted, error: insErr } = await supabase
       .from("projects_notifications")

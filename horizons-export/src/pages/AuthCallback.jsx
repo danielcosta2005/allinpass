@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Loader2 } from 'lucide-react';
@@ -9,35 +9,75 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const [status, setStatus] = useState("Processando autenticação…");
+  const [status, setStatus] = useState("Processando autenticacao...");
+  const handledRef = useRef(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        setStatus("Login bem-sucedido! Preparando seu passe...");
-        const searchParams = new URLSearchParams(location.search);
-        const projectId = searchParams.get('projectId');
-        
-        if (projectId) {
-            const sub = session.user?.id;
-            const email = session.user?.email || '';
-            const name =
-              session.user?.user_metadata?.full_name ||
-              session.user?.user_metadata?.name ||
-              session.user?.user_metadata?.given_name ||
-              '';
-            
-            navigate(`/c/${projectId}/${sub}?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`, {
-              replace: true,
-            });
-        } else {
-            toast({ title: "Erro", description: "ID do projeto não encontrado para redirecionamento.", variant: "destructive" });
-            navigate('/', { replace: true });
+    let cancelled = false;
+    let subscription = null;
+
+    const handleSession = (session) => {
+      if (cancelled || handledRef.current || !session) return;
+      handledRef.current = true;
+
+      setStatus("Login bem-sucedido! Preparando seu passe...");
+      const searchParams = new URLSearchParams(location.search);
+      const projectId = searchParams.get('projectId');
+
+      if (projectId) {
+        const sub = session.user?.id;
+        const email = session.user?.email || '';
+        const name =
+          session.user?.user_metadata?.full_name ||
+          session.user?.user_metadata?.name ||
+          session.user?.user_metadata?.given_name ||
+          '';
+
+        if (!sub) {
+          toast({
+            title: "Erro",
+            description: "Nao foi possivel identificar o usuario autenticado.",
+            variant: "destructive",
+          });
+          navigate('/', { replace: true });
+          return;
         }
+
+        navigate(`/c/${projectId}/${sub}?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`, {
+          replace: true,
+        });
+        return;
       }
-    });
+
+      toast({
+        title: "Erro",
+        description: "ID do projeto nao encontrado para redirecionamento.",
+        variant: "destructive",
+      });
+      navigate('/', { replace: true });
+    };
+
+    const start = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      handleSession(session);
+
+      const {
+        data: { subscription: listener },
+      } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          handleSession(nextSession);
+        }
+      });
+
+      subscription = listener;
+    };
+
+    void start();
 
     return () => {
+      cancelled = true;
       subscription?.unsubscribe();
     };
   }, [navigate, location.search, toast]);
