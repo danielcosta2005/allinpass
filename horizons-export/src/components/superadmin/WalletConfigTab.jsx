@@ -25,27 +25,41 @@ import { QRCode } from 'react-qrcode-logo';
 const IMAGE_UPLOAD_RULES = {
   appleLogo: {
     label: 'Logo Apple',
-    recommendedWidth: 480,
-    recommendedHeight: 150,
-    recommendedText: '480 × 150 formato PNG',
+    helpTitle: 'Logo Apple',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Tamanho permitido: entre 480 × 160 e 1440 × 480',
+      'Recomendação: manter proporção 3:1',
+    ],
   },
   googleLogo: {
     label: 'Logo Google',
+    helpTitle: 'Logo Google',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Formato recomendado: 660 × 660',
+    ],
     recommendedWidth: 660,
     recommendedHeight: 660,
-    recommendedText: '660 × 660 formato PNG',
   },
   appleStrip: {
     label: 'Apple Strip',
-    recommendedWidth: 1125,
-    recommendedHeight: 432,
-    recommendedText: '1125 × 432 formato PNG',
+    helpTitle: 'Apple Strip',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Tamanho permitido: 375 × 144, 750 × 288 ou 1125 × 432',
+      'Recomendado: 1125 × 432',
+    ],
   },
   googleHero: {
     label: 'Google Hero',
+    helpTitle: 'Google Hero',
+    helpLines: [
+      'Obrigatório: PNG',
+      'Formato recomendado: 1032 × 336',
+    ],
     recommendedWidth: 1032,
     recommendedHeight: 336,
-    recommendedText: '1032 × 336 formato PNG',
   },
 };
 
@@ -72,22 +86,34 @@ const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
   const rule = IMAGE_UPLOAD_RULES[uploadKey];
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
       <Button
         type="button"
         variant="outline"
-        className="flex-1"
+        className="w-full justify-start whitespace-nowrap px-3"
         onClick={() => onUpload(uploadKey)}
       >
-        <Upload className="w-4 h-4 mr-2" />
-        {rule.label}
+        <Upload className="mr-2 h-4 w-4 shrink-0" />
+        <span className="truncate">{rule.label}</span>
       </Button>
 
-      <div
-        className="inline-flex items-center justify-center text-slate-500"
-        title={`Formato recomendado: ${rule.recommendedText}`}
-      >
-        <Info className="w-4 h-4 cursor-help" />
+      <div className="relative group flex items-center">
+        <button
+          type="button"
+          className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
+          aria-label={`Informações sobre ${rule.label}`}
+        >
+          <Info className="h-4 w-4" />
+        </button>
+
+        <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+          <p className="mb-2 text-sm font-semibold text-slate-900">{rule.helpTitle}</p>
+          <div className="space-y-1 text-xs text-slate-600">
+            {rule.helpLines.map((line, index) => (
+              <p key={`${uploadKey}-${index}`}>{line}</p>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -158,10 +184,8 @@ function sanitizeFilenamePart(value) {
 
 function isPngFile(file) {
   if (!file) return false;
-
   const mimeOk = file.type === "image/png";
   const nameOk = file.name.toLowerCase().endsWith(".png");
-
   return mimeOk || nameOk;
 }
 
@@ -202,6 +226,95 @@ function normalizeWalletDefaults(defaults = {}) {
       googleHero: incomingImages.googleHero ?? "",
     },
   };
+}
+
+function isApproximatelyThreeToOne(width, height) {
+  if (!width || !height) return false;
+  const ratio = width / height;
+  return ratio >= 2.85 && ratio <= 3.15;
+}
+
+function validateAppleLogoDimensions(width, height) {
+  const minWidth = 480;
+  const minHeight = 160;
+  const maxWidth = 1440;
+  const maxHeight = 480;
+
+  if (width < minWidth || height < minHeight || width > maxWidth || height > maxHeight) {
+    return {
+      valid: false,
+      message: `Logo Apple inválida: ${width} × ${height}. Use PNG entre 480 × 160 e 1440 × 480.`,
+    };
+  }
+
+  if (!isApproximatelyThreeToOne(width, height)) {
+    return {
+      valid: true,
+      warning: `Logo Apple enviada com ${width} × ${height}. O upload foi aceito, mas recomenda-se manter proporção próxima de 3:1 para melhor resultado visual.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateAppleStripDimensions(width, height) {
+  const validSizes = [
+    { width: 375, height: 144 },
+    { width: 750, height: 288 },
+    { width: 1125, height: 432 },
+  ];
+
+  const isExactValidSize = validSizes.some(
+    (size) => size.width === width && size.height === height
+  );
+
+  if (!isExactValidSize) {
+    return {
+      valid: false,
+      message: `Apple Strip inválida: ${width} × ${height}. Use exatamente 375 × 144, 750 × 288 ou 1125 × 432.`,
+    };
+  }
+
+  if (!(width === 1125 && height === 432)) {
+    return {
+      valid: true,
+      warning: `Apple Strip enviada com ${width} × ${height}. O upload foi aceito, mas o formato recomendado é 1125 × 432.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateGoogleAsset(uploadKey, width, height) {
+  const rule = IMAGE_UPLOAD_RULES[uploadKey];
+  if (!rule?.recommendedWidth || !rule?.recommendedHeight) {
+    return { valid: true };
+  }
+
+  if (width !== rule.recommendedWidth || height !== rule.recommendedHeight) {
+    return {
+      valid: true,
+      warning: `${rule.label}: recomendado ${rule.recommendedWidth} × ${rule.recommendedHeight}. Sua imagem tem ${width} × ${height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
+    };
+  }
+
+  return { valid: true };
+}
+
+function validateUploadByKey(uploadKey, width, height) {
+  if (uploadKey === "appleLogo") {
+    return validateAppleLogoDimensions(width, height);
+  }
+
+  if (uploadKey === "appleStrip") {
+    return validateAppleStripDimensions(width, height);
+  }
+
+  if (uploadKey === "googleLogo" || uploadKey === "googleHero") {
+    return validateGoogleAsset(uploadKey, width, height);
+  }
+
+  return { valid: true };
 }
 
 const PassPreview = ({ formState, qrPreviewUrl }) => {
@@ -725,7 +838,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         )
       ) {
         toast({
-          title: "Aviso: Imagem fora do formato recomendado!",
+          title: "Formato recomendado diferente",
           description: `${rule.label}: recomendado ${rule.recommendedText}. Sua imagem tem ${dimensions.width} × ${dimensions.height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
         });
       }
