@@ -28,8 +28,7 @@ const IMAGE_UPLOAD_RULES = {
     helpTitle: 'Logo Apple',
     helpLines: [
       'Obrigatório: PNG',
-      'Tamanho permitido: entre 480 × 160 e 1440 × 480',
-      'Recomendação: manter proporção 3:1',
+      'Largura permitida: até 160px',
     ],
   },
   googleLogo: {
@@ -228,29 +227,13 @@ function normalizeWalletDefaults(defaults = {}) {
   };
 }
 
-function isApproximatelyThreeToOne(width, height) {
-  if (!width || !height) return false;
-  const ratio = width / height;
-  return ratio >= 2.85 && ratio <= 3.15;
-}
-
 function validateAppleLogoDimensions(width, height) {
-  const minWidth = 480;
-  const minHeight = 160;
-  const maxWidth = 1440;
-  const maxHeight = 480;
+  const maxWidth = 160;
 
-  if (width < minWidth || height < minHeight || width > maxWidth || height > maxHeight) {
+  if (width > maxWidth) {
     return {
       valid: false,
-      message: `Logo Apple inválida: ${width} × ${height}. Use PNG entre 480 × 160 e 1440 × 480.`,
-    };
-  }
-
-  if (!isApproximatelyThreeToOne(width, height)) {
-    return {
-      valid: true,
-      warning: `Logo Apple enviada com ${width} × ${height}. O upload foi aceito, mas recomenda-se manter proporção próxima de 3:1 para melhor resultado visual.`,
+      message: `Logo Apple inválida: ${width} × ${height}. Use PNG com largura até 160px.`,
     };
   }
 
@@ -815,6 +798,19 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         console.warn("Não foi possível ler dimensões da imagem:", dimensionError);
       }
 
+      const validation = dimensions
+        ? validateUploadByKey(uploadingKey, dimensions.width, dimensions.height)
+        : { valid: true };
+
+      if (!validation.valid) {
+        toast({
+          title: "Dimensões Inválidas",
+          description: validation.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('pass-assets')
         .upload(path, file, {
@@ -829,17 +825,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
       toast({ title: "Upload com sucesso!" });
 
-      if (
-        rule &&
-        dimensions &&
-        (
-          dimensions.width !== rule.recommendedWidth ||
-          dimensions.height !== rule.recommendedHeight
-        )
-      ) {
+      if (validation.warning) {
         toast({
           title: "Formato recomendado diferente",
-          description: `${rule.label}: recomendado ${rule.recommendedText}. Sua imagem tem ${dimensions.width} × ${dimensions.height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
+          description: validation.warning,
         });
       }
     } catch (error) {
@@ -1052,7 +1041,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
               {isProcessing ? 'Gerando...' : 'Gerar Link Único'}
             </Button>
           </div>
-
+    
           <div className="space-y-4">
             <h2 className="font-semibold text-lg">Passes Emitidos para este Projeto</h2>
             <PassesList passes={passes} loading={loadingPasses} onAction={handlePassesListAction} />
