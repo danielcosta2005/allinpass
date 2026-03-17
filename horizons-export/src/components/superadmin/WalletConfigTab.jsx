@@ -28,8 +28,7 @@ const IMAGE_UPLOAD_RULES = {
     helpTitle: 'Logo Apple',
     helpLines: [
       'Obrigatório: PNG',
-      'Tamanho permitido: entre 480 × 160 e 1440 × 480',
-      'Recomendação: manter proporção 3:1',
+      'Largura permitida: até 160px',
     ],
   },
   googleLogo: {
@@ -228,29 +227,13 @@ function normalizeWalletDefaults(defaults = {}) {
   };
 }
 
-function isApproximatelyThreeToOne(width, height) {
-  if (!width || !height) return false;
-  const ratio = width / height;
-  return ratio >= 2.85 && ratio <= 3.15;
-}
-
 function validateAppleLogoDimensions(width, height) {
-  const minWidth = 480;
-  const minHeight = 160;
-  const maxWidth = 1440;
-  const maxHeight = 480;
+  const maxWidth = 160;
 
-  if (width < minWidth || height < minHeight || width > maxWidth || height > maxHeight) {
+  if (width > maxWidth) {
     return {
       valid: false,
-      message: `Logo Apple inválida: ${width} × ${height}. Use PNG entre 480 × 160 e 1440 × 480.`,
-    };
-  }
-
-  if (!isApproximatelyThreeToOne(width, height)) {
-    return {
-      valid: true,
-      warning: `Logo Apple enviada com ${width} × ${height}. O upload foi aceito, mas recomenda-se manter proporção próxima de 3:1 para melhor resultado visual.`,
+      message: `Logo Apple inválida: ${width} × ${height}. Use PNG com largura até 160px.`,
     };
   }
 
