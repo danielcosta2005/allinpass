@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Plus, Loader2, Trash2, Search, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
 import { listLocations, addLocation, deleteLocation, geocodeAddress } from '@/lib/api';
-import MiniMap from '@/components/superadmin/MiniMap';
 import {
   ADDRESS_INPUT_PLACEHOLDER,
   DEFAULT_FORM,
@@ -36,6 +35,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+const MiniMap = lazy(() => import('@/components/superadmin/MiniMap'));
 
 const LocationsTab = ({ projectId }) => {
   const [locations, setLocations] = useState([]);
@@ -119,6 +120,7 @@ const LocationsTab = ({ projectId }) => {
         setSearchResults([]);
         setSelectedResultId('');
         setConfirmationData(null);
+        setIsConfirmationOpen(false);
         toast({
           title: 'Nenhum resultado',
           description: 'Não encontramos esse endereço. Tente refinar a busca.',
@@ -415,8 +417,11 @@ const LocationsTab = ({ projectId }) => {
                         disabled={isSubmittingLocation}
                       />
                       <div>
-                        <p className="text-sm font-medium">{buildShortAddress(item.address)}</p>
+                        <p className="text-sm font-medium">{buildShortAddress(item.addressShort || item.address)}</p>
                         <p className="text-xs text-gray-500">{item.lat}, {item.lng}</p>
+                        {item.partialMatch && (
+                          <p className="text-xs text-amber-600">Correspondência parcial, confira o ponto no mapa.</p>
+                        )}
                       </div>
                     </label>
                   ))}
@@ -428,43 +433,26 @@ const LocationsTab = ({ projectId }) => {
                 <p className="text-xs text-gray-500 mt-1">
                   Clique no mapa ou arraste o marcador para ajustar a coordenada.
                 </p>
-                <MiniMap
-                  className="mt-2"
-                  lat={minimapLat}
-                  lng={minimapLng}
-                  radius={geofenceRadius}
-                  onCoordinateChange={handleMapCoordinateChange}
-                />
+                <Suspense
+                  fallback={(
+                    <div className="mt-2 rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500">
+                      Carregando mapa...
+                    </div>
+                  )}
+                >
+                  {isConfirmationOpen && (
+                    <MiniMap
+                      className="mt-2"
+                      isActive={isConfirmationOpen}
+                      lat={minimapLat}
+                      lng={minimapLng}
+                      radius={geofenceRadius}
+                      onCoordinateChange={handleMapCoordinateChange}
+                    />
+                  )}
+                </Suspense>
               </div>
             </div>
-
-            <div>
-              <Label htmlFor="confirmAddress">Endereço exibido no front</Label>
-              <Input
-                id="confirmAddress"
-                value={confirmationData?.addressShort || ''}
-                onChange={(e) => {
-                  const newShortAddress = e.target.value;
-                  setConfirmationData((prev) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      addressShort: newShortAddress,
-                    };
-                  });
-                }}
-                disabled={isSubmittingLocation}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                O banco continuará salvando a versão completa do endereço.
-              </p>
-            </div>
-
-            <p className="text-sm text-gray-600">
-              Coordenadas internas: {Number.isFinite(confirmationLat) && Number.isFinite(confirmationLng)
-                ? `${confirmationLat}, ${confirmationLng}`
-                : 'indisponíveis'}
-            </p>
           </div>
 
           <DialogFooter>

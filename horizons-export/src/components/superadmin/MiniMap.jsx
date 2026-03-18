@@ -1,59 +1,9 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import L from 'leaflet';
-import { Circle, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import React, { useEffect, useRef, useState } from 'react';
+import { Loader2 } from 'lucide-react';
+import { hasGoogleMapsClientKey, loadGoogleMapsLibraries } from '@/lib/googleMapsLoader';
 
 const DEFAULT_ZOOM = 16;
 const DEFAULT_RADIUS_METERS = 100;
-
-const defaultMarkerIcon = L.icon({
-  iconRetinaUrl: markerIcon2x,
-  iconUrl: markerIcon,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-});
-
-L.Marker.prototype.options.icon = defaultMarkerIcon;
-
-function MapViewportSync({ center, zoom }) {
-  const map = useMap();
-  const hasInitialized = useRef(false);
-
-  useEffect(() => {
-    if (!hasInitialized.current) {
-      hasInitialized.current = true;
-      map.setView(center, zoom, { animate: false });
-      const timeoutId = setTimeout(() => map.invalidateSize(), 0);
-      return () => clearTimeout(timeoutId);
-    }
-
-    // Preserve current user zoom when coordinates change (click/drag marker).
-    map.setView(center, map.getZoom(), { animate: false });
-    const timeoutId = setTimeout(() => map.invalidateSize(), 0);
-    return () => clearTimeout(timeoutId);
-  }, [map, center, zoom]);
-
-  return null;
-}
-
-function MapCoordinatePicker({ onCoordinateChange }) {
-  useMapEvents({
-    click(event) {
-      if (!onCoordinateChange) return;
-      onCoordinateChange({
-        lat: event.latlng.lat,
-        lng: event.latlng.lng,
-      });
-    },
-  });
-
-  return null;
-}
 
 const MiniMap = ({
   lat,
@@ -61,74 +11,201 @@ const MiniMap = ({
   radius = DEFAULT_RADIUS_METERS,
   zoom = DEFAULT_ZOOM,
   className = '',
+  isActive = true,
   onCoordinateChange = null,
 }) => {
-  const hasValidCoordinates = Number.isFinite(lat) && Number.isFinite(lng);
-  const safeRadius = Number.isFinite(radius) && radius > 0 ? radius : DEFAULT_RADIUS_METERS;
-  const center = useMemo(() => [lat, lng], [lat, lng]);
-  const markerEventHandlers = useMemo(() => {
-    if (!onCoordinateChange) return undefined;
-    return {
-      dragend: (event) => {
-        const newPoint = event.target.getLatLng();
-        onCoordinateChange({
-          lat: newPoint.lat,
-          lng: newPoint.lng,
-        });
-      },
+  const mapElementRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRef = useRef(null);
+  const circleRef = useRef(null);
+  const listenersRef = useRef([]);
+  const [status, setStatus] = useState('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const numericLat = Number(lat);
+  const numericLng = Number(lng);
+  const hasValidCoordinates = Number.isFinite(numericLat) && Number.isFinite(numericLng);
+  const safeRadius = Number.isFinite(Number(radius)) && Number(radius) > 0
+    ? Number(radius)
+    : DEFAULT_RADIUS_METERS;
+
+  useEffect(() => {
+    return () => {
+      listenersRef.current.forEach((listener) => listener?.remove?.());
+      listenersRef.current = [];
+      if (window.google?.maps?.event) {
+        if (markerRef.current) window.google.maps.event.clearInstanceListeners(markerRef.current);
+        if (mapRef.current) window.google.maps.event.clearInstanceListeners(mapRef.current);
+      }
+      markerRef.current = null;
+      circleRef.current = null;
+      mapRef.current = null;
     };
-  }, [onCoordinateChange]);
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    if (!hasValidCoordinates) {
+      setStatus('idle');
+      return;
+    }
+    if (!hasGoogleMapsClientKey()) {
+      setStatus('error');
+      setErrorMessage('Configure a chave publica do Google Maps para exibir o mapa.');
+      return;
+    }
+
+    let cancelled = false;
+
+    const initializeMap = async () => {
+      try {
+        if (!mapRef.current) {
+          setStatus('loading');
+          setErrorMessage('');
+        }
+        await loadGoogleMapsLibraries(['maps']);
+        if (cancelled || !mapElementRef.current) return;
+
+        const position = { lat: numericLat, lng: numericLng };
+
+        if (!mapRef.current) {
+          mapRef.current = new window.google.maps.Map(mapElementRef.current, {
+            center: position,
+            zoom,
+            clickableIcons: false,
+            fullscreenControl: false,
+            mapTypeControl: false,
+            streetViewControl: false,
+          });
+
+          markerRef.current = new window.google.maps.Marker({
+            map: mapRef.current,
+            position,
+            draggable: Boolean(onCoordinateChange),
+          });
+
+          circleRef.current = new window.google.maps.Circle({
+            map: mapRef.current,
+            center: position,
+            radius: safeRadius,
+            strokeColor: '#7c3aed',
+            strokeOpacity: 0.9,
+            strokeWeight: 2,
+            fillColor: '#7c3aed',
+            fillOpacity: 0.18,
+          });
+        }
+
+        listenersRef.current.forEach((listener) => listener?.remove?.());
+        listenersRef.current = [];
+
+        if (mapRef.current && onCoordinateChange) {
+          listenersRef.current.push(
+            mapRef.current.addListener('click', (event) => {
+              const nextLat = event.latLng?.lat?.();
+              const nextLng = event.latLng?.lng?.();
+              if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
+              onCoordinateChange({ lat: nextLat, lng: nextLng });
+            }),
+          );
+        }
+
+        if (markerRef.current) {
+          markerRef.current.setDraggable(Boolean(onCoordinateChange));
+          if (onCoordinateChange) {
+            listenersRef.current.push(
+              markerRef.current.addListener('dragend', (event) => {
+                const nextLat = event.latLng?.lat?.();
+                const nextLng = event.latLng?.lng?.();
+                if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) return;
+                onCoordinateChange({ lat: nextLat, lng: nextLng });
+              }),
+            );
+          }
+        }
+
+        setStatus('ready');
+      } catch (error) {
+        if (cancelled) return;
+        setStatus('error');
+        setErrorMessage(error instanceof Error ? error.message : 'Nao foi possivel carregar o mapa.');
+      }
+    };
+
+    initializeMap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasValidCoordinates, isActive, onCoordinateChange, zoom]);
+
+  useEffect(() => {
+    if (!mapRef.current || !markerRef.current || !circleRef.current || !hasValidCoordinates) return;
+    const position = { lat: numericLat, lng: numericLng };
+    mapRef.current.setCenter(position);
+    markerRef.current.setPosition(position);
+    circleRef.current.setCenter(position);
+  }, [hasValidCoordinates, numericLat, numericLng]);
+
+  useEffect(() => {
+    if (!circleRef.current) return;
+    circleRef.current.setRadius(safeRadius);
+  }, [safeRadius]);
+
+  useEffect(() => {
+    if (!mapRef.current || !Number.isFinite(Number(zoom))) return;
+    mapRef.current.setZoom(Number(zoom));
+  }, [zoom]);
 
   if (!hasValidCoordinates) {
     return (
       <div className={`rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500 ${className}`}>
-        Coordenadas inválidas para o MiniMapa.
+        Coordenadas invalidas para o MiniMapa.
+      </div>
+    );
+  }
+
+  if (!isActive) {
+    return (
+      <div className={`rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500 ${className}`}>
+        Abra a confirmacao para carregar o mapa.
       </div>
     );
   }
 
   return (
     <div className={`rounded-lg border overflow-hidden ${className}`}>
-      <MapContainer
-        center={center}
-        zoom={zoom}
-        scrollWheelZoom
-        className="h-64 w-full"
-      >
-        <MapViewportSync center={center} zoom={zoom} />
-        <MapCoordinatePicker onCoordinateChange={onCoordinateChange} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <Marker
-          position={center}
-          draggable={Boolean(onCoordinateChange)}
-          eventHandlers={markerEventHandlers}
-        />
-        <Circle
-          center={center}
-          radius={safeRadius}
-          pathOptions={{
-            color: '#7c3aed',
-            fillColor: '#7c3aed',
-            fillOpacity: 0.2,
-            weight: 2,
-          }}
-        />
-      </MapContainer>
+      <div className="relative h-64 w-full bg-gray-50">
+        <div ref={mapElementRef} className="h-full w-full" />
+
+        {status === 'loading' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/75 text-sm text-gray-600">
+            <span className="inline-flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Carregando mapa...
+            </span>
+          </div>
+        )}
+
+        {status === 'error' && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 px-4 text-center text-sm text-gray-600">
+            {errorMessage || 'Nao foi possivel carregar o mapa.'}
+          </div>
+        )}
+      </div>
+
       <div className="bg-gray-50 px-3 py-2 text-xs text-gray-600 flex items-center justify-between gap-2">
         <a
-          href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=${zoom}/${lat}/${lng}`}
+          href={`https://www.google.com/maps/search/?api=1&query=${numericLat},${numericLng}`}
           target="_blank"
           rel="noreferrer"
           className="underline"
         >
-          Abrir no OpenStreetMap
+          Abrir no Google Maps
         </a>
         <span>
           {onCoordinateChange
-            ? `Clique/arraste para ajustar`
+            ? 'Clique ou arraste para ajustar'
             : `Raio: ${Math.round(safeRadius)}m`}
         </span>
       </div>

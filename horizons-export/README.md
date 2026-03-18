@@ -38,7 +38,26 @@ GOOGLE_WALLET_ISSUER_ID=...
 
 # Chave de Serviço do Supabase (para funções administrativas)
 SUPABASE_SERVICE_ROLE_KEY=...
+
+# Google Maps
+VITE_GOOGLE_MAPS_KEY=...
+GOOGLE_MAPS_SERVER_KEY=...
 ```
+
+### Google Maps e Geocoding
+
+- `VITE_GOOGLE_MAPS_KEY`: uso exclusivo no frontend para carregar a Maps JavaScript API.
+- Restrinja a chave frontend por `HTTP referrer` e habilite apenas a `Maps JavaScript API`.
+- O loader do app usa `authReferrerPolicy: "origin"` para reduzir exposição de referrer.
+- `GOOGLE_MAPS_SERVER_KEY`: uso exclusivo na edge function `geocode-search`.
+- Restrinja a chave server-side por IP/ambiente do servidor e habilite apenas a `Geocoding API`.
+- Se você usar temporariamente apenas `VITE_GOOGLE_MAPS_KEY` no backend, trate isso como risco temporário e remova o fallback assim que o segredo server-side estiver disponível.
+
+### Deploy da Edge Function `geocode-search`
+
+1. Configure `GOOGLE_MAPS_SERVER_KEY` nos secrets do Supabase.
+2. Publique a função em `supabase/functions/geocode-search`.
+3. Se o segredo server-side ainda não existir, a função faz fallback para `VITE_GOOGLE_MAPS_KEY`, mas isso nao e recomendado para producao.
 
 ### Setup Inicial
 
