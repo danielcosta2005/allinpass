@@ -28,7 +28,6 @@ const IMAGE_UPLOAD_RULES = {
     helpTitle: 'Logo Apple',
     helpLines: [
       'Obrigatório: PNG',
-      'Largura permitida: até 160px',
     ],
   },
   googleLogo: {
@@ -36,18 +35,18 @@ const IMAGE_UPLOAD_RULES = {
     helpTitle: 'Logo Google',
     helpLines: [
       'Obrigatório: PNG',
-      'Formato recomendado: 660 × 660',
+      'Proporção recomendada: 1:1',
     ],
-    recommendedWidth: 660,
-    recommendedHeight: 660,
+    recommendedRatio: 1,
+    recommendedRatioLabel: '1:1',
   },
   appleStrip: {
     label: 'Apple Strip',
     helpTitle: 'Apple Strip',
     helpLines: [
       'Obrigatório: PNG',
-      'Tamanho permitido: 375 × 144, 750 × 288 ou 1125 × 432',
-      'Recomendado: 1125 × 432',
+      'Altura máxima: 432px',
+      'Proporção recomendada: 2.6:1',
     ],
   },
   googleHero: {
@@ -55,10 +54,10 @@ const IMAGE_UPLOAD_RULES = {
     helpTitle: 'Google Hero',
     helpLines: [
       'Obrigatório: PNG',
-      'Formato recomendado: 1032 × 336',
+      'Proporção recomendada: 3:1',
     ],
-    recommendedWidth: 1032,
-    recommendedHeight: 336,
+    recommendedRatio: 3,
+    recommendedRatioLabel: '3:1',
   },
 };
 
@@ -227,57 +226,42 @@ function normalizeWalletDefaults(defaults = {}) {
   };
 }
 
-function validateAppleLogoDimensions(width, height) {
-  const maxWidth = 160;
-
-  if (width > maxWidth) {
-    return {
-      valid: false,
-      message: `Logo Apple inválida: ${width} × ${height}. Use PNG com largura até 160px.`,
-    };
-  }
-
-  return { valid: true };
-}
-
 function validateAppleStripDimensions(width, height) {
-  const validSizes = [
-    { width: 375, height: 144 },
-    { width: 750, height: 288 },
-    { width: 1125, height: 432 },
-  ];
+  const maxHeight = 432;
+  const recommendedRatio = 2.6;
+  const ratioTolerance = 0.01;
 
-  const isExactValidSize = validSizes.some(
-    (size) => size.width === width && size.height === height
-  );
-
-  if (!isExactValidSize) {
+  if (height > maxHeight) {
     return {
       valid: false,
-      message: `Apple Strip inválida: ${width} × ${height}. Use exatamente 375 × 144, 750 × 288 ou 1125 × 432.`,
+      message: `Apple Strip inválida: ${width} × ${height}. Use PNG com altura máxima de 432px.`,
     };
   }
 
-  if (!(width === 1125 && height === 432)) {
+  const ratio = width / height;
+  if (Math.abs(ratio - recommendedRatio) > ratioTolerance) {
     return {
       valid: true,
-      warning: `Apple Strip enviada com ${width} × ${height}. O upload foi aceito, mas o formato recomendado é 1125 × 432.`,
+      warning: `Apple Strip enviada com proporção ${ratio.toFixed(2)}:1. O recomendado é 2.6:1. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
     };
   }
 
   return { valid: true };
 }
 
-function validateGoogleAsset(uploadKey, width, height) {
+function validateRecommendedRatio(uploadKey, width, height) {
   const rule = IMAGE_UPLOAD_RULES[uploadKey];
-  if (!rule?.recommendedWidth || !rule?.recommendedHeight) {
+  if (!rule?.recommendedRatio || !height) {
     return { valid: true };
   }
 
-  if (width !== rule.recommendedWidth || height !== rule.recommendedHeight) {
+  const ratio = width / height;
+  const ratioTolerance = 0.01;
+
+  if (Math.abs(ratio - rule.recommendedRatio) > ratioTolerance) {
     return {
       valid: true,
-      warning: `${rule.label}: recomendado ${rule.recommendedWidth} × ${rule.recommendedHeight}. Sua imagem tem ${width} × ${height}. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
+      warning: `${rule.label}: a proporção recomendada é ${rule.recommendedRatioLabel}. Sua imagem está em ${ratio.toFixed(2)}:1. O upload foi aceito, mas pode haver corte ou ajuste visual.`,
     };
   }
 
@@ -285,16 +269,12 @@ function validateGoogleAsset(uploadKey, width, height) {
 }
 
 function validateUploadByKey(uploadKey, width, height) {
-  if (uploadKey === "appleLogo") {
-    return validateAppleLogoDimensions(width, height);
-  }
-
   if (uploadKey === "appleStrip") {
     return validateAppleStripDimensions(width, height);
   }
 
   if (uploadKey === "googleLogo" || uploadKey === "googleHero") {
-    return validateGoogleAsset(uploadKey, width, height);
+    return validateRecommendedRatio(uploadKey, width, height);
   }
 
   return { valid: true };
