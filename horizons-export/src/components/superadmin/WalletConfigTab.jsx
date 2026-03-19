@@ -27,6 +27,13 @@ import LocationsTab from '@/components/superadmin/LocationsTab';
 import { listPassLocationIds } from '@/lib/api';
 
 const IMAGE_UPLOAD_RULES = {
+  icon: {
+    label: 'Icone Apple',
+    helpTitle: 'Icone Apple',
+    helpLines: ['Logo que aparece na notificação do seu passe', 'Obrigatorio: PNG', 'Proporcao recomendada: 1:1'],
+    recommendedRatio: 1,
+    recommendedRatioLabel: '1:1',
+  },
   appleLogo: {
     label: 'Logo Apple',
     helpTitle: 'Logo Apple',
@@ -916,11 +923,16 @@ const WalletConfigTab = ({ projectId, onBack }) => {
                   <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => handleFormChange('colors.text', e.target.value)} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <UploadButtonWithInfo uploadKey="appleLogo" onUpload={handleUploadClick} />
                   <UploadButtonWithInfo uploadKey="googleLogo" onUpload={handleUploadClick} />
                   <UploadButtonWithInfo uploadKey="appleStrip" onUpload={handleUploadClick} />
                   <UploadButtonWithInfo uploadKey="googleHero" onUpload={handleUploadClick} />
+                  </div>
+                  <div className="md:max-w-[calc(50%-0.375rem)]">
+                    <UploadButtonWithInfo uploadKey="icon" onUpload={handleUploadClick} />
+                  </div>
                 </div>
 
                 <Button type="button" variant="outline" className="w-full justify-start" onClick={() => setIsLocationsModalOpen(true)}>
