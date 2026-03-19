@@ -122,7 +122,12 @@ export async function geocodeAddress(address, limit = 5) {
     })
     .filter(Boolean);
 }
-export async function addLocation(projectId, payload) {
+export async function addLocation(projectId, payload, options = {}) {
+  const passId =
+    typeof options?.passId === 'string' && options.passId.trim()
+      ? options.passId.trim()
+      : null;
+
   const lat = payload?.lat == null || payload?.lat === '' ? null : Number(payload.lat);
   const lngSource = payload?.lng ?? payload?.long;
   const lng = lngSource == null || lngSource === '' ? null : Number(lngSource);
@@ -156,11 +161,42 @@ export async function addLocation(projectId, payload) {
     error = retry.error;
   }
 
-  if (error) throw error; return data;
+  if (error) throw error;
+
+  if (passId && data?.id) {
+    const { error: passLocationError } = await supabase
+      .from('pass_locations')
+      .upsert(
+        {
+          project_id: projectId,
+          pass_id: passId,
+          location_id: data.id,
+        },
+        { onConflict: 'pass_id,location_id' },
+      );
+
+    if (passLocationError) throw passLocationError;
+  }
+
+  return data;
 }
 export async function deleteLocation(id) {
   const { error } = await supabase.from('locations').delete().eq('id', id);
   if (error) throw error; return true;
+}
+
+export async function listPassLocationIds(projectId, passId) {
+  if (!projectId || !passId) return [];
+
+  const { data, error } = await supabase
+    .from('pass_locations')
+    .select('location_id')
+    .eq('project_id', projectId)
+    .eq('pass_id', passId);
+
+  if (error) throw error;
+
+  return [...new Set((data || []).map((row) => row.location_id).filter(Boolean))];
 }
 
 /* ---------- Customers ---------- */

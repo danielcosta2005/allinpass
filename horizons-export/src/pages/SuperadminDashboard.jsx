@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, Users, MapPin, Wallet, Settings, LayoutDashboard, Bell, Loader2 } from 'lucide-react';
+import { LogOut, Users, Wallet, Settings, LayoutDashboard, Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProjectsTab from '@/components/superadmin/ProjectsTab';
 import MembersTab from '@/components/superadmin/MembersTab';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
-import LocationsTab from '@/components/superadmin/LocationsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import DashboardTab from '@/components/superadmin/DashboardTab';
 import NotificationsConfigTab from '@/components/superadmin/NotificationsConfigTab';
@@ -64,7 +63,7 @@ const SuperadminDashboard = () => {
   };
 
   useEffect(() => {
-    const projectDependentTabs = new Set(['wallet', 'notifications', 'members', 'locations', 'customers']);
+    const projectDependentTabs = new Set(['wallet', 'notifications', 'members', 'customers']);
     if (!selectedProject && projectDependentTabs.has(activeTab)) {
       setActiveTab('projects');
       try {
@@ -101,7 +100,6 @@ const SuperadminDashboard = () => {
     { value: 'wallet', label: 'Wallet', icon: Wallet, disabled: !selectedProject },
     { value: 'notifications', label: 'Notificações', icon: Bell, disabled: !selectedProject },
     { value: 'members', label: 'Membros', icon: Users, disabled: !selectedProject },
-    { value: 'locations', label: 'Locais', icon: MapPin, disabled: !selectedProject },
     { value: 'customers', label: 'Clientes', icon: Users, disabled: !selectedProject },
   ];
 
@@ -156,7 +154,7 @@ const SuperadminDashboard = () => {
             transition={{ duration: 0.5 }}
           >
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-7 lg:w-auto lg:inline-grid">
+              <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:w-auto lg:inline-grid">
                 {TABS.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value} className="gap-2" disabled={tab.disabled}>
                     <tab.icon className="w-4 h-4" />
@@ -175,9 +173,6 @@ const SuperadminDashboard = () => {
               </TabsContent>
               <TabsContent value="members">
                 {selectedProject && <MembersTab projectId={selectedProject.id} />}
-              </TabsContent>
-              <TabsContent value="locations">
-                {selectedProject && <LocationsTab projectId={selectedProject.id} />}
               </TabsContent>
               <TabsContent value="customers">
                 {selectedProject && <CustomersTab projectId={selectedProject.id} />}
