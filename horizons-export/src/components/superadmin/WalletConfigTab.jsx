@@ -815,9 +815,13 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       if (!response.ok || result?.ok === false) throw new Error(result?.message || result?.error || `Falha na requisição: ${response.status}`);
 
       const pushes = result?.pushes || {};
+      const appleFailed = pushes?.apple?.failed ?? 0;
+      const googleFailed = pushes?.google?.failed ?? 0;
+      const hasPushFailures = appleFailed > 0 || googleFailed > 0;
       toast({
-        title: 'Passe atualizado com sucesso.',
-        description: `Push enviado para ${pushes.total_tokens ?? 0} token(s). Apple: ${pushes?.apple?.success ?? 0} ok, Google: ${pushes?.google?.success ?? 0} ok.`,
+        title: hasPushFailures ? 'Passe atualizado com alertas.' : 'Passe atualizado com sucesso.',
+        description: hasPushFailures ? `Push enviado para ${pushes.total_tokens ?? 0} token(s). Apple: ${pushes?.apple?.success ?? 0} ok, ${appleFailed} falhou. Google: ${pushes?.google?.success ?? 0} ok, ${googleFailed} falhou.` : `Atualizações enviadas para os clientes!`,
+        variant: hasPushFailures ? 'destructive' : 'default',
       });
 
       setPassLocationsByPassId((prev) => ({ ...prev, [selectedPass.id]: selectedPassLocationIds }));
