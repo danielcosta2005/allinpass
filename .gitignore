@@ -1,5 +1,6 @@
-horizons-export/node_modules
+node_modules
 teste/
 prompt/
-horizons-export/.env
+.env
 dist
+supabase

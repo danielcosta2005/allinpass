@@ -4,6 +4,7 @@ import { MapPin, Plus, Loader2, Trash2, Search, RotateCcw, CheckCircle2 } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/use-toast';
 import { listLocations, addLocation, deleteLocation, geocodeAddress } from '@/lib/api';
 import {
@@ -26,7 +27,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -34,11 +35,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 
 const MiniMap = lazy(() => import('@/components/superadmin/MiniMap'));
 
-const LocationsTab = ({ projectId }) => {
+const LocationsTab = ({
+  projectId,
+  selectionMode = false,
+  selectedLocationIds = [],
+  onSelectedLocationIdsChange,
+  passId = null,
+  onClose = null,
+}) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -51,6 +59,24 @@ const LocationsTab = ({ projectId }) => {
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   const [locationToDelete, setLocationToDelete] = useState(null);
 
+  const canSelect = selectionMode && typeof onSelectedLocationIdsChange === 'function';
+  const selectedIdsSet = new Set(Array.isArray(selectedLocationIds) ? selectedLocationIds : []);
+
+  const updateSelectedIds = useCallback((nextIds) => {
+    if (!canSelect) return;
+    onSelectedLocationIdsChange(nextIds);
+  }, [canSelect, onSelectedLocationIdsChange]);
+
+  const toggleLocationSelection = useCallback((locationId, checked) => {
+    if (!canSelect || !locationId) return;
+
+    const next = new Set(Array.isArray(selectedLocationIds) ? selectedLocationIds : []);
+    if (checked) next.add(locationId);
+    else next.delete(locationId);
+
+    updateSelectedIds([...next]);
+  }, [canSelect, selectedLocationIds, updateSelectedIds]);
+
   const fetchLocations = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
@@ -59,9 +85,9 @@ const LocationsTab = ({ projectId }) => {
       setLocations(data);
     } catch (error) {
       toast({
-        title: "Erro ao carregar locais",
+        title: 'Erro ao carregar locais',
         description: error.message,
-        variant: "destructive",
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);
@@ -92,6 +118,7 @@ const LocationsTab = ({ projectId }) => {
     setSelectedResultId('');
     setConfirmationData(null);
     setIsConfirmationOpen(false);
+
     if (!keepBaseFields) {
       setFormData(DEFAULT_FORM);
     } else {
@@ -101,15 +128,25 @@ const LocationsTab = ({ projectId }) => {
 
   const handleSearchAddress = async (e) => {
     e.preventDefault();
+
     const label = formData.label.trim();
     const addressQuery = formData.addressQuery.trim();
 
     if (!label) {
-      toast({ title: 'Informe um label', description: 'Preencha o nome do local antes de buscar.', variant: 'destructive' });
+      toast({
+        title: 'Informe um label',
+        description: 'Preencha o nome do local antes de buscar.',
+        variant: 'destructive',
+      });
       return;
     }
+
     if (!addressQuery) {
-      toast({ title: 'Informe um endereço', description: 'Digite um endereço para buscar as coordenadas.', variant: 'destructive' });
+      toast({
+        title: 'Informe um endereco',
+        description: 'Digite um endereco para buscar as coordenadas.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -139,7 +176,7 @@ const LocationsTab = ({ projectId }) => {
       });
     } catch (error) {
       toast({
-        title: 'Erro ao consultar endereço',
+        title: 'Erro ao consultar endereco',
         description: error.message,
         variant: 'destructive',
       });
@@ -155,6 +192,7 @@ const LocationsTab = ({ projectId }) => {
 
   const handleSubmitConfirmedLocation = async () => {
     if (!confirmationData) return;
+
     setIsSubmittingLocation(true);
     try {
       const trimmedLabel = formData.label.trim();
@@ -163,27 +201,31 @@ const LocationsTab = ({ projectId }) => {
       const lng = Number(confirmationData.lng);
       const radius = DEFAULT_GEOFENCE_RADIUS_METERS;
 
-      if (!trimmedLabel) {
-        throw new Error('Label obrigatório.');
-      }
-      if (!trimmedAddress) {
-        throw new Error('Endereço obrigatório.');
-      }
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        throw new Error('Latitude/longitude inválidas.');
-      }
+      if (!trimmedLabel) throw new Error('Label obrigatório.');
+      if (!trimmedAddress) throw new Error('Endereço obrigatório.');
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Latitude/longitude inválidas.');
 
-      await addLocation(projectId, {
-        label: trimmedLabel,
-        address: trimmedAddress,
-        lat,
-        lng,
-        long: lng,
-        radius,
-      });
+      const createdLocation = await addLocation(
+        projectId,
+        {
+          label: trimmedLabel,
+          address: trimmedAddress,
+          lat,
+          lng,
+          long: lng,
+          radius,
+        },
+        { passId: selectionMode ? passId : null },
+      );
+
+      if (canSelect && createdLocation?.id) {
+        const next = new Set(Array.isArray(selectedLocationIds) ? selectedLocationIds : []);
+        next.add(createdLocation.id);
+        updateSelectedIds([...next]);
+      }
 
       toast({
-        title: "Local adicionado! 📍",
+        title: 'Local adicionado',
         description: `${formData.label || 'Novo local'} foi cadastrado com sucesso.`,
       });
 
@@ -196,9 +238,9 @@ const LocationsTab = ({ projectId }) => {
       await fetchLocations();
     } catch (error) {
       toast({
-        title: "Erro ao adicionar local",
+        title: 'Erro ao adicionar local',
         description: error.message,
-        variant: "destructive",
+        variant: 'destructive',
       });
     } finally {
       setIsSubmittingLocation(false);
@@ -207,14 +249,26 @@ const LocationsTab = ({ projectId }) => {
 
   const handleDelete = async () => {
     if (!locationToDelete) return;
+
     setIsSubmittingLocation(true);
     try {
       await deleteLocation(locationToDelete.id);
-      toast({ title: "Local removido!", description: `${locationToDelete.label} foi excluído.` });
+
+      if (canSelect) {
+        const next = (Array.isArray(selectedLocationIds) ? selectedLocationIds : [])
+          .filter((id) => id !== locationToDelete.id);
+        updateSelectedIds(next);
+      }
+
+      toast({ title: 'Local removido', description: `${locationToDelete.label} foi excluído.` });
       setLocationToDelete(null);
       await fetchLocations();
     } catch (error) {
-      toast({ title: "Erro ao remover", description: error.message, variant: "destructive" });
+      toast({
+        title: 'Erro ao remover',
+        description: error.message,
+        variant: 'destructive',
+      });
     } finally {
       setIsSubmittingLocation(false);
     }
@@ -232,6 +286,7 @@ const LocationsTab = ({ projectId }) => {
     const lat = Number(point.lat);
     const lng = Number(point.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
     setConfirmationData((prev) => {
       if (!prev) return prev;
       return {
@@ -244,15 +299,33 @@ const LocationsTab = ({ projectId }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Localizações</h2>
-        <Button
-          onClick={() => setShowForm(!showForm)}
-          className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Local
-        </Button>
+      <div className="flex flex-wrap justify-between items-center gap-3">
+        <div>
+          <h2 className="text-2xl font-bold">
+            {selectionMode ? 'Localizações do Passe' : 'Localizações'}
+          </h2>
+          {selectionMode && (
+            <p className="text-sm text-gray-600">
+              Selecione os locais deste passe. Selecionadas: {selectedIdsSet.size}
+            </p>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {selectionMode && onClose && (
+            <Button type="button" variant="outline" onClick={onClose}>
+              Concluir
+            </Button>
+          )}
+
+          <Button
+            onClick={() => setShowForm(!showForm)}
+            className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Local
+          </Button>
+        </div>
       </div>
 
       {showForm && (
@@ -285,7 +358,7 @@ const LocationsTab = ({ projectId }) => {
               />
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button type="submit" disabled={isSearchingAddress || isSubmittingLocation}>
                 {isSearchingAddress ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                 Buscar Endereço
@@ -325,13 +398,15 @@ const LocationsTab = ({ projectId }) => {
         <div className="grid gap-4 md:grid-cols-2">
           {locations.length > 0 ? locations.map((location) => {
             const shortAddress = buildShortAddress(location.address);
+            const isSelected = selectedIdsSet.has(location.id);
 
             return (
               <motion.div
                 key={location.id}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100 flex justify-between items-start"
+                onClick={selectionMode ? () => toggleLocationSelection(location.id, !isSelected) : undefined}
+                className={`bg-white rounded-2xl p-6 shadow-lg border border-purple-100 flex justify-between items-start ${selectionMode ? 'cursor-pointer transition-colors' : ''} ${selectionMode && isSelected ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''}`}
               >
                 <div className="flex items-start gap-3">
                   <div className="bg-purple-100 p-2 rounded-lg">
@@ -341,7 +416,7 @@ const LocationsTab = ({ projectId }) => {
                   <div className="flex-1">
                     <h3 className="font-bold mb-1">{location.label}</h3>
                     <p className="text-sm text-gray-600">
-                      {shortAddress || 'Sem endereço salvo'}
+                      {shortAddress || 'Sem endereco salvo'}
                     </p>
                     <p className="text-gray-400 text-xs mt-2">
                       {(Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng ?? location.long)))
@@ -351,13 +426,34 @@ const LocationsTab = ({ projectId }) => {
                   </div>
                 </div>
 
-                <Button variant="ghost" size="icon" onClick={() => setLocationToDelete(location)}>
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  {selectionMode && (
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) => toggleLocationSelection(location.id, Boolean(checked))}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLocationToDelete(location);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
               </motion.div>
             );
           }) : (
-            <p className="text-gray-500 col-span-full text-center py-4">Nenhuma localização adicionada.</p>
+            <p className="text-gray-500 col-span-full text-center py-4">
+              {selectionMode
+                ? 'Nenhuma localização cadastrada. Crie um novo local para vincular ao passe.'
+                : 'Nenhuma localização adicionada.'}
+            </p>
           )}
         </div>
       )}
