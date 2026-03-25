@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "vite --host :: --port 3000",
+    "dev:prod": "vite --mode production --host :: --port 3000",
+    "dev:dev": "vite --mode development --host :: --port 3000",
     "build": "vite build",
     "preview": "vite preview --host :: --port 3000",
     "test": "jest"

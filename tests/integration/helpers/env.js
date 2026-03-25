@@ -33,7 +33,7 @@ function loadDotEnvFile(filePath) {
 function initTestEnv() {
   if (initialized) return;
 
-  loadDotEnvFile(path.resolve(process.cwd(), ".env"));
+  loadDotEnvFile(path.resolve(process.cwd(), ".env.development"));
 
   if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
     process.env.SUPABASE_URL = process.env.VITE_SUPABASE_URL;

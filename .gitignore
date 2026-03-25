@@ -1,6 +1,7 @@
 node_modules
 teste/
 prompt/
-.env
+.env.development
+.env.production
 dist
 supabase
