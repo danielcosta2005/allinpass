@@ -85,6 +85,27 @@ function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
 }
 
+async function getFunctionAuthHeaders() {
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (anonKey) {
+    headers.apikey = anonKey;
+  }
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data?.session?.access_token;
+    headers.Authorization = `Bearer ${accessToken || anonKey || ''}`;
+  } catch {
+    headers.Authorization = `Bearer ${anonKey || ''}`;
+  }
+
+  return headers;
+}
+
 function toObject(v) {
   if (isObject(v)) return v;
   if (typeof v === 'string') {
@@ -736,10 +757,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-pass`, {
         method: 'POST',
         mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
+        headers: await getFunctionAuthHeaders(),
         body: JSON.stringify(body),
       });
 
@@ -804,10 +822,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-pass`, {
         method: 'POST',
         mode: 'cors',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-        },
+        headers: await getFunctionAuthHeaders(),
         body: JSON.stringify(body),
       });
 
