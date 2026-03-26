@@ -85,25 +85,20 @@ function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
 }
 
-async function getFunctionAuthHeaders() {
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const headers = {
-    'Content-Type': 'application/json',
-  };
+async function invokeWalletFunction(functionName, body) {
+  // Keep auth/header handling inside the configured Supabase client.
+  // This avoids fragile manual fetches when env URLs contain a trailing slash.
+  const { data, error } = await supabase.functions.invoke(functionName, { body });
 
-  if (anonKey) {
-    headers.apikey = anonKey;
+  if (error) {
+    throw new Error(error.message || `Falha ao chamar ${functionName}.`);
   }
 
-  try {
-    const { data } = await supabase.auth.getSession();
-    const accessToken = data?.session?.access_token;
-    headers.Authorization = `Bearer ${accessToken || anonKey || ''}`;
-  } catch {
-    headers.Authorization = `Bearer ${anonKey || ''}`;
+  if (data?.ok === false || data?.error) {
+    throw new Error(data?.message || data?.error || `Falha ao chamar ${functionName}.`);
   }
 
-  return headers;
+  return data;
 }
 
 function toObject(v) {
@@ -754,15 +749,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         app_base_url: window.location.origin,
       };
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-pass`, {
-        method: 'POST',
-        mode: 'cors',
-        headers: await getFunctionAuthHeaders(),
-        body: JSON.stringify(body),
-      });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || `Falha na requisição: ${response.status}`);
+      const result = await invokeWalletFunction('create-pass', body);
 
       setFormState((prev) => ({ ...prev, qr_url: result.qr_url || prev.qr_url }));
       setGenerationResult(result);
@@ -819,15 +806,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         },
       };
 
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-pass`, {
-        method: 'POST',
-        mode: 'cors',
-        headers: await getFunctionAuthHeaders(),
-        body: JSON.stringify(body),
-      });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || result?.ok === false) throw new Error(result?.message || result?.error || `Falha na requisição: ${response.status}`);
+      const result = await invokeWalletFunction('update-pass', body);
 
       const pushes = result?.pushes || {};
       const appleFailed = pushes?.apple?.failed ?? 0;
