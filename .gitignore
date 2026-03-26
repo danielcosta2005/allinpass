@@ -4,4 +4,4 @@ prompt/
 .env.development
 .env.production
 dist
-supabase
+supabase_temp
