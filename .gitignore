@@ -5,3 +5,4 @@ prompt/
 .env.production
 dist
 supabase_temp
+hash
