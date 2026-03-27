@@ -20,7 +20,6 @@ import {
 } from '@/components/superadmin/locations/addressUtils';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -472,14 +471,15 @@ const LocationsTab = ({
             <AlertDialogCancel onClick={() => setLocationToDelete(null)} disabled={isSubmittingLocation}>
               Cancelar
             </AlertDialogCancel>
-            <AlertDialogAction
+            <Button
+              type="button"
               onClick={handleDelete}
               disabled={isSubmittingLocation}
               className="bg-red-600 hover:bg-red-700"
             >
               {isSubmittingLocation && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Remover
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

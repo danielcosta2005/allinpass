@@ -181,7 +181,23 @@ export async function addLocation(projectId, payload, options = {}) {
   return data;
 }
 export async function deleteLocation(id) {
-  const { error } = await supabase.from('locations').delete().eq('id', id);
+  const locationId = typeof id === 'string' ? id.trim() : '';
+  if (!locationId) throw new Error('Location id obrigatório.');
+
+  const { error: passLocationsError } = await supabase
+    .from('pass_locations')
+    .delete()
+    .eq('location_id', locationId);
+
+  if (
+    passLocationsError &&
+    !/relation .* does not exist/i.test(passLocationsError.message || '') &&
+    !/could not find the table/i.test(passLocationsError.message || '')
+  ) {
+    throw passLocationsError;
+  }
+
+  const { error } = await supabase.from('locations').delete().eq('id', locationId);
   if (error) throw error; return true;
 }
 
