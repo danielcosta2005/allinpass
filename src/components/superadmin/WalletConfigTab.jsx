@@ -935,7 +935,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
                 <Button type="button" variant="outline" className="w-full justify-start" onClick={() => setIsLocationsModalOpen(true)}>
                   <MapPin className="mr-2 h-4 w-4" />
-                  Adicionar localização ({activeLocationIds.length} selecionada(s))
+                  Adicionar localização ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
                 </Button>
 
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".png,image/png" />
