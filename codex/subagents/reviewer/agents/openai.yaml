@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reviewer"
+  short_description: "Review code, UX, and test coverage"
+  default_prompt: "Use $reviewer to review a change for quality, UX, and tests."

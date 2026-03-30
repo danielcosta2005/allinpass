@@ -1,0 +1,62 @@
+team_name: "allinpass-delivery-squad"
+lead: "scrum-master"
+quality_gate: "reviewer"
+security_gate: "cyber-security"
+agents:
+  - id: "frontend-developer"
+    path: "./frontend-developer"
+    mission: "Construir interfaces React/Vite, jornadas do usuario e integracoes cliente."
+    primary_skills:
+      - "component-architecture"
+      - "responsive-ux"
+      - "accessibility"
+      - "frontend-integration"
+    handoff_to:
+      - "backend-developer"
+      - "reviewer"
+  - id: "backend-developer"
+    path: "./backend-developer"
+    mission: "Implementar edge functions, contratos de dados, SQL e regras de negocio."
+    primary_skills:
+      - "api-design"
+      - "database-modeling"
+      - "supabase-functions"
+      - "integration-reliability"
+    handoff_to:
+      - "frontend-developer"
+      - "cyber-security"
+      - "reviewer"
+  - id: "cyber-security"
+    path: "./cyber-security"
+    mission: "Revisar ameacas, autenticacao, autorizacao, segredos e superficie de ataque."
+    primary_skills:
+      - "threat-modeling"
+      - "auth-hardening"
+      - "secret-handling"
+      - "risk-prioritization"
+    handoff_to:
+      - "backend-developer"
+      - "reviewer"
+  - id: "reviewer"
+    path: "./reviewer"
+    mission: "Fazer review com foco em bugs, UX design e software testing."
+    primary_skills:
+      - "code-review"
+      - "ux-design"
+      - "software-testing"
+      - "regression-analysis"
+    handoff_to:
+      - "scrum-master"
+  - id: "scrum-master"
+    path: "./scrum-master"
+    mission: "Spawnar, coordenar e consolidar o trabalho dos demais subagentes."
+    primary_skills:
+      - "backlog-breakdown"
+      - "agent-spawning"
+      - "parallel-coordination"
+      - "delivery-synthesis"
+    handoff_to:
+      - "frontend-developer"
+      - "backend-developer"
+      - "cyber-security"
+      - "reviewer"

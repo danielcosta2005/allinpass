@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scrum Master"
+  short_description: "Coordinate agents, scope, and delivery"
+  default_prompt: "Use $scrum-master to break work down and coordinate the team."
