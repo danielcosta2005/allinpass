@@ -1,4 +1,0 @@
-interface:
-  display_name: "Frontend Developer"
-  short_description: "Build UI flows, components, and polish"
-  default_prompt: "Use $frontend-developer to plan and implement a frontend change."
