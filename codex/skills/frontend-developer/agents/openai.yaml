@@ -1,5 +1,3 @@
-id: frontend-developer
-skill: ../skills/frontend-developer/SKILL.md
 interface:
   display_name: "Frontend Developer"
   short_description: "Build UI flows, components, and polish"

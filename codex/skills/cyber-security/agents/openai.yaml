@@ -1,5 +1,3 @@
-id: cyber-security
-skill: ../skills/cyber-security/SKILL.md
 interface:
   display_name: "Cyber Security"
   short_description: "Review threats, auth, and security posture"

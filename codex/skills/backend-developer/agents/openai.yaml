@@ -1,5 +1,3 @@
-id: backend-developer
-skill: ../skills/backend-developer/SKILL.md
 interface:
   display_name: "Backend Developer"
   short_description: "Build APIs, data flows, and backend logic"

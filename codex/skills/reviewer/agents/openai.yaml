@@ -1,5 +1,3 @@
-id: reviewer
-skill: ../skills/reviewer/SKILL.md
 interface:
   display_name: "Reviewer"
   short_description: "Review code, UX, and test coverage"
