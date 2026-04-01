@@ -1,4 +1,0 @@
-interface:
-  display_name: "Cyber Security"
-  short_description: "Review threats, auth, and security posture"
-  default_prompt: "Use $cyber-security to assess risks and harden a feature."
