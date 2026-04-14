@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite --host :: --port 3000",
-    "dev:prod": "vite --mode production --host :: --port 3000",
+    "prod": "vite --mode production --host :: --port 3000",
     "dev:dev": "vite --mode development --host :: --port 3000",
     "build": "vite build",
     "preview": "vite preview --host :: --port 3000",
@@ -52,6 +52,7 @@
     "eslint-config-react-app": "^7.0.1",
     "jest": "^30.3.0",
     "postcss": "^8.4.31",
+    "supabase": "^2.84.3",
     "tailwindcss": "^3.3.3",
     "vite": "^4.4.5"
   }
