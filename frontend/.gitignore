@@ -6,3 +6,4 @@ prompt/
 dist
 supabase_temp
 hash
+.env
