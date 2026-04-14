@@ -207,9 +207,20 @@ function sanitizeFilenamePart(value) {
   return safe || 'pass';
 }
 
-function isPngFile(file) {
-  if (!file) return false;
-  return file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+async function isPngFile(file) {
+  if (!file || typeof file.slice !== 'function') return false;
+
+  try {
+    const headerBuffer = await file.slice(0, PNG_SIGNATURE.length).arrayBuffer();
+    const header = new Uint8Array(headerBuffer);
+
+    if (header.length !== PNG_SIGNATURE.length) return false;
+    return PNG_SIGNATURE.every((byte, index) => header[index] === byte);
+  } catch {
+    return false;
+  }
 }
 
 function getImageDimensions(file) {
@@ -647,7 +658,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     if (!file || !uploadingKey) return;
     const rule = IMAGE_UPLOAD_RULES[uploadingKey];
 
-    if (!isPngFile(file)) {
+    const isValidPng = await isPngFile(file);
+    if (!isValidPng) {
       toast({ title: 'Formato inválido', description: `O campo "${rule?.label ?? uploadingKey}" aceita apenas PNG.`, variant: 'destructive' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       setUploadingKey(null);
@@ -655,7 +667,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     }
 
     setIsProcessing(true);
-    const path = `${projectId || 'temp'}/${uploadingKey}-${Date.now()}-${file.name}`;
+    const originalBaseName = sanitizeFilenamePart(file.name.replace(/\.[^.]+$/, '') || uploadingKey);
+    const path = `${projectId || 'temp'}/${uploadingKey}-${Date.now()}-${originalBaseName}.png`;
     try {
       const dimensions = await getImageDimensions(file);
       const validation = validateUploadByKey(uploadingKey, dimensions.width, dimensions.height);
