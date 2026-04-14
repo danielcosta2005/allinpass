@@ -5,3 +5,6 @@ prompt/
 .env.production
 dist
 supabase
+.env
+hash/
+.gitignore
