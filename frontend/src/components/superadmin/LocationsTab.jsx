@@ -360,7 +360,7 @@ const LocationsTab = ({
                     <Info className="h-4 w-4" />
                   </button>
                   <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-600 shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
-                    Essa descricao vai ser o texto que vai aparecer no celular dos clientes que utilizam iPhone quando ele se aproximar do estabelecimento.
+                    Esse é o texto que vai aparecer no celular dos clientes que utilizam iPhone quando eles se aproximarem do seu estabelecimento.
                   </div>
                 </div>
               </div>
