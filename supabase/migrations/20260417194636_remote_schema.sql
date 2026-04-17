@@ -1539,6 +1539,7 @@ CREATE TABLE IF NOT EXISTS "public"."locations" (
     "is_active" boolean DEFAULT true NOT NULL,
     "priority" integer DEFAULT 100 NOT NULL,
     "address" "text",
+    "description" "text",
     CONSTRAINT "locations_lat_lng_range_chk" CHECK (((("lat" IS NULL) OR (("lat" >= ('-90'::integer)::numeric) AND ("lat" <= (90)::numeric))) AND (("lng" IS NULL) OR (("lng" >= ('-180'::integer)::numeric) AND ("lng" <= (180)::numeric)))))
 );
 
@@ -2478,7 +2479,7 @@ ALTER TABLE ONLY "public"."notification_jobs"
 
 
 ALTER TABLE ONLY "public"."notification_jobs"
-    ADD CONSTRAINT "notification_jobs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id");
+    ADD CONSTRAINT "notification_jobs_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
 
 
 
@@ -2488,7 +2489,7 @@ ALTER TABLE ONLY "public"."notification_jobs"
 
 
 ALTER TABLE ONLY "public"."notifications"
-    ADD CONSTRAINT "notifications_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id");
+    ADD CONSTRAINT "notifications_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
 
 
 
