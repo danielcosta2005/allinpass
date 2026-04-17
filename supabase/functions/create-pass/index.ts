@@ -45,16 +45,48 @@ function isObj(v: any) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
 
+class HttpError extends Error {
+  status: number;
+  payload: Record<string, unknown>;
+
+  constructor(status: number, payload: Record<string, unknown>) {
+    const message =
+      typeof payload?.message === "string"
+        ? payload.message
+        : "Request failed.";
+    super(message);
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 function normalizeLocationIds(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   const unique = new Set<string>();
+
   for (const raw of input) {
-    if (typeof raw !== "string") continue;
-    const id = raw.trim();
+    const rawId =
+      typeof raw === "string" || typeof raw === "number"
+        ? raw
+        : isObj(raw)
+          ? raw.id ?? raw.location_id
+          : null;
+
+    const id = String(rawId ?? "").trim();
     if (!id) continue;
     unique.add(id);
   }
+
   return [...unique];
+}
+
+function resolveLocationIdsFromBody(body: any): unknown {
+  if (body?.location_ids !== undefined) return body.location_ids;
+  if (body?.pass_data?.location_ids !== undefined) return body.pass_data.location_ids;
+  if (body?.locationIds !== undefined) return body.locationIds;
+  if (body?.passData?.location_ids !== undefined) return body.passData.location_ids;
+  if (body?.passData?.locationIds !== undefined) return body.passData.locationIds;
+  return [];
 }
 
 function normalizeDefaults(input: any): any {
@@ -81,11 +113,11 @@ async function getProjectTemplateDefaults(projectId: string) {
 }
 
 /**
- * Resolve base pública do app (onde existe /claim/:c).
- * Prioridade:
- * - body.app_base_url (explícito)
- * - header Origin (quem chamou)
- * - env PUBLIC_APP_URL
+ * Resolve app public base (where /claim/:c exists).
+ * Priority:
+ * - body.app_base_url
+ * - Origin header
+ * - PUBLIC_APP_URL env
  */
 function resolveAppBaseUrl(req: Request, body: any) {
   const fromBody =
@@ -102,47 +134,80 @@ function resolveAppBaseUrl(req: Request, body: any) {
 }
 
 serve(async (req) => {
+  const origin = req.headers.get("Origin") || "*";
+
   if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: corsHeaders(req.headers.get("Origin") || "*"),
-    });
+    return new Response("ok", { headers: corsHeaders(origin) });
   }
 
   try {
-    const origin = req.headers.get("Origin") || "*";
     const body = await req.json().catch(() => ({}));
 
-    const projectId = body.project_id;
-    if (!projectId) throw new Error("project_id is required");
+    const projectId =
+      typeof body.project_id === "string" ? body.project_id.trim() : body.project_id;
+    if (!projectId) {
+      throw new HttpError(400, {
+        ok: false,
+        error: "bad_request",
+        message: "project_id is required",
+      });
+    }
 
     const templateDefaults = await getProjectTemplateDefaults(projectId);
 
     const type = (body.type ?? templateDefaults.type ?? "loyalty")
       .toString()
       .toLowerCase();
-    const title = body.title ?? templateDefaults.title ?? "Cartão Fidelidade";
+    const title = body.title ?? templateDefaults.title ?? "Cartao Fidelidade";
     const description =
       body.description ??
       templateDefaults.description ??
-      "Ganhe prêmios acumulando pontos!";
+      "Ganhe premios acumulando pontos!";
 
     const fields = body.fields ?? templateDefaults.fields ?? {};
     const design = {
       colors: { ...(templateDefaults.colors ?? {}), ...(body.colors ?? {}) },
       images: { ...(templateDefaults.images ?? {}), ...(body.images ?? {}) },
     };
-    const locationIds = normalizeLocationIds(body.location_ids);
+
+    const requestedLocationIds = normalizeLocationIds(resolveLocationIdsFromBody(body));
+    let validLocationIds: string[] = [];
+
+    if (requestedLocationIds.length > 0) {
+      const { data: validLocations, error: validLocationsError } = await sbAdmin
+        .from("locations")
+        .select("id")
+        .eq("project_id", projectId)
+        .in("id", requestedLocationIds);
+
+      if (validLocationsError) {
+        throw new Error(`Erro ao validar localizacoes: ${validLocationsError.message}`);
+      }
+
+      validLocationIds = (validLocations ?? []).map((row: any) => String(row.id));
+      const validSet = new Set(validLocationIds);
+      const invalidIds = requestedLocationIds.filter((id) => !validSet.has(id));
+
+      if (invalidIds.length > 0) {
+        throw new HttpError(400, {
+          ok: false,
+          error: "invalid_location_ids",
+          message: "Uma ou mais localizacoes nao pertencem ao projeto informado.",
+          invalid_ids: invalidIds,
+        });
+      }
+    }
 
     const id = crypto.randomUUID();
     const serialNumber = id;
     const short_code = await reserveShortCode();
 
-    // ✅ universal-link é derivado (não precisa persistir)
+    // universal link is derived and not persisted
     const universal_url = `${SUPABASE_URL}/functions/v1/universal-link?c=${encodeURIComponent(
       short_code
     )}`;
 
-    // ✅ link compartilhável ESSENCIAL (persistido em qr_url)
+    // single shareable link persisted in qr_url
     const appBaseUrl = resolveAppBaseUrl(req, body);
     const qr_url = `${appBaseUrl}/claim/${encodeURIComponent(short_code)}`;
 
@@ -156,41 +221,30 @@ serve(async (req) => {
       fields,
       design,
       short_code,
-
-      // ✅ ESSENCIAL: um único link público
       qr_url,
-
       status: "ativo",
     });
 
     if (insertError) throw new Error(`Erro ao inserir passe: ${insertError.message}`);
 
-    if (locationIds.length > 0) {
-      const { data: validLocations, error: validLocationsError } = await sbAdmin
-        .from("locations")
-        .select("id")
-        .eq("project_id", projectId)
-        .in("id", locationIds);
+    if (validLocationIds.length > 0) {
+      const passLocationRows = validLocationIds.map((locationId) => ({
+        pass_id: id,
+        location_id: locationId,
+        project_id: projectId,
+      }));
 
-      if (validLocationsError) {
-        throw new Error(`Erro ao validar localizações: ${validLocationsError.message}`);
-      }
+      const { error: passLocationError } = await sbAdmin
+        .from("pass_locations")
+        .insert(passLocationRows);
 
-      const validIds = (validLocations ?? []).map((row: any) => String(row.id));
-      if (validIds.length > 0) {
-        const passLocationRows = validIds.map((locationId) => ({
-          pass_id: id,
-          location_id: locationId,
-          project_id: projectId,
-        }));
-
-        const { error: passLocationError } = await sbAdmin
-          .from("pass_locations")
-          .insert(passLocationRows);
-
-        if (passLocationError) {
-          throw new Error(`Erro ao associar localizações ao passe: ${passLocationError.message}`);
-        }
+      if (passLocationError) {
+        await sbAdmin
+          .from("passes")
+          .delete()
+          .eq("id", id)
+          .eq("project_id", projectId);
+        throw new Error(`Erro ao associar localizacoes ao passe: ${passLocationError.message}`);
       }
     }
 
@@ -199,11 +253,8 @@ serve(async (req) => {
         id,
         project_id: projectId,
         short_code,
-
-        // ✅ Único link compartilhável (público)
+        location_ids: validLocationIds,
         qr_url,
-
-        // ✅ retornamos por conveniência/debug (não persistimos)
         universal_url,
       }),
       {
@@ -212,10 +263,24 @@ serve(async (req) => {
       }
     );
   } catch (err: any) {
-    console.error("[create-pass] ERROR:", err?.message ?? err);
-    return new Response(JSON.stringify({ error: err?.message ?? "Internal error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json", ...corsHeaders("*") },
+    const isHttpError = err instanceof HttpError;
+    const status = isHttpError ? err.status : 500;
+    const message = err?.message ?? "Internal error";
+    const payload = isHttpError
+      ? err.payload
+      : {
+          ok: false,
+          error: "internal_error",
+          message,
+        };
+
+    if (status >= 500) {
+      console.error("[create-pass] ERROR:", message);
+    }
+
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
     });
   }
 });
