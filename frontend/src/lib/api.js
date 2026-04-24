@@ -132,6 +132,10 @@ export async function addLocation(projectId, payload, options = {}) {
   const lngSource = payload?.lng ?? payload?.long;
   const lng = lngSource == null || lngSource === '' ? null : Number(lngSource);
   const radius = Number(payload?.radius ?? 100);
+  const description =
+    typeof payload?.description === 'string' && payload.description.trim()
+      ? payload.description.trim()
+      : null;
   const coordinates = {
     lat: Number.isFinite(lat) ? lat : null,
     radius: Number.isFinite(radius) ? radius : 100,
@@ -142,6 +146,7 @@ export async function addLocation(projectId, payload, options = {}) {
     .insert({
       project_id: projectId,
       label: payload?.label ?? null,
+      description,
       address: payload?.address ?? null,
       ...coordinates,
       lng: longitude,
@@ -152,6 +157,7 @@ export async function addLocation(projectId, payload, options = {}) {
       .insert({
         project_id: projectId,
         label: payload?.label ?? null,
+        description,
         address: payload?.address ?? null,
         ...coordinates,
         long: longitude,
