@@ -48,4 +48,39 @@ describe("Edge Function create-pass", () => {
     expect(passRow?.title).toBe("Passe Integracao Create");
     expect(passRow?.qr_url).toBe(pass.qr_url);
   });
+
+  test("associa localizacoes no pass_locations durante a criacao", async () => {
+    const { project, owner } = context;
+
+    const { data: locationRow, error: locationError } = await owner.client
+      .from("locations")
+      .insert({
+        project_id: project.id,
+        label: `Local Integracao ${Date.now()}`,
+        address: "Endereco de teste",
+      })
+      .select("id")
+      .single();
+
+    expect(locationError).toBeNull();
+    expect(locationRow?.id).toMatch(UUID_REGEX);
+
+    const { pass } = await createPass({
+      projectId: project.id,
+      title: "Passe Integracao com Local",
+      location_ids: [{ id: locationRow.id }],
+      app_base_url: "https://integration.example.com",
+    });
+
+    const { data: mappings, error: mappingError } = await owner.client
+      .from("pass_locations")
+      .select("pass_id, location_id, project_id")
+      .eq("project_id", project.id)
+      .eq("pass_id", pass.id)
+      .eq("location_id", locationRow.id);
+
+    expect(mappingError).toBeNull();
+    expect(Array.isArray(mappings)).toBe(true);
+    expect(mappings).toHaveLength(1);
+  });
 });

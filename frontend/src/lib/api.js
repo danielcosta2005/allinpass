@@ -132,6 +132,10 @@ export async function addLocation(projectId, payload, options = {}) {
   const lngSource = payload?.lng ?? payload?.long;
   const lng = lngSource == null || lngSource === '' ? null : Number(lngSource);
   const radius = Number(payload?.radius ?? 100);
+  const description =
+    typeof payload?.description === 'string' && payload.description.trim()
+      ? payload.description.trim()
+      : null;
   const coordinates = {
     lat: Number.isFinite(lat) ? lat : null,
     radius: Number.isFinite(radius) ? radius : 100,
@@ -142,6 +146,7 @@ export async function addLocation(projectId, payload, options = {}) {
     .insert({
       project_id: projectId,
       label: payload?.label ?? null,
+      description,
       address: payload?.address ?? null,
       ...coordinates,
       lng: longitude,
@@ -152,6 +157,7 @@ export async function addLocation(projectId, payload, options = {}) {
       .insert({
         project_id: projectId,
         label: payload?.label ?? null,
+        description,
         address: payload?.address ?? null,
         ...coordinates,
         long: longitude,
@@ -181,7 +187,23 @@ export async function addLocation(projectId, payload, options = {}) {
   return data;
 }
 export async function deleteLocation(id) {
-  const { error } = await supabase.from('locations').delete().eq('id', id);
+  const locationId = typeof id === 'string' ? id.trim() : '';
+  if (!locationId) throw new Error('Location id obrigatório.');
+
+  const { error: passLocationsError } = await supabase
+    .from('pass_locations')
+    .delete()
+    .eq('location_id', locationId);
+
+  if (
+    passLocationsError &&
+    !/relation .* does not exist/i.test(passLocationsError.message || '') &&
+    !/could not find the table/i.test(passLocationsError.message || '')
+  ) {
+    throw passLocationsError;
+  }
+
+  const { error } = await supabase.from('locations').delete().eq('id', locationId);
   if (error) throw error; return true;
 }
 

@@ -85,6 +85,25 @@ function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
 }
 
+function normalizeLocationIds(input) {
+  if (!Array.isArray(input)) return [];
+  const unique = new Set();
+
+  input.forEach((item) => {
+    const rawId =
+      typeof item === 'string' || typeof item === 'number'
+        ? item
+        : isObject(item)
+          ? item.id ?? item.location_id
+          : null;
+
+    const id = String(rawId ?? '').trim();
+    if (id) unique.add(id);
+  });
+
+  return [...unique];
+}
+
 async function invokeWalletFunction(functionName, body) {
   // Keep auth/header handling inside the configured Supabase client.
   // This avoids fragile manual fetches when env URLs contain a trailing slash.
@@ -546,7 +565,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const activeLocationIds = isEditingPass ? selectedPassLocationIds : draftLocationIds;
 
   const updateLocationSelection = useCallback((ids) => {
-    const normalized = [...new Set((Array.isArray(ids) ? ids : []).filter(Boolean))];
+    const normalized = normalizeLocationIds(ids);
     if (isEditingPass && selectedPass?.id) {
       setSelectedPassLocationIds(normalized);
       setPassLocationsByPassId((prev) => ({ ...prev, [selectedPass.id]: normalized }));
@@ -749,6 +768,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setIsProcessing(true);
     try {
       const design = buildDesignPayload(formState);
+      const normalizedLocationIds = normalizeLocationIds([
+        ...activeLocationIds,
+        ...draftLocationIds,
+        ...selectedPassLocationIds,
+      ]);
       const body = {
         project_id: projectId,
         project_slug: projectSlug,
@@ -758,7 +782,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         fields: buildFieldsPayload(formState),
         colors: design.colors,
         images: design.images,
-        location_ids: draftLocationIds,
+        location_ids: normalizedLocationIds,
+        pass_data: { location_ids: normalizedLocationIds },
         app_base_url: window.location.origin,
       };
 
@@ -948,7 +973,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
                 <Button type="button" variant="outline" className="w-full justify-start" onClick={() => setIsLocationsModalOpen(true)}>
                   <MapPin className="mr-2 h-4 w-4" />
-                  Adicionar localização ({activeLocationIds.length} selecionada(s))
+                  Adicionar localização ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
                 </Button>
 
                 <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".png,image/png" />

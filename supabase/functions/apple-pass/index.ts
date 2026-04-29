@@ -45,6 +45,8 @@ class ApiError extends Error {
   }
 }
 
+const DEFAULT_LOCATION_RELEVANT_TEXT = "Aproveite que está por perto e venha conferir as melhores ofertas!";
+
 function cleanString(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const s = v.trim();
@@ -391,7 +393,7 @@ async function loadPassLocationsApple(
 
   const { data: locations, error: locationsError } = await sb
     .from("locations")
-    .select("id, label, lat, lng")
+    .select("id, label, description, lat, lng")
     .eq("project_id", projectId)
     .in("id", locationIds)
     .limit(100);
@@ -410,6 +412,7 @@ async function loadPassLocationsApple(
       return {
         id: cleanString(r.id),
         label: r.label ?? null,
+        description: cleanString(r.description),
         lat,
         lng,
       };
@@ -418,7 +421,7 @@ async function loadPassLocationsApple(
     .sort((a: any, b: any) => (order.get(a.id ?? "") ?? 999) - (order.get(b.id ?? "") ?? 999))
     .slice(0, 10);
 
-  return cleaned as Array<{ id: string | null; label: string | null; lat: number; lng: number }>;
+  return cleaned as Array<{ id: string | null; label: string | null; description: string | null; lat: number; lng: number }>;
 }
 
 async function loadProjectName(sb: ReturnType<typeof createClient>, projectId: string): Promise<string | null> {
@@ -1143,7 +1146,7 @@ serve(async (req: Request) => {
       applePayload.locations = passLocations.map((l) => ({
         latitude: l.lat,
         longitude: l.lng,
-        relevantText: l.label ? `Você está perto de ${l.label}.` : "Você está perto. Abra seu passe.",
+        relevantText: cleanString(l.description) ?? DEFAULT_LOCATION_RELEVANT_TEXT,
       }));
     }
 
@@ -1217,5 +1220,3 @@ serve(async (req: Request) => {
     return errorResponse(err, requestId, origin);
   }
 });
-
-

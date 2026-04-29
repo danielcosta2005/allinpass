@@ -4,6 +4,7 @@ prompt/
 .env.development
 .env.production
 dist
-supabase_temp
-hash
+supabase
 .env
+hash/
+.gitignore

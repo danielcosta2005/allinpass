@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { MapPin, Plus, Loader2, Trash2, Search, RotateCcw, CheckCircle2 } from 'lucide-react';
+import { MapPin, Plus, Loader2, Trash2, Search, RotateCcw, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,7 @@ import {
   DEFAULT_FORM,
   DEFAULT_GEOFENCE_RADIUS_METERS,
   GEOCODE_RESULTS_LIMIT,
+  LOCATION_DESCRIPTION_PLACEHOLDER,
 } from '@/components/superadmin/locations/constants';
 import {
   buildShortAddress,
@@ -20,7 +21,6 @@ import {
 } from '@/components/superadmin/locations/addressUtils';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -196,6 +196,7 @@ const LocationsTab = ({
     setIsSubmittingLocation(true);
     try {
       const trimmedLabel = formData.label.trim();
+      const trimmedDescription = formData.description.trim();
       const trimmedAddress = normalizeText(confirmationData.addressFull);
       const lat = Number(confirmationData.lat);
       const lng = Number(confirmationData.lng);
@@ -209,6 +210,7 @@ const LocationsTab = ({
         projectId,
         {
           label: trimmedLabel,
+          description: trimmedDescription || LOCATION_DESCRIPTION_PLACEHOLDER,
           address: trimmedAddress,
           lat,
           lng,
@@ -347,6 +349,31 @@ const LocationsTab = ({
             </div>
 
             <div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="description">Descrição</Label>
+                <div className="relative group flex items-center">
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
+                    aria-label="Informacoes sobre descricao do local"
+                  >
+                    <Info className="h-4 w-4" />
+                  </button>
+                  <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-600 shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+                    Esse é o texto que vai aparecer no celular dos clientes que utilizam iPhone quando eles se aproximarem do seu estabelecimento.
+                  </div>
+                </div>
+              </div>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                disabled={isSearchingAddress || isSubmittingLocation}
+                placeholder={LOCATION_DESCRIPTION_PLACEHOLDER}
+              />
+            </div>
+
+            <div>
               <Label htmlFor="addressQuery">Endereço</Label>
               <Input
                 id="addressQuery"
@@ -472,14 +499,15 @@ const LocationsTab = ({
             <AlertDialogCancel onClick={() => setLocationToDelete(null)} disabled={isSubmittingLocation}>
               Cancelar
             </AlertDialogCancel>
-            <AlertDialogAction
+            <Button
+              type="button"
               onClick={handleDelete}
               disabled={isSubmittingLocation}
               className="bg-red-600 hover:bg-red-700"
             >
               {isSubmittingLocation && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Remover
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
