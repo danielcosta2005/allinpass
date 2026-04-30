@@ -54,12 +54,13 @@ Deno.serve(async (req) => {
     // ✅ gera slug
     const baseSlug = slugify(String(name));
     const slug = `${baseSlug}-${randSuffix(6)}`.slice(0, 64);
+    const projectName = String(name).trim();
 
     // ✅ defaults iniciais do wallet template
    const walletDefaults = {
   type: "loyalty",
-  title: "Cartão Fidelidade Global",
-  description: "Modelo global para fallback.",
+  title: projectName,
+  description: `Cartão de benefícios ${projectName}`,
   organizationName: "Khaos Omni LTDA",
   passTypeIdentifier: "pass.com.khaosomni.carteira49",
   teamIdentifier: "JM2D9G6ZFB",

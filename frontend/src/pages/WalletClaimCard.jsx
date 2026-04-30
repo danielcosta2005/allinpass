@@ -1,5 +1,5 @@
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useMemo } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,13 @@ import { motion } from 'framer-motion';
 
 export default function WalletClaimCard() {
   const { c } = useParams();
+  const location = useLocation();
   const { toast } = useToast();
+  const passDescription = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search || '');
+    return (searchParams.get('description') || '').trim();
+  }, [location.search]);
+  const claimTitle = passDescription ? `Resgate seu ${passDescription}` : 'Resgate seu passe';
 
   const handleLogin = async () => {
     if (!c) {
@@ -52,7 +58,7 @@ export default function WalletClaimCard() {
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-gray-800">Resgate seu Passe</h1>
+            <h1 className="text-3xl font-bold text-gray-800">{claimTitle}</h1>
             <p className="text-gray-600 max-w-xs">
               Faça login com sua conta Google para adicionar seu passe à sua carteira.
             </p>
