@@ -60,7 +60,7 @@ export default function WalletClaimCard() {
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-gray-800">{claimTitle}</h1>
             <p className="text-gray-600 max-w-xs">
-              Faça login com sua conta Google para adicionar seu passe à sua carteira.
+              Faça login com sua conta Google para adicionar o cartão à sua carteira.
             </p>
           </div>
 
