@@ -14,7 +14,7 @@ export default function WalletClaimCard() {
     const searchParams = new URLSearchParams(location.search || '');
     return (searchParams.get('description') || '').trim();
   }, [location.search]);
-  const claimTitle = passDescription ? `Resgate seu ${passDescription}` : 'Resgate seu passe';
+  const claimTitle = passDescription ? `Resgate seu ${passDescription}` : 'Resgate seu Cartão de benefícios';
 
   const handleLogin = async () => {
     if (!c) {
