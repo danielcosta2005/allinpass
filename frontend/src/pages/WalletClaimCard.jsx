@@ -69,7 +69,7 @@ export default function WalletClaimCard() {
           <div className="relative mt-6 space-y-3 text-center">
             <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-[2.1rem]">{claimTitle}</h1>
             <p className="mx-auto max-w-xs text-sm leading-relaxed text-violet-100/90 sm:text-base">
-              Receba ofertas, participe de promoções e ganhe benefícios exclusivos quando estiver por perto.
+              Receba ofertas, participe de promoções e ganhe benefícios exclusivos.
             </p>
           </div>
 
