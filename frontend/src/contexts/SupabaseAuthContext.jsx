@@ -84,10 +84,10 @@ export const AuthProvider = ({ children }) => {
     return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
   }, []);
 
-  // Only these routes strictly require auth.
+  // Only these routes strictly require auth. `/` is the public landing page.
   const isAuthRequiredPath = useCallback((pathname) => {
     const p = String(pathname || '');
-    return p === '/' || p.startsWith('/admin') || p.startsWith('/org');
+    return p.startsWith('/admin') || p.startsWith('/org');
   }, []);
 
   /**
@@ -140,7 +140,10 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
         setInitialized(true);
 
-        if (window.location.pathname !== '/login') {
+        const currentPath = window.location.pathname;
+        // Only force the user to /login when they were on an auth-required path.
+        // Public pages (e.g. landing at "/") must stay put.
+        if (currentPath !== '/login' && isAuthRequiredPath(currentPath)) {
           navigate('/login', { replace: true });
         }
 
@@ -151,7 +154,7 @@ export const AuthProvider = ({ children }) => {
         logoutInFlightRef.current = false;
       }
     },
-    [clearAuthState, clearUiState, hardClearSupabaseStorage, navigate, toast]
+    [clearAuthState, clearUiState, hardClearSupabaseStorage, isAuthRequiredPath, navigate, toast]
   );
 
   const getProfileAndProject = useCallback(async (currentUser) => {

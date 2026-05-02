@@ -10,52 +10,15 @@ import RestaurantDashboard from '@/pages/RestaurantDashboard';
 import NotFound from '@/pages/NotFound';
 import { Toaster } from '@/components/ui/toaster';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { Loader2 } from 'lucide-react';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
+import LandingPage from '@/pages/LandingPage';
 
 
 // ✅ NOVOS imports
 import WalletClaimCard from '@/pages/WalletClaimCard';
 import ClaimCallback from '@/pages/ClaimCallback';
-
-const AuthRedirect = () => {
-  const { role, loading, initialized, user } = useAuth();
-
-  if (loading || !initialized) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user && !loading) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!role) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (role === 'unauthorized') {
-    return <Navigate to="/nao-autorizado" replace />;
-  }
-
-  if (role === 'superadmin') {
-    return <Navigate to="/admin" replace />;
-  }
-  if (role === 'establishment' || role === 'customer') {
-    return <Navigate to="/org" replace />;
-  }
-
-  return <Navigate to="/login" replace />;
-};
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -72,6 +35,9 @@ export default function App() {
       </Helmet>
 
       <Routes>
+        {/* landing page pública (renderiza para visitantes; redireciona autenticados) */}
+        <Route path="/" element={<LandingPage />} />
+
         <Route path="/login" element={!loading && user ? <Navigate to="/" replace /> : <Login />} />
 
         {/* callbacks existentes */}
@@ -90,7 +56,6 @@ export default function App() {
         <Route path="/thanks" element={<ClaimThanks />} />
 
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<AuthRedirect />} />
           <Route path="/admin" element={<SuperadminDashboard />} />
           <Route path="/org" element={<RestaurantDashboard />} />
         </Route>
