@@ -20,7 +20,7 @@ export const subscriptionPlans = [
     key: 'starter',
     type: 'paid',
     name: 'Starter',
-    description: 'Para quem está comecando a fidelizar.',
+    description: 'Para quem está começando a fidelizar.',
     price: 49,
     cta: 'Assinar Starter',
     features: [
@@ -28,7 +28,7 @@ export const subscriptionPlans = [
       '200 notificações/mês',
       '1 design de passe',
       'Suporte por e-mail',
-      'Análises basicas',
+      'Análises básicas',
     ],
   },
   {

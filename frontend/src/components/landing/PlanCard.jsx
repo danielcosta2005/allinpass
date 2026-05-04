@@ -58,7 +58,7 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
         {plan.type === 'trial' ? (
           <div className="space-y-1">
             <p className="text-4xl font-bold text-emerald-900">7 dias</p>
-            <p className="text-sm font-semibold text-emerald-700">gratis e sem cartao de credito</p>
+            <p className="text-sm font-semibold text-emerald-700">grátis e sem cartão de crédito</p>
           </div>
         ) : (
           <div className="flex items-baseline gap-1">
@@ -66,7 +66,7 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
             <span className={`text-5xl font-bold ${plan.highlighted ? 'text-white' : 'text-gray-900'}`}>
               {plan.price}
             </span>
-            <span className={`text-sm ${plan.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>/mes</span>
+            <span className={`text-sm ${plan.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>/mês</span>
           </div>
         )}
       </div>

@@ -38,7 +38,7 @@ function evaluatePassword(password) {
     score <= 1
       ? { label: 'Muito fraca', textColor: 'text-rose-600', barColor: 'bg-rose-500' }
       : score <= 3
-        ? { label: 'Em evolucao', textColor: 'text-amber-600', barColor: 'bg-amber-500' }
+        ? { label: 'Em evolução', textColor: 'text-amber-600', barColor: 'bg-amber-500' }
         : { label: 'Forte', textColor: 'text-emerald-600', barColor: 'bg-emerald-500' };
 
   return {
@@ -94,9 +94,9 @@ function SignupPage() {
     }
 
     if (!formData.email.trim()) {
-      nextErrors.email = 'Informe um e-mail valido para acessar sua conta.';
+      nextErrors.email = 'Informe um e-mail válido para acessar sua conta.';
     } else if (!EMAIL_REGEX.test(formData.email)) {
-      nextErrors.email = 'Esse e-mail parece invalido. Verifique o formato.';
+      nextErrors.email = 'Esse e-mail parece inválido. Verifique o formato.';
     }
 
     if (!formData.emailConfirmation.trim()) {
@@ -182,13 +182,13 @@ function SignupPage() {
             <section className="bg-white border border-purple-100 rounded-3xl shadow-xl shadow-purple-500/5 p-6 sm:p-8">
               <div className="mb-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-purple-600 mb-2">
-                  Contratacao guiada
+                  Contratação guiada
                 </p>
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
                   {paidPlan ? 'Finalize seu cadastro e assinatura' : 'Ative seu Free Trial em minutos'}
                 </h1>
                 <p className="text-sm sm:text-base text-slate-600 mt-2">
-                  Voce escolheu o plano <span className="font-semibold text-slate-900">{selectedPlan.name}</span>.
+                  Você escolheu o plano <span className="font-semibold text-slate-900">{selectedPlan.name}</span>.
                 </p>
               </div>
 
@@ -280,7 +280,7 @@ function SignupPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="email-confirmation">Confirmacao de email</Label>
+                        <Label htmlFor="email-confirmation">Confirmação de e-mail</Label>
                         <Input
                           id="email-confirmation"
                           type="email"
@@ -315,7 +315,7 @@ function SignupPage() {
 
                       <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
                           <p className={`text-sm font-semibold ${passwordState.textColor}`}>
                             {passwordState.label}
                           </p>
@@ -373,7 +373,7 @@ function SignupPage() {
                           <p className="text-2xl font-bold text-slate-900">{selectedPlan.name}</p>
                           <p className="text-sm text-slate-600 mt-1">{selectedPlan.description}</p>
                         </div>
-                        <p className="text-2xl font-bold text-purple-700">R$ {selectedPlan.price}/mes</p>
+                        <p className="text-2xl font-bold text-purple-700">R$ {selectedPlan.price}/mês</p>
                       </div>
                     </div>
 
@@ -383,8 +383,8 @@ function SignupPage() {
                         Checkout seguro (estrutura frontend)
                       </p>
                       <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                        Aqui sera conectada a integracao oficial com Stripe, Mercado Pago ou equivalente.
-                        Nenhum dado de cartao e coletado manualmente nesta etapa.
+                        Aqui será conectada a integração oficial com Stripe, Mercado Pago ou equivalente.
+                        Nenhum dado de cartão é coletado manualmente nesta etapa.
                       </p>
                       <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
                         <Lock className="w-3.5 h-3.5" />
@@ -431,7 +431,7 @@ function SignupPage() {
                     <CheckCircle2 className="w-10 h-10 text-emerald-600 mb-4" />
                     <h2 className="text-2xl font-bold text-emerald-900">Free Trial iniciado com sucesso</h2>
                     <p className="text-emerald-800 mt-2">
-                      Seu acesso de 7 dias foi iniciado sem necessidade de cartao de credito.
+                      Seu acesso de 7 dias foi iniciado sem necessidade de cartão de crédito.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Link to="/login">
@@ -459,7 +459,7 @@ function SignupPage() {
                     <h2 className="text-2xl font-bold text-purple-900">Cadastro concluido</h2>
                     <p className="text-purple-800 mt-2">
                       Fluxo frontend finalizado com sucesso para o plano {selectedPlan.name}.
-                      A etapa de pagamento real ficara conectada ao provider na implementacao backend.
+                      A etapa de pagamento real ficará conectada ao provider na implementação backend.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Link to="/login">
