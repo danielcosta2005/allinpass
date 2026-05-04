@@ -182,7 +182,7 @@ function SignupPage() {
             <section className="bg-white border border-purple-100 rounded-3xl shadow-xl shadow-purple-500/5 p-6 sm:p-8">
               <div className="mb-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-purple-600 mb-2">
-                  Contratacao guiada
+                  Contratação guiada
                 </p>
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
                   {paidPlan ? 'Finalize seu cadastro e assinatura' : 'Ative seu Free Trial em minutos'}
