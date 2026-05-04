@@ -16,12 +16,13 @@ import {
   ChevronDown,
   Apple,
   Users,
-  Star,
   LogIn,
   LayoutDashboard,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { buildSignupPath, subscriptionPlans } from '@/lib/subscriptionPlans';
+import PlanCard from '@/components/landing/PlanCard';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -97,54 +98,7 @@ const steps = [
   },
 ];
 
-const plans = [
-  {
-    name: 'Starter',
-    price: '49',
-    description: 'Para quem está começando a fidelizar.',
-    features: [
-      'Até 50 passes ativos',
-      '200 notificações/mês',
-      '1 design de passe',
-      'Suporte por e-mail',
-      'Análises básicas',
-    ],
-    highlighted: false,
-    cta: 'Começar grátis',
-  },
-  {
-    name: 'Pro',
-    price: '149',
-    description: 'O queridinho de quem quer crescer.',
-    features: [
-      'Até 500 passes ativos',
-      '5.000 notificações/mês',
-      '5 designs de passe',
-      'Suporte prioritário',
-      'Análises avançadas + KPIs',
-      'Automações de notificação',
-    ],
-    highlighted: true,
-    cta: 'Assinar Pro',
-    badge: 'Mais popular',
-  },
-  {
-    name: 'Premium',
-    price: '399',
-    description: 'Para operações de alto volume.',
-    features: [
-      'Passes ilimitados',
-      'Notificações ilimitadas',
-      'Designs ilimitados',
-      'Suporte dedicado 24/7',
-      'API completa + Webhooks',
-      'Multi-localização',
-      'Onboarding personalizado',
-    ],
-    highlighted: false,
-    cta: 'Falar com vendas',
-  },
-];
+const plans = subscriptionPlans;
 
 const faqs = [
   {
@@ -684,76 +638,16 @@ const Pricing = () => {
           whileInView="show"
           viewport={{ once: true, margin: '-50px' }}
           variants={stagger}
-          className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto"
+          className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-7xl mx-auto"
         >
           {plans.map((p, i) => (
             <motion.div
-              key={p.name}
+              key={p.key}
               variants={fadeUp}
               custom={i}
               whileHover={{ y: -8, transition: { duration: 0.2 } }}
-              className={`relative rounded-3xl p-8 transition-all duration-300 ${
-                p.highlighted
-                  ? 'bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-2xl shadow-purple-500/30 scale-100 lg:scale-105'
-                  : 'bg-white border border-gray-200 hover:border-purple-200 hover:shadow-xl hover:shadow-purple-500/5'
-              }`}
             >
-              {p.badge && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="bg-gradient-to-r from-yellow-400 to-orange-400 text-yellow-950 text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1">
-                    <Star className="w-3 h-3 fill-current" />
-                    {p.badge}
-                  </div>
-                </div>
-              )}
-
-              <div className="mb-6">
-                <h3 className={`text-xl font-bold mb-2 ${p.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                  {p.name}
-                </h3>
-                <p className={`text-sm ${p.highlighted ? 'text-purple-100' : 'text-gray-500'}`}>
-                  {p.description}
-                </p>
-              </div>
-
-              <div className="mb-6">
-                <div className="flex items-baseline gap-1">
-                  <span className={`text-sm ${p.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>R$</span>
-                  <span className={`text-5xl font-bold ${p.highlighted ? 'text-white' : 'text-gray-900'}`}>
-                    {p.price}
-                  </span>
-                  <span className={`text-sm ${p.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>/mês</span>
-                </div>
-              </div>
-
-              <ul className="space-y-3 mb-8">
-                {p.features.map((f) => (
-                  <li key={f} className="flex items-start gap-2.5">
-                    <div
-                      className={`shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center ${
-                        p.highlighted ? 'bg-white/20' : 'bg-purple-100'
-                      }`}
-                    >
-                      <Check className={`w-3 h-3 ${p.highlighted ? 'text-white' : 'text-purple-600'}`} strokeWidth={3} />
-                    </div>
-                    <span className={`text-sm ${p.highlighted ? 'text-purple-50' : 'text-gray-700'}`}>
-                      {f}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-
-              <Link to="/login" className="block">
-                <Button
-                  className={`w-full h-12 font-semibold ${
-                    p.highlighted
-                      ? 'bg-white text-purple-700 hover:bg-purple-50'
-                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white'
-                  }`}
-                >
-                  {p.cta}
-                </Button>
-              </Link>
+              <PlanCard plan={p} ctaTo={buildSignupPath(p.key)} />
             </motion.div>
           ))}
         </motion.div>
@@ -986,3 +880,4 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
+
