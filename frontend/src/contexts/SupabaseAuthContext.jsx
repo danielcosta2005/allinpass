@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }) => {
   // Only these routes strictly require auth.
   const isAuthRequiredPath = useCallback((pathname) => {
     const p = String(pathname || '');
-    return p === '/' || p.startsWith('/admin') || p.startsWith('/org');
+    return p === '/app' || p.startsWith('/admin') || p.startsWith('/org');
   }, []);
 
   /**

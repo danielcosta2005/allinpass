@@ -280,4 +280,4 @@ O schema inclui:
 ## Referencias de Arquivos
 
 - Migration: `supabase/migrations/20260430120220_schema_mod3.sql`
-- README: `supabase/migrations/README_schema_mod3.md`
+- README: `docs/schema-mod3.md`
