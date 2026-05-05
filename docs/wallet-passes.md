@@ -1,0 +1,1 @@
+Referência dos passes digitais, incluindo Apple Wallet, Google Wallet, templates, QR Code, tokens, assets e atualização dos passes.

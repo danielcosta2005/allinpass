@@ -1,0 +1,1 @@
+Documenta as Supabase Edge Functions do projeto, explicando o objetivo de cada função, quando ela é utilizada, quais payloads recebe e retorna, quais processos internos executa, quais tabelas acessa, quais erros pode gerar e quais cuidados de segurança, idempotência e debugging devem ser observados.
