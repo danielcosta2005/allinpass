@@ -102,6 +102,11 @@ function normalizeDefaults(input: any): any {
   return isObj(input) ? input : {};
 }
 
+function toCleanText(input: unknown): string {
+  if (typeof input !== "string") return "";
+  return input.trim();
+}
+
 async function getProjectTemplateDefaults(projectId: string) {
   const { data, error } = await sbAdmin
     .from("wallet_templates")
@@ -158,10 +163,13 @@ serve(async (req) => {
     const type = (body.type ?? templateDefaults.type ?? "loyalty")
       .toString()
       .toLowerCase();
-    const title = body.title ?? templateDefaults.title ?? "Cartao Fidelidade";
+    const title =
+      toCleanText(body.title) ||
+      toCleanText(templateDefaults.title) ||
+      "Cartao Fidelidade";
     const description =
-      body.description ??
-      templateDefaults.description ??
+      toCleanText(body.description) ||
+      toCleanText(templateDefaults.description) ||
       "Ganhe premios acumulando pontos!";
 
     const fields = body.fields ?? templateDefaults.fields ?? {};
@@ -209,7 +217,10 @@ serve(async (req) => {
 
     // single shareable link persisted in qr_url
     const appBaseUrl = resolveAppBaseUrl(req, body);
-    const qr_url = `${appBaseUrl}/claim/${encodeURIComponent(short_code)}`;
+    const qrDescriptionParam = description
+      ? `?description=${encodeURIComponent(description)}`
+      : "";
+    const qr_url = `${appBaseUrl}/claim/${encodeURIComponent(short_code)}${qrDescriptionParam}`;
 
     const { error: insertError } = await sbAdmin.from("passes").insert({
       id,

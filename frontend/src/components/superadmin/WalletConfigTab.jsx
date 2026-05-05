@@ -80,6 +80,12 @@ const INITIAL_FORM_STATE = {
 };
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const LEGACY_GLOBAL_TITLE_VALUES = new Set([
+  'cartao fidelidade global',
+]);
+const LEGACY_GLOBAL_DESCRIPTION_VALUES = new Set([
+  'modelo global para fallback',
+]);
 
 function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
@@ -148,6 +154,35 @@ function normalizeWalletDefaults(defaults = {}) {
       appleStrip: incomingImages.appleStrip ?? '',
       googleHero: incomingImages.googleHero ?? '',
     },
+  };
+}
+
+function normalizeLegacyValue(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function applyProjectWalletDefaults(defaults = {}, projectName = '') {
+  const normalized = normalizeWalletDefaults(defaults);
+  const safeProjectName = String(projectName ?? '').trim();
+  if (!safeProjectName) return normalized;
+
+  const titleValue = normalizeLegacyValue(normalized.title);
+  const descriptionValue = normalizeLegacyValue(normalized.description);
+  const shouldReplaceTitle = !titleValue || LEGACY_GLOBAL_TITLE_VALUES.has(titleValue);
+  const shouldReplaceDescription = !descriptionValue || LEGACY_GLOBAL_DESCRIPTION_VALUES.has(descriptionValue);
+  const projectDescription = `Cartão de benefícios ${safeProjectName}`;
+
+  return {
+    ...normalized,
+    title: shouldReplaceTitle ? safeProjectName : normalized.title,
+    description: shouldReplaceDescription ? projectDescription : normalized.description,
   };
 }
 
@@ -616,9 +651,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const loadWalletDefaults = useCallback(async (pId) => {
     setIsProcessing(true);
     try {
-      const { data: projectData, error: projectError } = await supabase.from('projects').select('slug').eq('id', pId).single();
+      const { data: projectData, error: projectError } = await supabase.from('projects').select('slug, name').eq('id', pId).single();
       if (projectError) throw projectError;
       setProjectSlug(projectData.slug || '');
+      const projectDisplayName = String(projectData?.name ?? '').trim();
 
       const fromProject = await supabase.from('wallet_templates').select('defaults').eq('project_id', pId).maybeSingle();
       let defaults = fromProject.data?.defaults;
@@ -628,7 +664,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         defaults = globalData?.defaults ?? {};
       }
 
-      const merged = mergeWithInitial(defaults);
+      const merged = mergeWithInitial(applyProjectWalletDefaults(defaults, projectDisplayName));
       setTemplateDefaults(merged);
     } catch (error) {
       toast({ title: 'Erro ao carregar template', description: error.message, variant: 'destructive' });
@@ -1032,3 +1068,4 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 };
 
 export default WalletConfigTab;
+
