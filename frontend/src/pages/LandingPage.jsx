@@ -502,7 +502,7 @@ const TrustBar = () => {
 
 const Features = () => {
   return (
-    <section id="recursos" className="py-24 sm:py-32">
+    <section id="recursos" className="scroll-mt-20 py-24 sm:py-32">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial="hidden"
@@ -555,7 +555,7 @@ const Features = () => {
 
 const HowItWorks = () => {
   return (
-    <section id="como-funciona" className="py-24 sm:py-32 bg-gradient-to-b from-white via-purple-50/30 to-white relative overflow-hidden">
+    <section id="como-funciona" className="scroll-mt-20 py-24 sm:py-32 bg-gradient-to-b from-white via-purple-50/30 to-white relative overflow-hidden">
       <div className="absolute inset-0 -z-10">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[400px] bg-purple-200/20 blur-3xl rounded-full" />
       </div>
@@ -612,7 +612,7 @@ const HowItWorks = () => {
 
 const Pricing = () => {
   return (
-    <section id="planos" className="py-24 sm:py-32">
+    <section id="planos" className="scroll-mt-20 py-24 sm:py-32">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial="hidden"
@@ -673,7 +673,7 @@ const FAQ = () => {
   const [open, setOpen] = useState(0);
 
   return (
-    <section id="faq" className="py-24 sm:py-32 bg-gradient-to-b from-white to-purple-50/30">
+    <section id="faq" className="scroll-mt-20 py-24 sm:py-32 bg-gradient-to-b from-white to-purple-50/30">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial="hidden"
