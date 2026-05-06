@@ -123,13 +123,6 @@ const faqs = [
   },
 ];
 
-const stats = [
-  { value: '+10k', label: 'Passes ativos' },
-  { value: '98%', label: 'Satisfação' },
-  { value: '+150', label: 'Estabelecimentos' },
-  { value: '4.9', label: 'Nota média' },
-];
-
 const Logo = () => (
   <div className="flex items-center gap-2.5">
     <div className="relative">
@@ -301,10 +294,10 @@ const Hero = () => {
 
             <motion.h1
               variants={fadeUp}
-              className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.1]"
+              className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.15]"
             >
               Fidelize seus clientes
-              <span className="block bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient">
+              <span className="block pb-3 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient">
                 direto na carteira digital
               </span>
             </motion.h1>
@@ -359,22 +352,6 @@ const Hero = () => {
           </motion.div>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: '-50px' }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="mt-20 grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-3xl mx-auto"
-        >
-          {stats.map((s) => (
-            <div key={s.label} className="text-center">
-              <div className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                {s.value}
-              </div>
-              <div className="text-sm text-gray-500 mt-1">{s.label}</div>
-            </div>
-          ))}
-        </motion.div>
       </div>
     </section>
   );
