@@ -477,13 +477,13 @@ const KPIsTab = ({ projectId }) => {
         color: 'from-orange-500 to-yellow-500',
       },
       {
-        title: 'Wallets Adicionadas no Período',
+        title: 'Cartões Adicionados no Período',
         value: formatInteger(stats.wallet_linked),
         icon: LinkIcon,
         color: 'from-purple-500 to-pink-500',
       },
       {
-        title: 'Wallets Ativas no Período',
+        title: 'Cartões Ativos no Período',
         value: formatInteger(stats.wallet_active_period),
         icon: Wallet,
         color: 'from-green-500 to-emerald-500',
@@ -494,8 +494,8 @@ const KPIsTab = ({ projectId }) => {
   const funnelData = useMemo(
     () => [
       { name: 'Clientes totais', Quantidade: stats.total_customers },
-      { name: 'Wallet adicionada no período', Quantidade: stats.wallet_linked },
-      { name: 'Wallet ativa no período', Quantidade: stats.wallet_active_period },
+      { name: 'Cartões adicionados no período', Quantidade: stats.wallet_linked },
+      { name: 'Cartões ativos no período', Quantidade: stats.wallet_active_period },
       { name: 'Clientes ativos', Quantidade: stats.active_customers_period },
       { name: 'Visitas', Quantidade: stats.visits_in_period },
     ],
