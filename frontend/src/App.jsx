@@ -14,7 +14,6 @@ import { Loader2 } from 'lucide-react';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
-import LandingPage from '@/pages/LandingPage';
 import SignupPage from '@/pages/SignupPage';
 
 
@@ -75,7 +74,7 @@ export default function App() {
 
       <Routes>
         {/* ✅ landing page pública */}
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<Navigate to="/login" replace />} />
 
         <Route path="/login" element={!loading && user ? <Navigate to="/app" replace /> : <Login />} />
 
