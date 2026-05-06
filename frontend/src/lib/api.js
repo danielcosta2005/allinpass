@@ -1,6 +1,55 @@
 
 import { supabase } from '@/lib/supabaseClient';
 
+function unwrapRpcPayload(payload, functionName) {
+	if (Array.isArray(payload)) {
+		if (payload.length === 0) return null;
+		if (payload.length === 1) return unwrapRpcPayload(payload[0], functionName);
+		return payload;
+	}
+
+	if (payload && typeof payload === 'object' && functionName && Object.prototype.hasOwnProperty.call(payload, functionName)) {
+		return payload[functionName];
+	}
+
+	return payload;
+}
+
+function coerceJsonPayload(payload) {
+	if (typeof payload !== 'string') return payload;
+	try {
+		return JSON.parse(payload);
+	} catch {
+		return payload;
+	}
+}
+
+const PROJECT_ANALYTICS_FALLBACK = {
+	kpis: {
+		total_customers: 0,
+		active_customers_period: 0,
+		visits_in_period: 0,
+		wallet_linked: 0,
+		wallet_active_period: 0,
+		rewards_unlocked_period: 0,
+	},
+	by_day_of_week: [],
+	by_day_of_month: [],
+	by_hour_of_day: [],
+	visits_by_date: [],
+	new_vs_returning_customers: {
+		new_customers: 0,
+		returning_customers: 0,
+	},
+	visit_frequency_distribution: [],
+	rewards_unlocked_period: {
+		total: 0,
+		by_date: [],
+	},
+	wallet_installs_by_date: [],
+	wallet_removals_by_date: [],
+};
+
 /* ---------- Projects ---------- */
 export async function listProjects() {
 	const { data, error } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
@@ -248,7 +297,8 @@ export async function getProjectKpis(projectId) {
 }
 export async function getGlobalKpis() {
 	const { data, error } = await supabase.rpc('fn_get_global_kpis').single();
-	if (error) throw error; return data || {};
+	if (error) throw error;
+	return coerceJsonPayload(unwrapRpcPayload(data, 'fn_get_global_kpis')) || {};
 }
 export async function getGlobalKpisTimeseries(months) {
 	const { data, error } = await supabase.rpc('fn_get_global_kpis_timeseries', { p_months: months });
@@ -264,9 +314,31 @@ export async function getProjectAnalytics(projectId, startDate, endDate) {
 		p_project_id: projectId,
 		p_start_date: startDate.toISOString(),
 		p_end_date: endDate.toISOString(),
-	}).single();
+	});
 	if (error) throw error;
-	return data;
+	const payload = coerceJsonPayload(unwrapRpcPayload(data, 'fn_get_project_analytics')) || {};
+	const newVsReturning = payload.new_vs_returning_customers;
+	const rewardsUnlockedPeriod = payload.rewards_unlocked_period;
+	return {
+		...PROJECT_ANALYTICS_FALLBACK,
+		...payload,
+		kpis: {
+			...PROJECT_ANALYTICS_FALLBACK.kpis,
+			...(payload.kpis || {}),
+		},
+		new_vs_returning_customers: Array.isArray(newVsReturning)
+			? newVsReturning
+			: {
+				...PROJECT_ANALYTICS_FALLBACK.new_vs_returning_customers,
+				...(newVsReturning || {}),
+			},
+		rewards_unlocked_period: Array.isArray(rewardsUnlockedPeriod) || typeof rewardsUnlockedPeriod !== 'object' || rewardsUnlockedPeriod === null
+			? rewardsUnlockedPeriod ?? PROJECT_ANALYTICS_FALLBACK.rewards_unlocked_period
+			: {
+				...PROJECT_ANALYTICS_FALLBACK.rewards_unlocked_period,
+				...rewardsUnlockedPeriod,
+			},
+	};
 }
 
 
