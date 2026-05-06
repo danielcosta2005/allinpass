@@ -477,13 +477,13 @@ const KPIsTab = ({ projectId }) => {
         color: 'from-orange-500 to-yellow-500',
       },
       {
-        title: 'Wallets Adicionadas no Período',
+        title: 'Cartões Adicionados no Período',
         value: formatInteger(stats.wallet_linked),
         icon: LinkIcon,
         color: 'from-purple-500 to-pink-500',
       },
       {
-        title: 'Wallets Ativas no Período',
+        title: 'Cartões Ativos no Período',
         value: formatInteger(stats.wallet_active_period),
         icon: Wallet,
         color: 'from-green-500 to-emerald-500',
