@@ -188,7 +188,7 @@ export default function NotificationsManager({ projectId }) {
     setExpandedId(willExpand ? campaignId : null);
 
     if (willExpand && !jobsByCampaign[campaignId]) {
-      await fetchJobsForCampaign(campaignId);
+      await fetchJobsForCampaign(campaignId); 
     }
   }
 
@@ -276,7 +276,7 @@ export default function NotificationsManager({ projectId }) {
     }, {});
 
     setCancelingId(null);
-    toast({
+    toast({ 
       title: "Nenhum job foi cancelado",
       description:
         `Encontrei ${totalJobs} jobs, mas 0 eram canceláveis. ` +
