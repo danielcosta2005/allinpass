@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
+import SignupPage from '@/pages/SignupPage';
 
 
 // ✅ NOVOS imports
@@ -72,7 +73,10 @@ export default function App() {
       </Helmet>
 
       <Routes>
-        <Route path="/login" element={!loading && user ? <Navigate to="/" replace /> : <Login />} />
+        {/* ✅ landing page pública */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+
+        <Route path="/login" element={!loading && user ? <Navigate to="/app" replace /> : <Login />} />
 
         {/* callbacks existentes */}
         <Route path="/auth/callback" element={<AuthCallback />} />
@@ -84,16 +88,19 @@ export default function App() {
         {/* públicos existentes */}
         <Route path="/me" element={<MePage />} />
         <Route path="/c/:projectId/me" element={<MePage />} />
-        <Route path="/:slug" element={<PassPage />} />
 
         <Route path="/nao-autorizado" element={<Unauthorized />} />
         <Route path="/thanks" element={<ClaimThanks />} />
+        <Route path="/cadastro" element={<SignupPage />} />
 
         <Route element={<ProtectedLayout />}>
-          <Route path="/" element={<AuthRedirect />} />
+          <Route path="/app" element={<AuthRedirect />} />
           <Route path="/admin" element={<SuperadminDashboard />} />
           <Route path="/org" element={<RestaurantDashboard />} />
         </Route>
+
+        {/* rota dinâmica de pass — mantida no final para não capturar /app, /admin, /login etc */}
+        <Route path="/:slug" element={<PassPage />} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>

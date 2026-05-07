@@ -1,0 +1,1 @@
+Documenta o modelo de autenticação, autorização e segurança do sistema, incluindo Supabase Auth, roles, permissões, matriz de acesso, modelo multi-tenant, policies RLS, uso de `service_role_key`, proteção de dados sensíveis e cenários de teste de segurança.

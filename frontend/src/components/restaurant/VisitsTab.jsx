@@ -56,6 +56,7 @@ const VisitsTab = ({ projectId }) => {
                   <tr key={visit.id} className="bg-white border-b">
                     <td className="px-6 py-4">
                       {new Date(visit.visited_at).toLocaleString('pt-BR', {
+                        timeZone: 'America/Sao_Paulo',
                         dateStyle: 'short',
                         timeStyle: 'medium'
                       })}
