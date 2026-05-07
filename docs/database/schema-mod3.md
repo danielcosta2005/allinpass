@@ -1,283 +1,301 @@
-# README do Schema - Modulo 3
+# Schema Modulo 3 - Visao de Negocio (Consolidado)
 
-Este documento explica o schema criado na migration `20260430120220_schema_mod3.sql`.
+Este documento descreve o estado atual do modulo considerando:
+- `supabase/migrations/20260430120220_schema_mod3.sql`
+- `supabase/migrations/20260507143000_mod3_usage_installs_notifications_and_plan_changes.sql`
 
-## Objetivo
+O objetivo aqui e explicar a logica do modelo de cobranca em alto nivel.
 
-Atender aos requisitos da sprint para:
-- ciclo de vida de trial e assinatura
-- cobranca recorrente e cobranca por uso
-- cobranca retroativa por lotes
-- gestao de creditos
-- notificacoes financeiras
-- auditoria operacional de billing
+## Modelo de cobranca
 
-## Tabelas por Dominio
+O modulo opera com:
+- assinatura mensal (preco base do plano)
+- franquia mensal por recurso
+- cobranca por excedente
 
-### Catalogo de Planos e Identidade de Cobranca
+Recursos cobrados:
+- instalacoes de passe (`user_passes` quando vira `install_status='installed'`)
+- notificacoes enviadas (`notification_jobs` quando vira `status='sent'`)
 
-#### `public.billing_plans`
-Catalogo de planos usado pelas assinaturas.
+## Papel de cada tabela (com colunas principais)
 
-Campos principais:
-- identidade do catalogo: `code`, `name`, `description`
-- modelo comercial: `base_price_cents`, `included_passes`, `overage_price_cents`
-- periodicidade e trial: `billing_interval`, `trial_days`
-- caminho de upgrade automatico: `auto_upgrade_to_plan_id`
-- flags comerciais: `is_active`, `features`
+## 1) Catalogo comercial
 
-Por que existe:
-- centralizar preco e limites
-- suportar upgrade automatico de plano
+### `public.billing_plans`
+Define o que cada plano oferece e quanto custa.
 
-#### `public.billing_accounts`
-Perfil de faturamento de cada projeto (`unique(project_id)`).
+Colunas principais:
+- identificacao: `id`, `code`, `name`
+- base: `base_price_cents`, `billing_interval`, `trial_days`
+- franquias: `included_pass_installs`, `included_notification_sends`
+- excedente: `overage_pass_install_cents`, `overage_notification_sent_cents`
+- governanca: `is_active`, `auto_upgrade_to_plan_id`
 
-Campos principais:
+## 2) Conta de cobranca do cliente
+
+### `public.billing_accounts`
+Representa o perfil de faturamento por projeto.
+
+Colunas principais:
 - vinculo: `project_id`
-- dados legais: `legal_name`, `billing_email`, `document_type`, `document_number`, `address`
-- vinculo com gateway: `gateway_provider`, `gateway_customer_id`, `provider_status`
-- dados extras: `metadata`
+- dados de faturamento: `legal_name`, `billing_email`, `document_type`, `document_number`, `address`
+- integracao gateway: `gateway_provider`, `gateway_customer_id`, `provider_status`
 
-Por que existe:
-- separar o perfil legal/financeiro dos dados operacionais do projeto
+### `public.billing_payment_methods`
+Guarda os metodos/token de pagamento.
 
-#### `public.billing_payment_methods`
-Metodos de pagamento tokenizados vinculados a conta de faturamento.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `billing_account_id`
-- referencia do gateway: `gateway_provider`, `gateway_payment_method_id`
-- snapshot do cartao: `brand`, `last4`, `exp_month`, `exp_year`, `holder_name`
-- estado e padrao: `status`, `is_default`
+- token gateway: `gateway_provider`, `gateway_payment_method_id`
+- dados de exibicao: `brand`, `last4`, `exp_month`, `exp_year`
+- operacao: `is_default`, `status`
 
-Por que existe:
-- permitir atualizacao autonoma do meio de pagamento
-- manter controle de metodo padrao e fallback
+## 3) Assinatura e mudancas de plano
 
-### Ciclo de Vida da Assinatura
+### `public.billing_subscriptions`
+Estado atual da assinatura ativa do projeto.
 
-#### `public.billing_subscriptions`
-Estado da assinatura por projeto.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `billing_account_id`, `plan_id`
-- ciclo de vida: `status` (`trialing`, `active`, `past_due`, `paused`, `canceled`, `expired`)
-- trial e periodo: `trial_started_at`, `trial_ends_at`, `current_period_start`, `current_period_end`
-- controle de cancelamento: `cancel_at_period_end`, `canceled_at`, `ended_at`
-- referencia de gateway: `gateway_provider`, `gateway_subscription_id`
-- snapshot comercial: `base_price_cents`, `included_passes`, `overage_price_cents`, `currency`
+- estado: `status`, `current_period_start`, `current_period_end`
+- comercial snapshot: `base_price_cents`, `included_pass_installs`, `included_notification_sends`
+- preco de excedente snapshot: `overage_pass_install_cents`, `overage_notification_sent_cents`
+- gateway: `gateway_provider`, `gateway_subscription_id`
 
-Por que existe:
-- controlar conversao de trial e transicoes da cobranca recorrente
+### `public.billing_subscription_changes`
+Historico de troca de plano e base para prorrata.
 
-#### `public.billing_subscription_changes`
-Historico de transicoes da assinatura.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `subscription_id`
-- transicao: `previous_plan_id`, `new_plan_id`, `change_type`
-- motivo e impacto financeiro: `change_reason`, `proration_delta_cents`
-- rastreabilidade: `effective_at`, `requested_by`, `metadata`
+- mudanca: `previous_plan_id`, `new_plan_id`, `change_type`, `effective_at`
+- politica: `effective_mode` (`immediate` ou `next_cycle`)
+- prorrata: `prorated_install_allowance`, `prorated_notification_allowance`
+- rastreio de calculo: snapshots `previous_*` / `new_*`
 
-Por que existe:
-- registrar upgrade/downgrade/renovacao/cancelamento para suporte e auditoria
+## 4) Ciclo, fatura e itens
 
-### Ciclos e Faturas
+### `public.billing_cycles`
+Controla a janela de apuracao mensal (ou retroativa).
 
-#### `public.billing_cycles`
-Periodos faturaveis para assinatura, uso ou retroativo.
+Colunas principais:
+- escopo: `project_id`, `subscription_id`
+- janela: `period_start`, `period_end`
+- tipo/estado: `cycle_type`, `status`
 
-Campos principais:
-- vinculo: `project_id`, `subscription_id` (opcional)
-- semantica de periodo: `cycle_type`, `frequency`, `period_start`, `period_end`
-- estado operacional: `status`, `closed_at`
+### `public.billing_invoices`
+Cabecalho da fatura do ciclo.
 
-Por que existe:
-- normalizar fechamento de ciclo e geracao de faturas por periodo
+Colunas principais:
+- vinculo: `project_id`, `billing_cycle_id`, `subscription_id`
+- status financeiro: `status`, `issued_at`, `due_at`, `paid_at`
+- totais: `subtotal_cents`, `discount_cents`, `tax_cents`, `total_cents`
+- gateway: `gateway_provider`, `gateway_invoice_id`, `gateway_charge_id`
 
-#### `public.billing_invoices`
-Cabecalho das faturas.
+### `public.billing_invoice_items`
+Detalha como a fatura foi composta.
 
-Campos principais:
-- vinculo: `project_id`
-- relacoes opcionais: `subscription_id`, `billing_cycle_id`, `billing_account_id`
-- referencias externas: `invoice_number`, `gateway_invoice_id`, `gateway_charge_id`
-- ciclo de vida: `status` (`draft`, `open`, `paid`, `past_due`, `failed`, `canceled`, `refunded`)
-- valores: `subtotal_cents`, `tax_cents`, `discount_cents`, `total_cents`, `amount_paid_cents`, `amount_due_cents`
-- datas: `issued_at`, `due_at`, `paid_at`, `failed_at`
-
-Por que existe:
-- armazenar o estado oficial de cobranca e pagamento
-
-#### `public.billing_invoice_items`
-Itens de linha da fatura.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `invoice_id`
-- tipo: `item_type` (`subscription_base`, `overage_pass`, `credit_purchase`, `proration`, `retroactive_usage`, `adjustment`)
-- composicao da linha: `description`, `quantity`, `unit_amount_cents`, `line_total_cents`
-- recorte opcional de periodo: `period_start`, `period_end`
+- tipo: `item_type` (`subscription_base`, `overage_pass_install`, `overage_notification_sent`, `proration`, etc.)
+- valores: `quantity`, `unit_amount_cents`, `line_total_cents`
+- periodo: `period_start`, `period_end`
 
-Por que existe:
-- dar transparencia total da composicao de cada cobranca
+## 5) Medicao de consumo
 
-### Medicao de Uso e Cobranca Retroativa
+### `public.billing_usage_events`
+Ledger de uso que alimenta a cobranca de excedente.
 
-#### `public.billing_usage_events`
-Ledger atomico de uso para cobranca por passes.
+Colunas principais:
+- vinculo: `project_id`, `subscription_id`
+- classificacao: `resource_type` (`pass_install` ou `notification_sent`), `event_type`, `source`
+- referencias de origem: `user_pass_id`, `notification_job_id`
+- cobranca: `quantity`, `unit_amount_cents`, `is_billable`, `occurred_at`
+- conciliacao: `billing_cycle_id`, `invoice_item_id`
 
-Campos principais:
+## 6) Retroativo e creditos
+
+### `public.billing_reprocessing_batches`
+Executa e controla cobrancas retroativas.
+
+Colunas principais:
 - vinculo: `project_id`
-- relacoes opcionais: `subscription_id`, `billing_cycle_id`, `invoice_item_id`, `reprocessing_batch_id`, `pass_id`
-- semantica do evento: `event_type` (`issue`, `reversal`, `adjustment`), `source` (`pass_issue`, `manual`, `import`, `retroactive_reprocess`)
-- dados de cobranca: `quantity`, `unit_amount_cents`, `is_billable`, `occurred_at`
+- janela: `period_start`, `period_end`, `lookback_months`
+- execucao: `status`, `triggered_at`, `completed_at`
 
-Por que existe:
-- viabilizar acumulo de uso e cobranca consolidada
-- permitir estorno/ajuste e rastreio do retroativo
+### `public.billing_credit_wallets`
+Saldo de creditos do projeto.
 
-#### `public.billing_reprocessing_batches`
-Controle dos lotes de cobranca retroativa.
-
-Campos principais:
-- vinculo: `project_id`, `created_by`
-- estado do lote: `status` (`pending`, `running`, `completed`, `failed`, `canceled`)
-- janela retroativa: `lookback_months`, `period_start`, `period_end`
-- datas: `triggered_at`, `completed_at`
-
-Por que existe:
-- suportar regras de cobranca tardia em periodos passados
-
-### Creditos
-
-#### `public.billing_credit_wallets`
-Saldo de creditos por projeto (`unique(project_id)`).
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`
-- saldo e politica: `balance_credits`, `low_balance_threshold`, `auto_recharge_enabled`, `auto_recharge_pack_size`
+- saldo/politica: `balance_credits`, `low_balance_threshold`, `auto_recharge_enabled`
 
-Por que existe:
-- suportar modelo pre-pago e compra adicional de creditos
+### `public.billing_credit_transactions`
+Movimentacoes da carteira de creditos.
 
-#### `public.billing_credit_transactions`
-Ledger de movimentacoes de credito.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `wallet_id`
-- tipo de movimento: `transaction_type` (`grant`, `purchase`, `consume`, `expire`, `refund`, `adjustment`, `reversal`)
-- valor: `credits_delta`
-- referencias opcionais: `invoice_item_id`, `usage_event_id`
-- rastreabilidade: `reason`, `created_by`, `metadata`
+- tipo e valor: `transaction_type`, `credits_delta`
+- conciliacao: `invoice_item_id`, `usage_event_id`
 
-Por que existe:
-- oferecer trilha auditavel para conciliacao de creditos
+## 7) Notificacao financeira e auditoria
 
-### Notificacoes Financeiras
+### `public.billing_notification_rules`
+Regras de notificacao do proprio billing (vencimento, falha, renovacao etc).
 
-#### `public.billing_notification_rules`
-Regras de notificacao financeira recorrente.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`
-- gatilho e canal: `event_type`, `channel`
-- recorrencia: `recurrence_unit` (`day`, `week`, `month`), `recurrence_interval`
-- estado do agendamento: `is_active`, `next_run_at`, `last_run_at`
-- template de payload: `payload_template`
+- regra: `event_type`, `channel`, `recurrence_unit`, `recurrence_interval`
+- execucao: `is_active`, `next_run_at`, `last_run_at`
 
-Por que existe:
-- permitir lembretes recorrentes para eventos de cobranca
+### `public.billing_notification_deliveries`
+Historico de envios das regras acima.
 
-#### `public.billing_notification_deliveries`
-Log de execucoes/envios de notificacoes.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`, `rule_id`
-- contexto opcional: `invoice_id`, `subscription_id`
-- estado de entrega: `status` (`queued`, `sent`, `failed`, `skipped`)
-- detalhes de execucao: `scheduled_for`, `sent_at`, `error_message`, `payload`
+- contexto: `invoice_id`, `subscription_id`
+- entrega: `status`, `scheduled_for`, `sent_at`, `error_message`
 
-Por que existe:
-- dar observabilidade e base para retentativas
+### `public.project_billing_audit_logs`
+Trilha de auditoria do modulo.
 
-### Auditoria de Billing
-
-#### `public.project_billing_audit_logs`
-Auditoria transversal do dominio de cobranca.
-
-Campos principais:
+Colunas principais:
 - vinculo: `project_id`
-- ator: `actor_user_id`
-- alvo: `target_table`, `target_id`
-- acao: `action` (`insert`, `update`, `delete`, `sync_gateway`)
-- mudancas: `changes`
+- acao: `target_table`, `target_id`, `action`
+- rastreio: `actor_user_id`, `changes`, `created_at`
 
-Por que existe:
-- garantir rastreabilidade operacional e forense
+## Triggers do modulo (estado consolidado)
 
-## Seguranca (RLS)
+Os triggers abaixo sao os ativos apos aplicar as 2 migrations listadas no inicio deste documento.
 
-Todas as tabelas novas estao com RLS habilitado.
+## A) Manutencao automatica de `updated_at`
 
-Estrategia de politicas:
-- acesso por membro do projeto ou superadmin via `public.can_access_project(project_id)`
-- `billing_plans` permite leitura publica apenas de planos ativos
-- escrita superadmin-only em tabelas financeiras sensiveis
+O modulo usa `before update` + `public.set_updated_at()` para manter carimbo de ultima alteracao consistente.
 
-## Funcoes e Triggers
+Triggers:
+- `trg_billing_plans_updated_at` em `public.billing_plans`
+- `trg_billing_accounts_updated_at` em `public.billing_accounts`
+- `trg_billing_payment_methods_updated_at` em `public.billing_payment_methods`
+- `trg_billing_subscriptions_updated_at` em `public.billing_subscriptions`
+- `trg_billing_cycles_updated_at` em `public.billing_cycles`
+- `trg_billing_invoices_updated_at` em `public.billing_invoices`
+- `trg_billing_credit_wallets_updated_at` em `public.billing_credit_wallets`
+- `trg_billing_notification_rules_updated_at` em `public.billing_notification_rules`
 
-### `public.can_access_project(p_project_id uuid)`
-Funcao auxiliar de seguranca para RLS. Retorna true quando o usuario e superadmin ou membro do projeto.
+## B) Sincronizacao da carteira de creditos
 
-### `public.trg_sync_credit_wallet_balance()`
-Mantem `billing_credit_wallets.balance_credits` com base em insert/update/delete de `billing_credit_transactions`.
+### Trigger `trg_billing_credit_transactions_apply`
+- tabela/evento: `after insert or update or delete` em `public.billing_credit_transactions`
+- funcao: `public.trg_sync_credit_wallet_balance()`
 
-Regras:
-- aplica delta no saldo da carteira
-- bloqueia operacoes que deixariam saldo negativo
+Efeito:
+- no `insert`: soma `credits_delta` no `balance_credits` da carteira
+- no `update`: recalcula diferenca (inclusive mudanca de carteira)
+- no `delete`: desfaz o efeito do lancamento removido
+- se carteira nao existir, gera erro
+- se saldo ficar negativo, gera erro e aborta a transacao
 
-### `public.trg_log_pass_issue_billing_usage()`
-Apos insert em `public.passes`, cria evento de uso em `billing_usage_events` (`event_type='issue'`, `source='pass_issue'`).
+Resultado pratico: `billing_credit_wallets.balance_credits` vira um saldo derivado e consistente com o ledger (`billing_credit_transactions`).
 
-### `public.set_updated_at()`
-Trigger existente reaproveitada para manter `updated_at` nas tabelas mutaveis do modulo.
+## C) Medicao automatica de consumo (usage metering)
 
-## Estrategia de Indices
+### Trigger `trg_user_passes_log_billing_usage_on_install`
+- tabela/evento: `after insert or update of install_status, installed_at` em `public.user_passes`
+- funcao: `public.trg_log_user_pass_install_billing_usage()`
+- condicoes de contagem:
+  - `project_id` precisa existir
+  - so conta quando `install_status = 'installed'`
+  - em `update`, se ja era `installed`, nao conta de novo
 
-O schema inclui:
-- indices de FK e joins para relacoes criticas
-- indices parciais para subconjuntos quentes (`open` cycles, uso nao faturado, metodo padrao ativo)
-- indices unicos para ids externos de gateway e invariantes de negocio
-- indices compostos por `project_id + status + data` para dashboard e backoffice
+Escreve em `public.billing_usage_events` com:
+- `resource_type = 'pass_install'`
+- `event_type = 'issue'`
+- `source = 'user_pass_install'`
+- `user_pass_id = new.id`
 
-## Invariantes de Negocio
+### Trigger `trg_notification_jobs_log_billing_usage_on_sent`
+- tabela/evento: `after insert or update of status, sent_at` em `public.notification_jobs`
+- funcao: `public.trg_log_notification_sent_billing_usage()`
+- condicoes de contagem:
+  - `project_id` precisa existir
+  - so conta quando `status = 'sent'`
+  - em `update`, se ja era `sent`, nao conta de novo
 
-- uma conta de faturamento por projeto
-- no maximo uma assinatura active-like por projeto (indice parcial em `trialing|active|past_due|paused`)
-- validacoes de nao-negatividade para valores monetarios e limites
-- carteira de creditos nao pode ficar negativa (validacao em trigger)
+Escreve em `public.billing_usage_events` com:
+- `resource_type = 'notification_sent'`
+- `event_type = 'issue'`
+- `source = 'notification_job_sent'`
+- `notification_job_id = new.id`
 
-## Fluxos Principais
+Garantia de idempotencia (sem dupla contagem):
+- `on conflict do nothing` no insert do trigger
+- indice unico `billing_usage_events_user_pass_install_once_uidx`
+- indice unico `billing_usage_events_notification_sent_once_uidx`
 
-1. Trial para pago:
-- assinatura inicia em `trialing`
-- conversao atualiza assinatura e registra `billing_subscription_changes`
+Observacao de consolidacao:
+- o trigger legado `trg_passes_log_billing_usage` (em `public.passes`) foi removido
+- o modelo atual mede consumo por instalacao (`user_passes`) e envio (`notification_jobs`)
 
-2. Cobranca por uso:
-- emissao de passe gera `billing_usage_events`
-- ciclo fecha em `billing_cycles`
-- fatura/itens sao gerados em `billing_invoices` / `billing_invoice_items`
+## D) Enriquecimento de mudanca de plano e prorrata
 
-3. Retroativo:
-- lote criado em `billing_reprocessing_batches`
-- eventos retroativos e itens de fatura sao gerados e vinculados
+### Trigger `trg_billing_subscription_changes_enrich`
+- tabela/evento: `before insert` em `public.billing_subscription_changes`
+- funcao: `public.trg_enrich_subscription_change_proration()`
 
-4. Creditos:
-- movimentos em `billing_credit_transactions`
-- saldo da carteira atualizado automaticamente em `billing_credit_wallets`
+Responsabilidades:
+- definir defaults de politica:
+  - `effective_mode`: downgrade tende a `next_cycle`, outros a `immediate`
+  - `allowance_proration_mode`: `prorated_daily` quando nao informado
+- preencher snapshots na linha de mudanca:
+  - franquias anteriores/novas (`*_included_pass_installs`, `*_included_notification_sends`)
+  - precos de excedente anteriores/novos (`*_overage_*_cents`)
+- completar janela do ciclo (`cycle_started_at`, `cycle_ends_at`) usando `billing_subscriptions` quando faltar
+- calcular `prorated_install_allowance` e `prorated_notification_allowance`:
+  - `next_cycle`: usa franquia anterior inteira
+  - `immediate` + `prorated_daily`: faz media ponderada por tempo dentro do ciclo
 
-## Referencias de Arquivos
+Resultado pratico: fechamento mensal consegue calcular excedente com base no contexto real da troca de plano, sem depender do estado atual do plano no momento da leitura.
 
-- Migration: `supabase/migrations/20260430120220_schema_mod3.sql`
-- README: `docs/schema-mod3.md`
+## Regras de negocio principais
+
+1. Instalacao de passe so conta 1 vez por `user_passes.id`.
+2. Notificacao enviada so conta 1 vez por `notification_jobs.id`.
+3. Excedente por recurso = `max(consumo - franquia, 0)`.
+4. Upgrade preferencialmente imediato com prorrata; downgrade no proximo ciclo.
+5. Fatura final combina assinatura base + excedentes + prorrata (quando houver).
+
+## Fluxo de negocio (fim a fim)
+
+## Cenario A - Cliente faz checkout e escolhe plano
+
+1. Cria/atualiza `billing_accounts`.
+2. Salva token em `billing_payment_methods`.
+3. Cria `billing_subscriptions` com snapshot comercial do plano.
+4. Opcional: registra em `project_billing_audit_logs`.
+
+## Cenario B - Cliente consome recursos no mes
+
+1. Passe instalado -> trigger gera evento `pass_install` em `billing_usage_events`.
+2. Notificacao enviada -> trigger gera evento `notification_sent` em `billing_usage_events`.
+3. Indices unicos garantem que nao haja dupla contagem por id de origem.
+
+## Cenario C - Fechamento mensal
+
+1. Sistema define janela em `billing_cycles`.
+2. Soma consumo por recurso em `billing_usage_events`.
+3. Compara com franquias do snapshot da assinatura.
+4. Calcula excedentes e cria `billing_invoices`.
+5. Gera `billing_invoice_items` (base + excedente + prorrata).
+
+## Cenario D - Troca de plano no meio do ciclo
+
+1. Insere em `billing_subscription_changes`.
+2. Trigger enriquece snapshots antigo/novo e calcula franquia prorrateada.
+3. No fechamento, usa franquia prorrateada para calcular excedente corretamente.
+
+## Dependencias operacionais externas ao modulo
+
+O billing depende dessas tabelas para medir consumo:
+- `public.user_passes`
+- `public.notification_jobs`
+
+Elas pertencem a outros modulos, mas alimentam `billing_usage_events`.
