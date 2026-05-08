@@ -1,0 +1,1 @@
+Documenta a estrutura do banco de dados Postgres/Supabase, incluindo tabelas, campos, relacionamentos, constraints, índices, triggers, views, funções RPC, migrations relevantes e regras de persistência. Deve servir como referência para entender como os dados do sistema são modelados e relacionados.
