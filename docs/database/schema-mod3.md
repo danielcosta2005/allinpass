@@ -31,6 +31,8 @@ Colunas principais:
 - excedente: `overage_pass_install_cents`, `overage_notification_sent_cents`
 - governanca: `is_active`, `auto_upgrade_to_plan_id`
 
+Observação: apenas o plano free trial vai ter trial_days != 0
+
 ## 2) Conta de cobranca do cliente
 
 ### `public.billing_accounts`
@@ -254,6 +256,14 @@ Responsabilidades:
   - `immediate` + `prorated_daily`: faz media ponderada por tempo dentro do ciclo
 
 Resultado pratico: fechamento mensal consegue calcular excedente com base no contexto real da troca de plano, sem depender do estado atual do plano no momento da leitura.
+
+## E) Rastreio dos free trials (cron que roda a função de 15 em 15 minutos)
+### Função `expire_trial_subscriptions()`
+Expira assinaturas em trial quando o prazo acabar.
+Regras:
+ - So expira registros com status = 'trialing' e trial_ends_at <= now()
+ - trial_days = 0 nao entra nesse fluxo (normalmente nao fica como trialing)
+ - Registra historico em billing_subscription_changes
 
 ## Regras de negocio principais
 
