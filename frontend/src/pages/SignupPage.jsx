@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -15,9 +15,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   DEFAULT_PLAN_KEY,
+  fetchSubscriptionPlans,
   findPlanByKey,
   formatCurrencyBRL,
   isPaidPlan,
+  subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
 
@@ -57,8 +59,12 @@ function evaluatePassword(password) {
 
 function SignupPage() {
   const [searchParams] = useSearchParams();
+  const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
   const selectedPlanKey = searchParams.get('plano') || DEFAULT_PLAN_KEY;
-  const selectedPlan = useMemo(() => findPlanByKey(selectedPlanKey), [selectedPlanKey]);
+  const selectedPlan = useMemo(
+    () => findPlanByKey(selectedPlanKey, availablePlans),
+    [availablePlans, selectedPlanKey]
+  );
   const paidPlan = isPaidPlan(selectedPlan);
   const totalSteps = paidPlan ? 2 : 1;
 
@@ -149,6 +155,23 @@ function SignupPage() {
   };
 
   const shouldShowError = (field) => Boolean(errors[field]) && (attemptedSubmit || touched[field]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPlans = async () => {
+      const remotePlans = await fetchSubscriptionPlans();
+      if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
+        setAvailablePlans(remotePlans);
+      }
+    };
+
+    loadPlans();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <>

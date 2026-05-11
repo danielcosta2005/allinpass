@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,7 +21,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { buildSignupPath, subscriptionPlans } from '@/lib/subscriptionPlans';
+import {
+  buildSignupPath,
+  fetchSubscriptionPlans,
+  subscriptionPlans,
+} from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
 
 const fadeUp = {
@@ -97,8 +101,6 @@ const steps = [
       'Envie notificações, registre visitas e acompanhe o crescimento da sua base de fiéis.',
   },
 ];
-
-const plans = subscriptionPlans;
 
 const faqs = [
   {
@@ -610,7 +612,7 @@ const HowItWorks = () => {
   );
 };
 
-const Pricing = () => {
+const Pricing = ({ plans }) => {
   return (
     <section id="planos" className="py-24 sm:py-32">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -852,6 +854,25 @@ const Footer = () => {
 };
 
 const LandingPage = () => {
+  const [plans, setPlans] = useState(subscriptionPlans);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPlans = async () => {
+      const remotePlans = await fetchSubscriptionPlans();
+      if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
+        setPlans(remotePlans);
+      }
+    };
+
+    loadPlans();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <>
       <Helmet>
@@ -869,7 +890,7 @@ const LandingPage = () => {
           <TrustBar />
           <Features />
           <HowItWorks />
-          <Pricing />
+          <Pricing plans={plans} />
           <FAQ />
           <FinalCTA />
         </main>
