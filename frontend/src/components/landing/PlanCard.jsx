@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Check, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatCurrencyBRL } from '@/lib/subscriptionPlans';
 
 function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
   return (
@@ -57,14 +58,14 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
       <div className="mb-6">
         {plan.type === 'trial' ? (
           <div className="space-y-1">
-            <p className="text-4xl font-bold text-emerald-900">7 dias</p>
+            <p className="text-4xl font-bold text-emerald-900">{plan.trialDays || 7} dias</p>
             <p className="text-sm font-semibold text-emerald-700">grátis e sem cartão de crédito</p>
           </div>
         ) : (
           <div className="flex items-baseline gap-1">
             <span className={`text-sm ${plan.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>R$</span>
             <span className={`text-5xl font-bold ${plan.highlighted ? 'text-white' : 'text-gray-900'}`}>
-              {plan.price}
+              {formatCurrencyBRL(plan.price)}
             </span>
             <span className={`text-sm ${plan.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>/mês</span>
           </div>
@@ -117,3 +118,4 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
 }
 
 export default PlanCard;
+

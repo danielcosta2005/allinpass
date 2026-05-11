@@ -13,7 +13,12 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DEFAULT_PLAN_KEY, findPlanByKey, isPaidPlan } from '@/lib/subscriptionPlans';
+import {
+  DEFAULT_PLAN_KEY,
+  findPlanByKey,
+  formatCurrencyBRL,
+  isPaidPlan,
+} from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -373,7 +378,9 @@ function SignupPage() {
                           <p className="text-2xl font-bold text-slate-900">{selectedPlan.name}</p>
                           <p className="text-sm text-slate-600 mt-1">{selectedPlan.description}</p>
                         </div>
-                        <p className="text-2xl font-bold text-purple-700">R$ {selectedPlan.price}/mês</p>
+                        <p className="text-2xl font-bold text-purple-700">
+                          R$ {formatCurrencyBRL(selectedPlan.price)}/mês
+                        </p>
                       </div>
                     </div>
 
