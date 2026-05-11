@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
+  Loader2,
   Lock,
   Wallet,
 } from 'lucide-react';
@@ -21,6 +22,10 @@ import {
   isPaidPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
+import { finalizeFreeTrialSignup } from '@/lib/signup';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useToast } from '@/components/ui/use-toast';
 import PlanCard from '@/components/landing/PlanCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -59,8 +64,12 @@ function evaluatePassword(password) {
 
 function SignupPage() {
   const [searchParams] = useSearchParams();
+  const { signUp, refreshAuthProfile } = useAuth();
+  const { toast } = useToast();
+  const finalizeFromRedirectRef = useRef(false);
   const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
   const selectedPlanKey = searchParams.get('plano') || DEFAULT_PLAN_KEY;
+  const shouldFinalizeFromRedirect = searchParams.get('finalizar') === '1';
   const selectedPlan = useMemo(
     () => findPlanByKey(selectedPlanKey, availablePlans),
     [availablePlans, selectedPlanKey]
@@ -75,6 +84,8 @@ function SignupPage() {
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState('');
   const [formData, setFormData] = useState({
     establishmentName: '',
     email: '',
@@ -128,20 +139,73 @@ function SignupPage() {
     return nextErrors;
   };
 
-  const handleStepOneSubmit = (event) => {
+  const provisionFreeTrial = async ({ establishmentName, planCode }) => {
+    const result = await finalizeFreeTrialSignup({
+      establishmentName,
+      planCode: planCode || 'free_trial',
+    });
+
+    await refreshAuthProfile();
+    return result;
+  };
+
+  const handleStepOneSubmit = async (event) => {
     event.preventDefault();
     setAttemptedSubmit(true);
+    setSignupError('');
     const nextErrors = validateStepOne();
     setErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) return;
 
-    if (!paidPlan) {
-      setFinishedFlow('trial');
+    if (paidPlan) {
+      setStep(2);
       return;
     }
 
-    setStep(2);
+    setSignupLoading(true);
+
+    try {
+      const establishmentName = formData.establishmentName.trim();
+      const normalizedEmail = formData.email.trim().toLowerCase();
+      const planCode = selectedPlan?.code || 'free_trial';
+      const emailRedirectTo = `${window.location.origin}/cadastro?plano=${encodeURIComponent(
+        selectedPlan?.key || 'free-trial',
+      )}&finalizar=1`;
+
+      const { data, error } = await signUp(normalizedEmail, formData.password, {
+        data: {
+          establishment_name: establishmentName,
+          plan_code: planCode,
+          plan_key: selectedPlan?.key || 'free-trial',
+        },
+        emailRedirectTo,
+      });
+
+      if (error) throw error;
+
+      if (!data?.session) {
+        setFinishedFlow('confirm-email');
+        toast({
+          title: 'Confirme seu email',
+          description: 'Enviamos um link para finalizar seu Free Trial.',
+        });
+        return;
+      }
+
+      await provisionFreeTrial({ establishmentName, planCode });
+      setFinishedFlow('trial');
+    } catch (error) {
+      const message = error?.message || 'Nao foi possivel iniciar o Free Trial.';
+      setSignupError(message);
+      toast({
+        title: 'Erro no cadastro',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSignupLoading(false);
+    }
   };
 
   const handlePaymentContinue = () => {
@@ -172,6 +236,58 @@ function SignupPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldFinalizeFromRedirect || finalizeFromRedirectRef.current) return;
+
+    finalizeFromRedirectRef.current = true;
+    setSignupLoading(true);
+    setSignupError('');
+
+    const finalizePendingSignup = async () => {
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
+        if (error) throw error;
+        if (!session?.user) {
+          throw new Error('Sua sessao de cadastro nao foi encontrada. Faca login para continuar.');
+        }
+
+        const establishmentName = String(
+          session.user.user_metadata?.establishment_name || '',
+        ).trim();
+        const planCode = String(session.user.user_metadata?.plan_code || 'free_trial');
+
+        if (!establishmentName) {
+          throw new Error('Nao encontramos o nome do estabelecimento neste cadastro.');
+        }
+
+        await provisionFreeTrial({ establishmentName, planCode });
+        setFormData((previous) => ({
+          ...previous,
+          establishmentName,
+          email: session.user.email || previous.email,
+          emailConfirmation: session.user.email || previous.emailConfirmation,
+        }));
+        setFinishedFlow('trial');
+      } catch (error) {
+        const message = error?.message || 'Nao foi possivel finalizar o Free Trial.';
+        setSignupError(message);
+        toast({
+          title: 'Erro ao finalizar cadastro',
+          description: message,
+          variant: 'destructive',
+        });
+      } finally {
+        setSignupLoading(false);
+      }
+    };
+
+    finalizePendingSignup();
+  }, [shouldFinalizeFromRedirect, toast]);
 
   return (
     <>
@@ -261,7 +377,46 @@ function SignupPage() {
               </div>
 
               <AnimatePresence mode="wait">
-                {!finishedFlow && step === 1 && (
+                {!finishedFlow && shouldFinalizeFromRedirect && (
+                  <motion.div
+                    key="finalizing-signup"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="rounded-2xl border border-purple-200 bg-purple-50 p-6"
+                  >
+                    {signupLoading ? (
+                      <Loader2 className="w-10 h-10 text-purple-600 mb-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-10 h-10 text-rose-600 mb-4" />
+                    )}
+                    <h2 className="text-2xl font-bold text-slate-900">
+                      {signupLoading ? 'Finalizando seu Free Trial' : 'Nao foi possivel finalizar automaticamente'}
+                    </h2>
+                    <p className="text-slate-700 mt-2">
+                      {signupLoading
+                        ? 'Estamos criando seu projeto, assinatura trial e acesso ao painel.'
+                        : signupError || 'Entre novamente para continuar o provisionamento.'}
+                    </p>
+                    {!signupLoading && (
+                      <div className="flex flex-wrap gap-3 mt-5">
+                        <Link to="/login">
+                          <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
+                            Ir para login
+                          </Button>
+                        </Link>
+                        <Link to="/#planos">
+                          <Button variant="outline" className="border-purple-300 text-purple-800 hover:bg-purple-100">
+                            Voltar aos planos
+                          </Button>
+                        </Link>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+
+                {!finishedFlow && !shouldFinalizeFromRedirect && step === 1 && (
                   <motion.form
                     key="step-1"
                     initial={{ opacity: 0, y: 10 }}
@@ -377,9 +532,18 @@ function SignupPage() {
                     <Button
                       type="submit"
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                      disabled={signupLoading}
                     >
-                      {paidPlan ? 'Continuar para pagamento' : 'Iniciar Free Trial'}
+                      {signupLoading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Iniciando...
+                        </span>
+                      ) : paidPlan ? 'Continuar para pagamento' : 'Iniciar Free Trial'}
                     </Button>
+                    {signupError && (
+                      <p className="text-sm text-rose-600 text-center">{signupError}</p>
+                    )}
                   </motion.form>
                 )}
 
@@ -464,13 +628,41 @@ function SignupPage() {
                       Seu acesso de 7 dias foi iniciado sem necessidade de cartão de crédito.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
-                      <Link to="/login">
+                      <Link to="/org">
                         <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                          Entrar no painel
+                          Acessar painel
                         </Button>
                       </Link>
                       <Link to="/#planos">
                         <Button variant="outline" className="border-emerald-300 text-emerald-800 hover:bg-emerald-100">
+                          Voltar aos planos
+                        </Button>
+                      </Link>
+                    </div>
+                  </motion.div>
+                )}
+
+                {finishedFlow === 'confirm-email' && (
+                  <motion.div
+                    key="confirm-email"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-2xl border border-sky-200 bg-sky-50 p-6"
+                  >
+                    <CheckCircle2 className="w-10 h-10 text-sky-600 mb-4" />
+                    <h2 className="text-2xl font-bold text-sky-950">Confirme seu email</h2>
+                    <p className="text-sky-900 mt-2">
+                      Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
+                      finalizar o Free Trial e provisionar seu painel.
+                    </p>
+                    <div className="flex flex-wrap gap-3 mt-5">
+                      <Link to="/login">
+                        <Button className="bg-sky-700 hover:bg-sky-800 text-white">
+                          Ir para login
+                        </Button>
+                      </Link>
+                      <Link to="/#planos">
+                        <Button variant="outline" className="border-sky-300 text-sky-900 hover:bg-sky-100">
                           Voltar aos planos
                         </Button>
                       </Link>
