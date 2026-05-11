@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, QrCode, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2 } from 'lucide-react';
+import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import QRTab from '@/components/restaurant/QRTab';
 import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
@@ -34,7 +33,7 @@ const RestaurantDashboard = () => {
   };
 
   useEffect(() => {
-    const allowedTabs = new Set(['kpis', 'scanner', 'qr', 'customers', 'visits', 'notifications']);
+    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications']);
     if (!allowedTabs.has(activeTab)) {
       setActiveTab('kpis');
       try {
@@ -133,10 +132,6 @@ const RestaurantDashboard = () => {
                     <ScanLine className="w-4 h-4" />
                     Scanner
                   </TabsTrigger>
-                  <TabsTrigger value="qr" className="gap-2">
-                    <QrCode className="w-4 h-4" />
-                    Gerar QR
-                  </TabsTrigger>
                   <TabsTrigger value="customers" className="gap-2">
                     <Users className="w-4 h-4" />
                     Clientes
@@ -159,9 +154,6 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="qr">
-                  <QRTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="customers">
                   <CustomersTab projectId={projectId} />

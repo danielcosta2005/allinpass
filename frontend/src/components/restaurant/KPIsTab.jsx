@@ -494,8 +494,8 @@ const KPIsTab = ({ projectId }) => {
   const funnelData = useMemo(
     () => [
       { name: 'Clientes totais', Quantidade: stats.total_customers },
-      { name: 'Wallet adicionada no período', Quantidade: stats.wallet_linked },
-      { name: 'Wallet ativa no período', Quantidade: stats.wallet_active_period },
+      { name: 'Cartões adicionados no período', Quantidade: stats.wallet_linked },
+      { name: 'Cartões ativos no período', Quantidade: stats.wallet_active_period },
       { name: 'Clientes ativos', Quantidade: stats.active_customers_period },
       { name: 'Visitas', Quantidade: stats.visits_in_period },
     ],

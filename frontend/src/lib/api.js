@@ -27,7 +27,7 @@ function coerceJsonPayload(payload) {
 const PROJECT_ANALYTICS_FALLBACK = {
 	kpis: {
 		total_customers: 0,
-		active_customers_period: 0,
+        active_customers_period: 0,
 		visits_in_period: 0,
 		wallet_linked: 0,
 		wallet_active_period: 0,
