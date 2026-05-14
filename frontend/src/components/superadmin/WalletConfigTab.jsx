@@ -49,7 +49,9 @@ const IMAGE_UPLOAD_RULES = {
   appleStrip: {
     label: 'Apple Strip',
     helpTitle: 'Apple Strip',
-    helpLines: ['Obrigatório: PNG', 'Altura máxima: 432px', 'Proporção recomendada: 2.6:1'],
+    helpLines: ['Obrigatório: PNG', 'Altura máxima: 432px', 'Proporção recomendada: 375:144'],
+    recommendedRatio: 375 / 144,
+    recommendedRatioLabel: '375:144',
   },
   googleHero: {
     label: 'Google Hero',
@@ -460,7 +462,13 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
         <div className="p-4 flex flex-col flex-1 min-h-[420px]">
           <header className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
-              {logoUrl ? <img src={logoUrl} alt="logo" className="w-10 h-10 rounded-full bg-white object-contain p-1" /> : <div className="w-10 h-10 rounded-full bg-white/20" />}
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="logo"
+                  className={platform === 'apple' ? 'max-h-10 max-w-10 object-contain' : 'w-10 h-10 rounded-full object-cover'}
+                />
+              ) : <div className="w-10 h-10 rounded-full bg-white/20" />}
               <h3 style={{ color: text }} className="font-bold text-lg">{title}</h3>
             </div>
             <p style={{ color: label }} className="text-xs uppercase font-semibold">{expText}</p>
@@ -468,22 +476,24 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
 
           {platform === 'apple' && (
             appleStrip
-              ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="w-full h-28 object-cover" /></div>
-              : <div className="-mx-4 mb-4"><div className="w-full h-28 bg-white/15" /></div>
+              ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="w-full aspect-[375/144] object-cover" /></div>
+              : <div className="-mx-4 mb-4"><div className="w-full aspect-[375/144] bg-white/15" /></div>
           )}
 
           <main className="flex-grow flex flex-col items-start justify-center text-left">
             <p style={{ color: label }} className="text-sm uppercase tracking-wider">Pontos</p>
-            <p style={{ color: text }} className="text-4xl font-bold leading-none">{pointsValue}</p>
+            <p style={{ color: text }} className="text-4xl leading-none">{pointsValue}</p>
           </main>
 
           <footer className="mt-6 flex items-center justify-center">
-            <div className="bg-white p-2 rounded-md"><QRCode value={qrValue} size={96} quietZone={0} bgColor="transparent" /></div>
+            <div className={platform === 'google' ? 'bg-white p-5 rounded-2xl' : 'bg-white p-2 rounded-md'}>
+              <QRCode value={qrValue} size={platform === 'google' ? 150 : 96} quietZone={0} bgColor="transparent" />
+            </div>
           </footer>
         </div>
 
         {platform === 'google' && (
-          googleHero ? <img src={googleHero} alt="Google Hero" className="w-full h-32 object-cover" /> : <div className="w-full h-32 bg-white/15" />
+          googleHero ? <img src={googleHero} alt="Google Hero" className="w-full aspect-[3/1] object-cover" /> : <div className="w-full aspect-[3/1] bg-white/15" />
         )}
       </div>
 
@@ -979,7 +989,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
                 <div>
                   <Label>Título</Label>
-                  <Input value={formState.title} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="Ex: Cartão Fidelidade" />
+                  <Input value={formState.title} maxLength={16} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="Ex: Cartão" />
+                  {String(formState.title || '').length >= 16 && (
+                    <p className="mt-1 text-xs text-amber-600">Limite de caracteres atingido.</p>
+                  )}
                 </div>
 
                 <div>
