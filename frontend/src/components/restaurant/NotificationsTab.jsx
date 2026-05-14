@@ -677,7 +677,6 @@ async function handleEnqueue() {
                     const meta = p?.metadata ?? null;
                     const name = getDisplayName(meta);
                     const email = getEmail(meta);
-                    const googleSub = getGoogleSub(meta);
                     const points = getPoints(meta);
                     const lastVisitIso = lastVisitByUserPassId.get(p.id) ?? null;
 
@@ -693,9 +692,6 @@ async function handleEnqueue() {
 
                         <td className="p-3">
                           <div className="font-medium text-gray-900">{name}</div>
-                          <div className="text-xs text-gray-500">
-                            sub: {String(googleSub || "").slice(0, 10)}… • id: {String(p?.id || "").slice(0, 8)}…
-                          </div>
                         </td>
 
                         <td className="p-3">{email}</td>
