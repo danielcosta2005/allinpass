@@ -9,7 +9,7 @@ const PLAN_PRESENTATION_BY_CODE = {
     key: 'free-trial',
     type: 'trial',
     highlight: '7 dias gratis',
-    cta: 'Comecar Gratis',
+    cta: 'Começar Gratis',
   },
   starter: {
     key: 'starter',
@@ -30,14 +30,30 @@ const PLAN_PRESENTATION_BY_CODE = {
   },
 };
 
+const PLAN_DESCRIPTION_BY_CODE = {
+  free_trial: 'Teste todos os recursos do AllinPass por 7 dias.',
+  starter: 'Para quem está começando a fidelizar.',
+  pro: 'O queridinho de quem quer crescer.',
+  premium: 'Para operações de alto volume.',
+};
+
+const PLAN_STATIC_FEATURES_BY_CODE = {
+  free_trial: [
+    'Acesso completo a todos os recursos',
+    'Notificações automatizadas',
+    'Notificações por geolocalização',
+    'Dashboards para análise de desempenho',
+    'Onboarding guiado para primeiro uso',
+    'Sem necessidade de cartão de crédito',
+  ],
+  starter: ['Acesso a todas as funcionalidades AllinPass'],
+  pro: ['Acesso a todas as funcionalidades AllinPass'],
+  premium: ['Acesso a todas as funcionalidades AllinPass'],
+};
+
 const toNumber = (value, defaultValue = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : defaultValue;
-};
-
-const normalizeFeatures = (value) => {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item) => typeof item === 'string' && item.trim().length > 0);
 };
 
 const getPlanSortIndex = (code) => {
@@ -51,7 +67,46 @@ export const formatCurrencyBRL = (amount) =>
     maximumFractionDigits: 2,
   });
 
-export const subscriptionPlans = [
+const formatIntegerBR = (value) =>
+  Math.max(0, Number(value || 0)).toLocaleString('pt-BR', {
+    maximumFractionDigits: 0,
+  });
+
+const formatCentsToBRL = (valueInCents) =>
+  formatCurrencyBRL(Math.max(0, Number(valueInCents || 0)) / 100);
+
+const buildPlanFeatures = ({
+  code,
+  type,
+  trialDays,
+  includedPassInstalls,
+  includedNotificationSends,
+  overagePassInstallCents,
+  overageNotificationSentCents,
+}) => {
+  const staticFeatures = PLAN_STATIC_FEATURES_BY_CODE[code] || [];
+  const features = [...staticFeatures];
+
+  if (type === 'trial') {
+    features.push(`Até ${formatIntegerBR(includedPassInstalls)} instalações de passe`);
+    features.push(`Até ${formatIntegerBR(includedNotificationSends)} notificações no período de trial`);
+  } else {
+    features.push(`Até ${formatIntegerBR(includedPassInstalls)} instalações de passe/mês`);
+    features.push(`${formatIntegerBR(includedNotificationSends)} notificações/mês`);
+  }
+
+  if (overagePassInstallCents > 0) {
+    features.push(`Excedente: R$ ${formatCentsToBRL(overagePassInstallCents)} por instalação`);
+  }
+
+  if (overageNotificationSentCents > 0) {
+    features.push(`Excedente: R$ ${formatCentsToBRL(overageNotificationSentCents)} por notificacao enviada`);
+  }
+
+  return features;
+};
+
+const subscriptionPlanSeeds = [
   {
     key: 'free-trial',
     code: 'free_trial',
@@ -72,16 +127,6 @@ export const subscriptionPlans = [
       notificationSentCents: 0,
       chargingEnabled: false,
     },
-    features: [
-      'Acesso completo a todos os recursos',
-      'Notificacoes automatizadas',
-      'Notificacoes por geolocalizacao',
-      'Dashboards para analise de desempenho',
-      'Ate 75 instalacoes de passe',
-      'Ate 250 notificacoes no periodo de trial',
-      'Onboarding guiado para primeiro uso',
-      'Sem necessidade de cartao de credito',
-    ],
   },
   {
     key: 'starter',
@@ -100,13 +145,6 @@ export const subscriptionPlans = [
       notificationSentCents: 2,
       chargingEnabled: true,
     },
-    features: [
-      'Acesso a todas as funcionalidades AllinPass',
-      'Ate 300 instalacoes de passe/mes',
-      '1.000 notificacoes/mes',
-      'Excedente: R$ 0,08 por instalacao',
-      'Excedente: R$ 0,02 por notificacao enviada',
-    ],
   },
   {
     key: 'pro',
@@ -127,13 +165,6 @@ export const subscriptionPlans = [
       notificationSentCents: 1,
       chargingEnabled: true,
     },
-    features: [
-      'Acesso a todas as funcionalidades AllinPass',
-      'Ate 1.500 instalacoes de passe/mes',
-      '10.000 notificacoes/mes',
-      'Excedente: R$ 0,04 por instalacao',
-      'Excedente: R$ 0,01 por notificacao enviada',
-    ],
   },
   {
     key: 'premium',
@@ -152,15 +183,21 @@ export const subscriptionPlans = [
       notificationSentCents: 1,
       chargingEnabled: true,
     },
-    features: [
-      'Acesso a todas as funcionalidades AllinPass',
-      'Ate 8.000 instalacoes de passe/mes',
-      '50.000 notificacoes/mes',
-      'Excedente: R$ 0,03 por instalacao',
-      'Excedente: R$ 0,01 por notificacao enviada',
-    ],
   },
 ];
+
+export const subscriptionPlans = subscriptionPlanSeeds.map((plan) => ({
+  ...plan,
+  features: buildPlanFeatures({
+    code: plan.code,
+    type: plan.type,
+    trialDays: plan.trialDays || 0,
+    includedPassInstalls: plan.limits?.passInstalls || 0,
+    includedNotificationSends: plan.limits?.notifications || 0,
+    overagePassInstallCents: plan.overage?.passInstallCents || 0,
+    overageNotificationSentCents: plan.overage?.notificationSentCents || 0,
+  }),
+}));
 
 const FALLBACK_BY_CODE = new Map(subscriptionPlans.map((plan) => [plan.code, plan]));
 
@@ -170,7 +207,6 @@ const mapBillingPlanToUiPlan = (billingPlan) => {
   const fallback = FALLBACK_BY_CODE.get(billingPlan.code);
   const presentation = PLAN_PRESENTATION_BY_CODE[billingPlan.code] || {};
   const trialDays = Math.max(0, Math.trunc(toNumber(billingPlan.trial_days, fallback?.trialDays || 0)));
-  const featuresFromDb = normalizeFeatures(billingPlan.features);
   const basePriceCents = Math.max(
     0,
     Math.trunc(toNumber(billingPlan.base_price_cents, toNumber(fallback?.price) * 100))
@@ -198,7 +234,15 @@ const mapBillingPlanToUiPlan = (billingPlan) => {
   );
 
   const type = presentation.type || fallback?.type || (trialDays > 0 ? 'trial' : 'paid');
-  const features = featuresFromDb.length > 0 ? featuresFromDb : fallback?.features || [];
+  const features = buildPlanFeatures({
+    code: billingPlan.code,
+    type,
+    trialDays,
+    includedPassInstalls,
+    includedNotificationSends,
+    overagePassInstallCents,
+    overageNotificationSentCents,
+  });
 
   return {
     ...fallback,
@@ -206,7 +250,10 @@ const mapBillingPlanToUiPlan = (billingPlan) => {
     code: billingPlan.code,
     type,
     name: billingPlan.name || fallback?.name || billingPlan.code,
-    description: billingPlan.description || fallback?.description || '',
+    description:
+      PLAN_DESCRIPTION_BY_CODE[billingPlan.code] ||
+      fallback?.description ||
+      '',
     highlight: presentation.highlight ?? fallback?.highlight,
     badge: presentation.badge ?? fallback?.badge,
     highlighted: presentation.highlighted ?? fallback?.highlighted,
@@ -231,7 +278,7 @@ export const fetchSubscriptionPlans = async () => {
     const { data, error } = await supabase
       .from('billing_plans')
       .select(
-        'code, name, description, billing_interval, base_price_cents, trial_days, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents, features, is_active'
+        'code, name, billing_interval, base_price_cents, trial_days, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents, is_active'
       )
       .eq('is_active', true)
       .eq('billing_interval', 'monthly')
