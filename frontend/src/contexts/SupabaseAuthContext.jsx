@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
-const VALID_ROLES = new Set(['superadmin', 'establishment', 'customer']);
+const VALID_ROLES = new Set(['superadmin', 'admin', 'establishment', 'customer']);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [role, setRole] = useState(null);
   const [projectId, setProjectId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
+const [initialized, setInitialized] = useState(false);
 
   // Protection against transient refresh failures.
   const REFRESH_FAIL_WINDOW_MS = 60_000;
@@ -292,7 +292,7 @@ export const AuthProvider = ({ children }) => {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
 
-            if (newRole === 'superadmin' && !alreadyInAdmin) {
+            if ((newRole === 'superadmin' || newRole === 'admin') && !alreadyInAdmin) {
               navigate('/admin', { replace: true });
             } else if (
               (newRole === 'establishment' || newRole === 'customer') &&

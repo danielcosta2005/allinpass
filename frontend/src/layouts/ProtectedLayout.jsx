@@ -35,12 +35,12 @@ const ProtectedLayout = () => {
   const path = location.pathname;
 
   const rules = [
-    { prefix: '/admin', roles: ['superadmin'] },
+    { prefix: '/admin', roles: ['superadmin', 'admin'] },
     { prefix: '/org', roles: ['establishment', 'customer'] },
   ];
 
   const rule = rules.find((r) => path === r.prefix || path.startsWith(r.prefix + '/'));
-  const allowedRoles = rule?.roles ?? ['superadmin', 'establishment', 'customer'];
+  const allowedRoles = rule?.roles ?? ['superadmin', 'admin', 'establishment', 'customer'];
 
   if (path !== '/' && !allowedRoles.includes(role)) {
     return <Navigate to="/nao-autorizado" replace />;

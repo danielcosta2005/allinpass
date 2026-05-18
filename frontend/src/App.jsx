@@ -49,7 +49,7 @@ const AuthRedirect = () => {
     return <Navigate to="/nao-autorizado" replace />;
   }
 
-  if (role === 'superadmin') {
+  if (role === 'superadmin' || role === 'admin') {
     return <Navigate to="/admin" replace />;
   }
   if (role === 'establishment' || role === 'customer') {

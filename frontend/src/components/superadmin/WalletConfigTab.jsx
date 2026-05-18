@@ -823,7 +823,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         app_base_url: window.location.origin,
       };
 
-      const result = await invokeWalletFunction('create-pass', body);
+      const result = await invokeWalletFunction('create-pass-teste', body);
 
       setFormState((prev) => ({ ...prev, qr_url: result.qr_url || prev.qr_url }));
       setGenerationResult(result);
@@ -880,7 +880,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         },
       };
 
-      const result = await invokeWalletFunction('update-pass', body);
+      const result = await invokeWalletFunction('update-pass-teste', body);
 
       const pushes = result?.pushes || {};
       const appleFailed = pushes?.apple?.failed ?? 0;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
     import { motion } from 'framer-motion';
-    import { Plus, Loader2, Edit, Trash2, QrCode } from 'lucide-react';
+    import { Plus, Loader2, Edit, Trash2, QrCode, Eye } from 'lucide-react';
     import { Button } from '@/components/ui/button';
     import { Input } from '@/components/ui/input';
     import { Label } from '@/components/ui/label';
@@ -13,7 +13,7 @@ import React, { useState, useEffect, useCallback } from 'react';
     } from "@/components/ui/alert-dialog";
     import { listProjects, createProject, updateProject, deleteProject, uploadProjectLogo } from '@/lib/api';
 
-    const ProjectCard = ({ project, onSelect, onEdit, onDelete }) => {
+    const ProjectCard = ({ project, onSelect, onEdit, onDelete, canManage, canDelete }) => {
       const qrUrl = `${window.location.origin}/c/${project.id}/me`;
       return (
         <motion.div
@@ -23,14 +23,33 @@ import React, { useState, useEffect, useCallback } from 'react';
         >
           <div className="p-6">
             <div className="flex justify-between items-start">
-              <div className="flex-1 cursor-pointer" onClick={() => onSelect(project)}>
+              <div
+                className={`flex-1 ${canManage ? 'cursor-pointer' : ''}`}
+                onClick={() => {
+                  if (canManage) onSelect(project);
+                }}
+              >
                 {project.logo_url ? <img src={project.logo_url} alt={project.name} className="h-12 w-auto mb-4 rounded-md object-contain" /> : <div className="h-12 w-12 bg-gray-100 rounded-md mb-4 flex items-center justify-center text-gray-400">Logo</div>}
                 <h3 className="text-lg font-bold mb-2">{project.name || '(Sem nome)'}</h3>
                 <p className="text-sm text-gray-600 h-10 overflow-hidden">{project.description || 'Sem descrição.'}</p>
+                {!canManage && (
+                  <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                    <Eye className="h-3.5 w-3.5" />
+                    Somente visualização
+                  </div>
+                )}
               </div>
               <div className="flex flex-col items-end gap-2">
-                <Button variant="ghost" size="icon" onClick={() => onEdit(project)}><Edit className="h-4 w-4 text-blue-500" /></Button>
-                <Button variant="ghost" size="icon" onClick={() => onDelete(project)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                {canManage && (
+                  <Button variant="ghost" size="icon" onClick={() => onEdit(project)} aria-label="Editar projeto">
+                    <Edit className="h-4 w-4 text-blue-500" />
+                  </Button>
+                )}
+                {canDelete && (
+                  <Button variant="ghost" size="icon" onClick={() => onDelete(project)} aria-label="Excluir projeto">
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -121,7 +140,7 @@ import React, { useState, useEffect, useCallback } from 'react';
       );
     };
 
-    const ProjectsTab = ({ onSelectProject }) => {
+    const ProjectsTab = ({ onSelectProject, canManageProject = () => true, canDeleteProjects = true }) => {
       const [projects, setProjects] = useState([]);
       const [loading, setLoading] = useState(true);
       const [isModalOpen, setIsModalOpen] = useState(false);
@@ -146,6 +165,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 
       const handleSave = async (payload) => {
         if (currentProject) {
+          if (!canManageProject(currentProject)) {
+            toast({ title: "Sem permissão", description: "Você só pode editar projetos criados por você.", variant: "destructive" });
+            return;
+          }
           await updateProject(currentProject.id, payload);
           toast({ title: "Projeto atualizado!" });
         } else {
@@ -157,9 +180,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 
       const handleDelete = async () => {
         if (!projectToDelete) return;
+        if (!canDeleteProjects) {
+          toast({ title: "Sem permissão", description: "Admins não podem excluir projetos.", variant: "destructive" });
+          setProjectToDelete(null);
+          setIsAlertOpen(false);
+          return;
+        }
         try {
           await deleteProject(projectToDelete.id);
           toast({ title: "Projeto excluído!" });
+          setProjectToDelete(null);
+          setIsAlertOpen(false);
           await fetchProjects();
         } catch (error) {
           toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
@@ -186,6 +217,8 @@ import React, { useState, useEffect, useCallback } from 'react';
                   onSelect={onSelectProject}
                   onEdit={(p) => { setCurrentProject(p); setIsModalOpen(true); }}
                   onDelete={(p) => { setProjectToDelete(p); setIsAlertOpen(true); }}
+                  canManage={canManageProject(project)}
+                  canDelete={canDeleteProjects}
                 />
               ))}
             </div>
