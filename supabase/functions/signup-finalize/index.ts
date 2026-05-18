@@ -6,8 +6,6 @@ type BillingPlan = {
   code: string;
   name: string;
   base_price_cents: number;
-  included_passes: number;
-  overage_price_cents: number;
   trial_days: number;
   included_pass_installs: number;
   included_notification_sends: number;
@@ -228,8 +226,6 @@ Deno.serve(async (req) => {
           "code",
           "name",
           "base_price_cents",
-          "included_passes",
-          "overage_price_cents",
           "trial_days",
           "included_pass_installs",
           "included_notification_sends",
@@ -413,8 +409,6 @@ Deno.serve(async (req) => {
             current_period_end: periodEnd.toISOString(),
             gateway_provider: "other",
             base_price_cents: plan.base_price_cents,
-            included_passes: plan.included_passes ?? plan.included_pass_installs ?? 0,
-            overage_price_cents: plan.overage_price_cents ?? plan.overage_pass_install_cents ?? 0,
             included_pass_installs: plan.included_pass_installs ?? 0,
             included_notification_sends: plan.included_notification_sends ?? 0,
             overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
