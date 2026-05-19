@@ -81,7 +81,7 @@ export const AuthProvider = ({ children }) => {
   // Avoid hijacking public claim/callback flow.
   const isClaimOrCallbackPath = useCallback(() => {
     const p = window.location.pathname || '';
-    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/thanks';
+    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/cadastro' || p === '/thanks';
   }, []);
 
   // Only these routes strictly require auth.
@@ -260,6 +260,12 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
 
       if (currentUser) {
+        if (isClaimOrCallbackPath()) {
+          setLoading(false);
+          setInitialized(true);
+          return;
+        }
+
         const shouldSyncRole =
           event === 'INITIAL_SESSION' ||
           !initialized ||
@@ -275,12 +281,6 @@ export const AuthProvider = ({ children }) => {
 
           const { role: newRole } = await getProfileAndProject(currentUser);
           if (cancelled) return;
-
-          if (isClaimOrCallbackPath()) {
-            setLoading(false);
-            setInitialized(true);
-            return;
-          }
 
           if (newRole === 'unauthorized') {
             const shouldRedirectToUnauthorized =
@@ -369,7 +369,7 @@ export const AuthProvider = ({ children }) => {
   ]);
 
   const signUp = useCallback(async (email, password, options) => {
-    const { error } = await supabase.auth.signUp({ email, password, options });
+    const { data, error } = await supabase.auth.signUp({ email, password, options });
 
     if (error) {
       toast({
@@ -379,8 +379,25 @@ export const AuthProvider = ({ children }) => {
       });
     }
 
-    return { error };
+    return { data, error };
   }, [toast]);
+
+  const refreshAuthProfile = useCallback(async () => {
+    const {
+      data: { session: currentSession },
+      error,
+    } = await supabase.auth.getSession();
+
+    if (error || !currentSession?.user) {
+      clearAuthState();
+      return { role: null, projectId: null };
+    }
+
+    setUser(currentSession.user);
+    setSession(currentSession);
+
+    return getProfileAndProject(currentSession.user);
+  }, [clearAuthState, getProfileAndProject]);
 
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -410,7 +427,8 @@ export const AuthProvider = ({ children }) => {
     signUp,
     signIn,
     signOut: signOutUser,
-  }), [user, session, loading, initialized, role, projectId, signUp, signIn, signOutUser]);
+    refreshAuthProfile,
+  }), [user, session, loading, initialized, role, projectId, signUp, signIn, signOutUser, refreshAuthProfile]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
