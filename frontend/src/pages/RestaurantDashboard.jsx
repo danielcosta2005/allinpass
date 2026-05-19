@@ -177,7 +177,7 @@ const RestaurantDashboard = () => {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Abrir chat de suporte no WhatsApp"
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-lg shadow-green-500/30 transition hover:bg-green-600 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-green-300"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/30 transition hover:from-purple-700 hover:to-indigo-700 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-purple-300"
           >
             <MessageCircle className="h-7 w-7" />
           </a>
