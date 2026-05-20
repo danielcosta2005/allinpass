@@ -25,8 +25,12 @@ function formatDate(value) {
   return date.toLocaleDateString('pt-BR');
 }
 
-function ProjectBadges({ projects }) {
-  const linkedProjects = Array.isArray(projects) ? projects : [];
+function getLinkedProjects(projects) {
+  return Array.isArray(projects) ? projects : [];
+}
+
+function ProjectNames({ projects }) {
+  const linkedProjects = getLinkedProjects(projects);
 
   if (linkedProjects.length === 0) {
     return <span className="text-sm text-gray-500">Nenhum projeto vinculado</span>;
@@ -53,6 +57,7 @@ const AdminTab = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [adminToRemove, setAdminToRemove] = useState(null);
+  const [expandedAdminId, setExpandedAdminId] = useState(null);
   const [createForm, setCreateForm] = useState({ email: '', password: '' });
 
   const fetchAdmins = useCallback(async () => {
@@ -151,6 +156,10 @@ const AdminTab = () => {
     }
   };
 
+  const handleToggleProjects = useCallback((adminId) => {
+    setExpandedAdminId((current) => (current === adminId ? null : adminId));
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -198,30 +207,69 @@ const AdminTab = () => {
                 </tr>
               </thead>
               <tbody>
-                {admins.map((admin) => (
-                  <tr key={admin.id} className="border-t bg-white">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
-                          <ShieldCheck className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-gray-900">{admin.email || 'Email não informado'}</p>
-                          <p className="font-mono text-xs text-gray-500">{admin.id}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <ProjectBadges projects={admin.projects} />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">{formatDate(admin.created_at)}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => setAdminToRemove(admin)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {admins.map((admin) => {
+                  const linkedProjects = getLinkedProjects(admin.projects);
+                  const isExpanded = expandedAdminId === admin.id;
+                  const canExpandProjects = linkedProjects.length > 1;
+
+                  return (
+                    <React.Fragment key={admin.id}>
+                      <tr
+                        className={`border-t bg-white transition-colors ${canExpandProjects ? 'cursor-pointer hover:bg-indigo-50/40' : ''}`}
+                        onClick={canExpandProjects ? () => handleToggleProjects(admin.id) : undefined}
+                        onKeyDown={(event) => {
+                          if (!canExpandProjects) return;
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            handleToggleProjects(admin.id);
+                          }
+                        }}
+                        tabIndex={canExpandProjects ? 0 : -1}
+                        aria-expanded={canExpandProjects ? isExpanded : undefined}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                              <ShieldCheck className="h-4 w-4" />
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-900">{admin.email || 'Email não informado'}</p>
+                              <p className="font-mono text-xs text-gray-500">{admin.id}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-sm font-semibold text-gray-900">{linkedProjects.length}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4">{formatDate(admin.created_at)}</td>
+                        <td className="px-6 py-4 text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setAdminToRemove(admin);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </td>
+                      </tr>
+                      {canExpandProjects && isExpanded && (
+                        <tr className="border-t bg-indigo-50/20">
+                          <td colSpan={4} className="px-6 py-4">
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                Projetos vinculados
+                              </p>
+                              <ProjectNames projects={linkedProjects} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
