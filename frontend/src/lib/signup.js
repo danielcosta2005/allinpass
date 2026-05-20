@@ -46,3 +46,29 @@ export async function finalizeFreeTrialSignup({ establishmentName, planCode = 'f
 
   return data;
 }
+
+export async function precheckFreeTrialSignup({ email, establishmentName, captchaToken = '' }) {
+  const { data, error } = await supabase.functions.invoke('signup-precheck', {
+    body: {
+      email,
+      establishmentName,
+      captchaToken,
+    },
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildSignupError(parsedError.message, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildSignupError(data.error, data.code || null);
+  }
+
+  return {
+    canProceed: Boolean(data?.can_proceed),
+    code: data?.code || null,
+    message: data?.message || null,
+    retryAfterSeconds: Number(data?.retry_after_seconds || 0),
+  };
+}

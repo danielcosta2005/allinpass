@@ -22,7 +22,7 @@ import {
   isPaidPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
-import { finalizeFreeTrialSignup } from '@/lib/signup';
+import { finalizeFreeTrialSignup, precheckFreeTrialSignup } from '@/lib/signup';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -169,6 +169,24 @@ function SignupPage() {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
       const planCode = selectedPlan?.code || 'free_trial';
+      const captchaToken = typeof document !== 'undefined'
+        ? String(
+          document.querySelector('input[name="cf-turnstile-response"]')?.value
+          || '',
+        ).trim()
+        : '';
+      const precheck = await precheckFreeTrialSignup({
+        email: normalizedEmail,
+        establishmentName,
+        captchaToken,
+      });
+
+      if (!precheck.canProceed) {
+        const message = precheck.message
+          || 'Nao foi possivel iniciar o cadastro agora. Se voce ja possui conta, faca login ou tente novamente.';
+        throw new Error(message);
+      }
+
       const emailRedirectTo = `${window.location.origin}/cadastro?plano=${encodeURIComponent(
         selectedPlan?.key || 'free-trial',
       )}&finalizar=1`;
@@ -653,7 +671,7 @@ function SignupPage() {
                     <h2 className="text-2xl font-bold text-sky-950">Confirme seu email</h2>
                     <p className="text-sky-900 mt-2">
                       Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
-                      finalizar o Free Trial e provisionar seu painel.
+                      finalizar o Free Trial e provisionar seu painel. Nao se esqueca de olhar o lixo eletronico!
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Link to="/login">
