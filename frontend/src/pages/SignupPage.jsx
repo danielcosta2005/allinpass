@@ -23,12 +23,18 @@ import {
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import { finalizeFreeTrialSignup, precheckFreeTrialSignup } from '@/lib/signup';
+import {
+  TURNSTILE_SCRIPT_SRC,
+  getTurnstileSiteKey,
+  shouldUseSignupCaptcha,
+} from '@/lib/turnstileConfig';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import PlanCard from '@/components/landing/PlanCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+let turnstileScriptPromise = null;
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
@@ -62,6 +68,166 @@ function evaluatePassword(password) {
   };
 }
 
+function loadTurnstileScript() {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Turnstile indisponivel fora do navegador.'));
+  }
+
+  if (window.turnstile) {
+    return Promise.resolve(window.turnstile);
+  }
+
+  if (turnstileScriptPromise) {
+    return turnstileScriptPromise;
+  }
+
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${TURNSTILE_SCRIPT_SRC}"]`);
+
+    const handleLoad = () => {
+      if (window.turnstile) {
+        resolve(window.turnstile);
+        return;
+      }
+
+      turnstileScriptPromise = null;
+      reject(new Error('Turnstile carregou sem expor a API.'));
+    };
+
+    const handleError = () => {
+      turnstileScriptPromise = null;
+      reject(new Error('Nao foi possivel carregar o Turnstile.'));
+    };
+
+    if (existingScript) {
+      existingScript.addEventListener('load', handleLoad, { once: true });
+      existingScript.addEventListener('error', handleError, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = TURNSTILE_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.addEventListener('load', handleLoad, { once: true });
+    script.addEventListener('error', handleError, { once: true });
+    document.head.appendChild(script);
+  });
+
+  return turnstileScriptPromise;
+}
+
+function TurnstileWidget({ siteKey, onTokenChange, onResetReady }) {
+  const containerRef = useRef(null);
+  const widgetIdRef = useRef(null);
+  const onTokenChangeRef = useRef(onTokenChange);
+  const onResetReadyRef = useRef(onResetReady);
+  const [status, setStatus] = useState('loading');
+
+  useEffect(() => {
+    onTokenChangeRef.current = onTokenChange;
+  }, [onTokenChange]);
+
+  useEffect(() => {
+    onResetReadyRef.current = onResetReady;
+  }, [onResetReady]);
+
+  useEffect(() => {
+    if (!siteKey) return undefined;
+
+    let cancelled = false;
+    setStatus('loading');
+    onTokenChangeRef.current('');
+
+    loadTurnstileScript()
+      .then((turnstile) => {
+        if (cancelled || !containerRef.current) return;
+
+        try {
+          if (widgetIdRef.current && typeof turnstile.remove === 'function') {
+            turnstile.remove(widgetIdRef.current);
+          }
+
+          setStatus('pending');
+          widgetIdRef.current = turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            action: 'signup_precheck',
+            theme: 'light',
+            callback: (token) => {
+              setStatus('verified');
+              onTokenChangeRef.current(String(token ?? '').trim());
+            },
+            'expired-callback': () => {
+              setStatus('expired');
+              onTokenChangeRef.current('');
+            },
+            'timeout-callback': () => {
+              setStatus('expired');
+              onTokenChangeRef.current('');
+            },
+            'error-callback': () => {
+              setStatus('error');
+              onTokenChangeRef.current('');
+            },
+          });
+
+          onResetReadyRef.current(() => {
+            if (!window.turnstile || !widgetIdRef.current) return;
+            window.turnstile.reset(widgetIdRef.current);
+            setStatus('pending');
+            onTokenChangeRef.current('');
+          });
+        } catch (error) {
+          console.error('Turnstile render error', error);
+          setStatus('error');
+          onTokenChangeRef.current('');
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Turnstile load error', error);
+        setStatus('error');
+        onTokenChangeRef.current('');
+      });
+
+    return () => {
+      cancelled = true;
+      onResetReadyRef.current(null);
+
+      if (window.turnstile && widgetIdRef.current && typeof window.turnstile.remove === 'function') {
+        window.turnstile.remove(widgetIdRef.current);
+      }
+
+      widgetIdRef.current = null;
+    };
+  }, [siteKey]);
+
+  const statusMessage = {
+    loading: 'Carregando verificacao anti-abuso...',
+    pending: 'Confirme a verificacao para continuar.',
+    verified: 'Verificacao concluida.',
+    expired: 'A verificacao expirou. Confirme novamente para continuar.',
+    error: 'Nao foi possivel carregar a verificacao. Recarregue a pagina e tente novamente.',
+  }[status];
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+      <div ref={containerRef} className="min-h-[70px] flex items-center justify-center" />
+      <p
+        className={`text-xs text-center ${
+          status === 'error' || status === 'expired'
+            ? 'text-rose-600'
+            : status === 'verified'
+              ? 'text-emerald-700'
+              : 'text-slate-500'
+        }`}
+      >
+        {statusMessage}
+      </p>
+    </div>
+  );
+}
+
 function SignupPage() {
   const [searchParams] = useSearchParams();
   const { signUp, refreshAuthProfile } = useAuth();
@@ -86,6 +252,8 @@ function SignupPage() {
   const [errors, setErrors] = useState({});
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupError, setSignupError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileResetRef = useRef(null);
   const [formData, setFormData] = useState({
     establishmentName: '',
     email: '',
@@ -93,7 +261,12 @@ function SignupPage() {
     password: '',
   });
 
+  const turnstileSiteKey = useMemo(() => getTurnstileSiteKey(import.meta.env), []);
   const passwordState = useMemo(() => evaluatePassword(formData.password), [formData.password]);
+  const signupCaptchaEnabled = useMemo(
+    () => shouldUseSignupCaptcha({ paidPlan, siteKey: turnstileSiteKey }),
+    [paidPlan, turnstileSiteKey]
+  );
 
   const activeStep = finishedFlow ? totalSteps : step;
 
@@ -163,22 +336,27 @@ function SignupPage() {
       return;
     }
 
+    if (signupCaptchaEnabled && !captchaToken) {
+      const message = 'Confirme a verificacao anti-abuso para iniciar o Free Trial.';
+      setSignupError(message);
+      toast({
+        title: 'Verificacao pendente',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSignupLoading(true);
 
     try {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
       const planCode = selectedPlan?.code || 'free_trial';
-      const captchaToken = typeof document !== 'undefined'
-        ? String(
-          document.querySelector('input[name="cf-turnstile-response"]')?.value
-          || '',
-        ).trim()
-        : '';
       const precheck = await precheckFreeTrialSignup({
         email: normalizedEmail,
         establishmentName,
-        captchaToken,
+        captchaToken: signupCaptchaEnabled ? captchaToken : '',
       });
 
       if (!precheck.canProceed) {
@@ -221,6 +399,7 @@ function SignupPage() {
         description: message,
         variant: 'destructive',
       });
+      turnstileResetRef.current?.();
     } finally {
       setSignupLoading(false);
     }
@@ -237,6 +416,13 @@ function SignupPage() {
   };
 
   const shouldShowError = (field) => Boolean(errors[field]) && (attemptedSubmit || touched[field]);
+
+  useEffect(() => {
+    if (!signupCaptchaEnabled) {
+      setCaptchaToken('');
+      turnstileResetRef.current = null;
+    }
+  }, [signupCaptchaEnabled]);
 
   useEffect(() => {
     let mounted = true;
@@ -547,10 +733,20 @@ function SignupPage() {
                       </div>
                     </div>
 
+                    {signupCaptchaEnabled && (
+                      <TurnstileWidget
+                        siteKey={turnstileSiteKey}
+                        onTokenChange={setCaptchaToken}
+                        onResetReady={(resetWidget) => {
+                          turnstileResetRef.current = resetWidget;
+                        }}
+                      />
+                    )}
+
                     <Button
                       type="submit"
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                      disabled={signupLoading}
+                      disabled={signupLoading || (signupCaptchaEnabled && !captchaToken)}
                     >
                       {signupLoading ? (
                         <span className="inline-flex items-center gap-2">
