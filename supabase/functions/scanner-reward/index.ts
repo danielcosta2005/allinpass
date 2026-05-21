@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const REWARD_NOTIFICATION_MESSAGE = "Parabens! Voce resgatou sua recompensa. Obrigado pela preferencia.";
+
 function corsHeaders(origin?: string) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
@@ -68,7 +70,6 @@ type RedeemResult = {
   points_spent?: number;
   points_before?: number;
   points_after?: number;
-  notification_message?: string;
   [key: string]: unknown;
 };
 
@@ -176,7 +177,7 @@ serve(async (req) => {
         body: JSON.stringify({
           projectId,
           title: `Recompensa resgatada: ${result.reward_name || "Allin Pass"}`,
-          message: result.notification_message,
+          message: REWARD_NOTIFICATION_MESSAGE,
           sendMode: "now",
           user_pass_ids: [result.user_pass_id],
           channels: { apple: true, google: true },
@@ -201,7 +202,7 @@ serve(async (req) => {
       notificationWarning = err instanceof Error ? err.message : String(err);
     }
 
-    if (notificationId || notificationWarning) {
+    if (result.redemption_id) {
       await admin
         .from("reward_redemptions")
         .update({

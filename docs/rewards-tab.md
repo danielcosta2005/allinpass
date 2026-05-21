@@ -13,11 +13,11 @@ context: []
 
 **Problem:** O painel do restaurante ainda nao permite configurar recompensas resgataveis por pontos nem contabilizar um resgate usando o QR Code do cliente. Sem isso, o estabelecimento consegue somar pontos por visita, mas nao tem um fluxo operacional para debitar pontos, notificar o cliente e manter historico das recompensas entregues.
 
-**Approach:** Adicionar uma aba/tela de Recompensas no dashboard do restaurante, com CRUD simples para criar recompensas por nome, custo em pontos e mensagem de notificacao. Cada recompensa tera uma acao de contabilizacao que abre um scanner, chama a Edge Function `scanner-reward`, debita pontos do `user_passes.metadata.points`, registra o resgate em nova tabela e chama `notifications-enqueue` para enfileirar a mensagem escolhida.
+**Approach:** Adicionar uma aba/tela de Recompensas no dashboard do restaurante, com CRUD simples para criar recompensas por nome e custo em pontos. Cada recompensa tera uma acao de contabilizacao que abre um scanner, chama a Edge Function `scanner-reward`, debita pontos do `user_passes.metadata.points`, registra o resgate em nova tabela e chama `notifications-enqueue` para enfileirar a mensagem padrao: `Parabens! Voce resgatou sua recompensa. Obrigado pela preferencia.`
 
 ## Boundaries & Constraints
 
-**Always:** Validar que o staff autenticado pertence ao `project_id`; validar que o QR pertence ao mesmo projeto; debitar pontos apenas quando o saldo atual for maior ou igual ao custo da recompensa; persistir historico do resgate com recompensa, projeto, `user_pass_id`, cliente quando disponivel, pontos debitados, saldo antes/depois, mensagem e data/hora; manter a UX consistente com `AutomationsTab` e `ScannerTab`; usar Supabase migrations para tabelas/policies/indices; exibir erro amigavel quando o cliente nao tiver pontos suficientes.
+**Always:** Validar que o staff autenticado pertence ao `project_id`; validar que o QR pertence ao mesmo projeto; debitar pontos apenas quando o saldo atual for maior ou igual ao custo da recompensa; persistir historico do resgate com recompensa, projeto, `user_pass_id`, cliente quando disponivel, pontos debitados, saldo antes/depois e data/hora; manter a UX consistente com `AutomationsTab` e `ScannerTab`; usar Supabase migrations para tabelas/policies/indices; exibir erro amigavel quando o cliente nao tiver pontos suficientes.
 
 **Ask First:** Alterar a regra de validade/ciclo de pontos, remover pontos de outro campo alem de `user_passes.metadata.points`, adicionar exibicao analitica do historico no site, ou mudar contratos existentes de `scanner-visit` e `notifications-enqueue`.
 
@@ -27,7 +27,7 @@ context: []
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Criar recompensa | Staff informa nome, pontos positivos e mensagem | Recompensa aparece na lista do projeto e fica disponivel para contabilizacao | Campos vazios ou pontos invalidos bloqueiam salvar e mostram toast |
+| Criar recompensa | Staff informa nome e pontos positivos | Recompensa aparece na lista do projeto e fica disponivel para contabilizacao | Campos vazios ou pontos invalidos bloqueiam salvar e mostram toast |
 | Resgatar com saldo suficiente | QR de passe do mesmo projeto com pontos >= custo | Pontos sao debitados, resgate e registrado e notificacao e enfileirada para o passe | Se notificacao falhar depois do debito, resposta deve expor sucesso do resgate e aviso nao-bloqueante |
 | Resgatar com saldo insuficiente | QR valido, mas pontos < custo | Nenhum debito ocorre e nenhum historico de resgate concluido e criado | UI mostra que o cliente nao tem pontos suficientes |
 | QR de outro projeto | Token pertence a passe de outro `project_id` | Operacao bloqueada | Retornar erro `wrong_project` e mensagem amigavel |
@@ -50,12 +50,12 @@ context: []
 **Execution:**
 - [ ] `allinpass/supabase/migrations/<timestamp>_restaurant_rewards.sql` -- criar tabela `rewards` para configuracao e tabela `reward_redemptions` para historico, com FKs, constraints, indices, grants e RLS por staff do projeto -- garante persistencia e controle.
 - [ ] `allinpass/supabase/functions/scanner-reward/index.ts` -- criar Edge Function autenticada que valida staff/projeto/recompensa/token, verifica saldo, debita pontos, registra resgate e chama `notifications-enqueue` -- centraliza a operacao sensivel no backend.
-- [ ] `allinpass/frontend/src/components/restaurant/RewardsTab.jsx` -- criar tela para listar/criar recompensas e contabilizar uma recompensa com scanner QR -- entrega a experiencia operacional ao restaurante.
+- [ ] `allinpass/frontend/src/components/restaurant/RewardsTab.jsx` -- criar tela para listar/criar recompensas por nome e pontos e contabilizar uma recompensa com scanner QR -- entrega a experiencia operacional ao restaurante.
 - [ ] `allinpass/frontend/src/pages/RestaurantDashboard.jsx` -- adicionar aba `rewards` com icone e persistencia em `restaurant_active_tab` -- torna a tela acessivel no login de restaurante.
 - [ ] `allinpass/frontend/tests/integration/scanner-reward.test.js` -- cobrir casos de saldo suficiente, saldo insuficiente e projeto errado quando a suite de integracao local permitir -- protege o fluxo principal de regressao.
 
 **Acceptance Criteria:**
-- Given um restaurante autenticado e associado a um projeto, when ele cria uma recompensa com nome, pontos e mensagem validos, then a recompensa aparece na lista do projeto.
+- Given um restaurante autenticado e associado a um projeto, when ele cria uma recompensa com nome e pontos validos, then a recompensa aparece na lista do projeto.
 - Given uma recompensa criada e um QR de cliente com pontos suficientes, when o staff contabiliza a recompensa, then o saldo do passe diminui pelo custo configurado, um registro de resgate e salvo e a notificacao e enfileirada.
 - Given um QR de cliente com pontos insuficientes, when o staff tenta contabilizar a recompensa, then o saldo nao muda e a UI informa pontos insuficientes.
 - Given um QR de outro projeto, when o staff tenta contabilizar a recompensa, then a operacao e bloqueada e nenhum debito e registrado.
@@ -64,7 +64,7 @@ context: []
 
 ## Design Notes
 
-`reward_redemptions` deve ser historico operacional, nao configuracao. A recompensa pode mudar de nome/mensagem depois no futuro, entao o resgate deve guardar snapshots como `reward_name`, `points_spent` e `notification_message` alem dos IDs relacionais.
+`reward_redemptions` deve ser historico operacional, nao configuracao. A recompensa pode mudar de nome depois no futuro, entao o resgate deve guardar snapshots como `reward_name` e `points_spent` alem dos IDs relacionais. A mensagem enviada ao cliente nao e customizavel e deve ser sempre: `Parabens! Voce resgatou sua recompensa. Obrigado pela preferencia.`
 
 ## Verification
 

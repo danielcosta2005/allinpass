@@ -14,7 +14,6 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
@@ -50,13 +49,47 @@ function normalizeScanResult(result) {
   return result?.data || result?.rawValue || result?.text || "";
 }
 
-function defaultMessage(name) {
-  const cleanName = String(name || "sua recompensa").trim() || "sua recompensa";
-  return `Parabens! Voce resgatou ${cleanName}. Obrigado pela preferencia.`;
-}
-
 function statusLabel(status) {
   return status === "active" ? "Ativa" : "Inativa";
+}
+
+async function readFunctionErrorBody(error, response) {
+  const context = response || error?.context;
+  if (!context || typeof context.clone !== "function") return null;
+
+  try {
+    const errorResponse = context.clone();
+    const contentType = errorResponse.headers?.get?.("content-type") || "";
+
+    if (contentType.includes("application/json")) {
+      return await errorResponse.json();
+    }
+
+    const text = await errorResponse.text();
+    if (!text) return null;
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { message: text };
+    }
+  } catch {
+    return null;
+  }
+}
+
+function formatScannerRewardError(body, fallback) {
+  if (body?.error === "insufficient_points") {
+    const points = Number(body.points);
+    const pointsRequired = Number(body.points_required);
+    const hasPointDetails = Number.isFinite(points) && Number.isFinite(pointsRequired);
+
+    return hasPointDetails
+      ? `Este passe nao tem pontos suficientes para esta recompensa. Saldo atual: ${points} ponto(s). Necessario: ${pointsRequired}.`
+      : "Este passe nao tem pontos suficientes para esta recompensa.";
+  }
+
+  return body?.message || body?.error || fallback?.message || "Nao foi possivel contabilizar a recompensa.";
 }
 
 export default function RewardsTab({ projectId }) {
@@ -74,7 +107,6 @@ export default function RewardsTab({ projectId }) {
 
   const [name, setName] = useState("");
   const [pointsRequired, setPointsRequired] = useState(10);
-  const [message, setMessage] = useState(defaultMessage(""));
 
   const [redeemingReward, setRedeemingReward] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -100,7 +132,7 @@ export default function RewardsTab({ projectId }) {
     try {
       const { data, error } = await supabase
         .from("rewards")
-        .select("id, project_id, name, points_required, notification_message, status, created_at, updated_at")
+        .select("id, project_id, name, points_required, status, created_at, updated_at")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
@@ -135,24 +167,12 @@ export default function RewardsTab({ projectId }) {
   function startCreate() {
     setName("");
     setPointsRequired(10);
-    setMessage(defaultMessage(""));
     setIsCreating(true);
-  }
-
-  function handleNameChange(value) {
-    const currentSuggestion = defaultMessage(name);
-    const shouldReplaceMessage = !message.trim() || message === currentSuggestion;
-
-    setName(value);
-    if (shouldReplaceMessage) {
-      setMessage(defaultMessage(value));
-    }
   }
 
   async function saveReward() {
     const finalName = name.trim();
     const finalPoints = Number(pointsRequired);
-    const finalMessage = message.trim();
 
     if (!finalName) {
       toast({ variant: "destructive", title: "Nome obrigatorio" });
@@ -164,11 +184,6 @@ export default function RewardsTab({ projectId }) {
       return;
     }
 
-    if (!finalMessage) {
-      toast({ variant: "destructive", title: "Mensagem obrigatoria" });
-      return;
-    }
-
     setIsSaving(true);
     try {
       const { data, error } = await supabase
@@ -177,10 +192,9 @@ export default function RewardsTab({ projectId }) {
           project_id: projectId,
           name: finalName,
           points_required: finalPoints,
-          notification_message: finalMessage,
           status: "active",
         })
-        .select("id, project_id, name, points_required, notification_message, status, created_at, updated_at")
+        .select("id, project_id, name, points_required, status, created_at, updated_at")
         .single();
 
       if (error) throw error;
@@ -214,7 +228,7 @@ export default function RewardsTab({ projectId }) {
         .update({ status: nextStatus })
         .eq("id", reward.id)
         .eq("project_id", projectId)
-        .select("id, project_id, name, points_required, notification_message, status, created_at, updated_at")
+        .select("id, project_id, name, points_required, status, created_at, updated_at")
         .single();
 
       if (error) throw error;
@@ -260,7 +274,7 @@ export default function RewardsTab({ projectId }) {
     const accessToken = sessionData?.session?.access_token;
     if (!accessToken) throw new Error("Sessao expirada. Faca login novamente.");
 
-    const { data, error } = await supabase.functions.invoke("scanner-reward", {
+    const { data, error, response } = await supabase.functions.invoke("scanner-reward", {
       body: {
         projectId,
         rewardId,
@@ -269,9 +283,12 @@ export default function RewardsTab({ projectId }) {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
-    if (error) throw error;
+    if (error) {
+      const errorBody = await readFunctionErrorBody(error, response);
+      throw new Error(formatScannerRewardError(errorBody, error));
+    }
     if (!data) throw new Error("Resposta vazia da Edge Function.");
-    if (data.error) throw new Error(data.message || data.error);
+    if (data.error) throw new Error(formatScannerRewardError(data));
 
     return data;
   }, [projectId]);
@@ -396,7 +413,7 @@ export default function RewardsTab({ projectId }) {
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Nome
               </label>
-              <Input value={name} onChange={(e) => handleNameChange(e.target.value)} placeholder="Cafe gratis" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Cafe gratis" />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -409,18 +426,6 @@ export default function RewardsTab({ projectId }) {
                 onChange={(e) => setPointsRequired(Number(e.target.value))}
               />
             </div>
-          </div>
-
-          <div className="mt-4">
-            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Mensagem da notificacao
-            </label>
-            <Textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="min-h-[110px]"
-              placeholder={defaultMessage(name)}
-            />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -493,11 +498,7 @@ export default function RewardsTab({ projectId }) {
               </div>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-xl border bg-gray-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Mensagem</p>
-                <p className="mt-2 text-sm text-gray-700">{redeemingReward.notification_message}</p>
-              </div>
+            <div>
               <Button
                 onClick={toggleScan}
                 disabled={isProcessingScan}
@@ -531,7 +532,7 @@ export default function RewardsTab({ projectId }) {
             <thead className="bg-gray-50">
               <tr className="border-b text-left text-gray-600">
                 <th className="px-4 py-3">Recompensa</th>
-                <th className="px-4 py-3">Mensagem</th>
+                <th className="px-4 py-3">Pontos</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Acoes</th>
               </tr>
@@ -543,9 +544,10 @@ export default function RewardsTab({ projectId }) {
                   <tr key={reward.id} className="border-b last:border-b-0">
                     <td className="px-4 py-3">
                       <p className="font-medium text-gray-900">{reward.name}</p>
-                      <p className="text-xs text-gray-500">{reward.points_required} ponto(s) para resgatar</p>
                     </td>
-                    <td className="max-w-lg px-4 py-3 text-gray-700">{reward.notification_message}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {reward.points_required} ponto(s)
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${

@@ -43,17 +43,16 @@ async function createClaimedUserPass({ pass, owner, points }) {
   return { ...userPass, metadata: { ...(userPass.metadata || {}), points } };
 }
 
-async function createReward({ client, projectId, name, pointsRequired, message }) {
+async function createReward({ client, projectId, name, pointsRequired }) {
   const { data, error } = await client
     .from("rewards")
     .insert({
       project_id: projectId,
       name,
       points_required: pointsRequired,
-      notification_message: message,
       status: "active",
     })
-    .select("id, project_id, name, points_required, notification_message, status")
+    .select("id, project_id, name, points_required, status")
     .single();
 
   expect(error).toBeNull();
@@ -111,7 +110,6 @@ describe("Edge Function scanner-reward", () => {
       projectId: project.id,
       name: "Cafe gratis",
       pointsRequired: 5,
-      message: "Voce resgatou um cafe gratis.",
     });
 
     const response = await invokeEdgeFunction("scanner-reward", {
@@ -159,7 +157,6 @@ describe("Edge Function scanner-reward", () => {
       projectId: project.id,
       name: "Sobremesa",
       pointsRequired: 10,
-      message: "Voce resgatou uma sobremesa.",
     });
 
     const response = await invokeEdgeFunction("scanner-reward", {
@@ -173,6 +170,7 @@ describe("Edge Function scanner-reward", () => {
 
     expect(response.status).toBe(409);
     expect(response.body?.error).toBe("insufficient_points");
+    expect(response.body?.message).toMatch(/pontos suficientes/i);
 
     const client = createServiceRoleClient() || owner.client;
     const { data: updatedPass, error } = await client
@@ -197,7 +195,6 @@ describe("Edge Function scanner-reward", () => {
       projectId: context.project.id,
       name: "Brinde",
       pointsRequired: 5,
-      message: "Voce resgatou um brinde.",
     });
 
     const response = await invokeEdgeFunction("scanner-reward", {
