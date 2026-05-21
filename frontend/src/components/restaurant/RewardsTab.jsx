@@ -534,7 +534,6 @@ export default function RewardsTab({ projectId }) {
                 <th className="px-4 py-3">Recompensa</th>
                 <th className="px-4 py-3">Pontos</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Acoes</th>
               </tr>
             </thead>
             <tbody>
