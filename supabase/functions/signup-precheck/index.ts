@@ -244,21 +244,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .limit(1)
-      .maybeSingle();
+    const { data: existingAccount, error: existingAccountError } = await supabaseAdmin.rpc(
+      "signup_precheck_auth_email_exists",
+      { p_email: email },
+    );
 
-    if (profileError) throw profileError;
+    if (existingAccountError) throw existingAccountError;
 
-    const hasExistingProfile = Boolean(profile?.id);
+    const hasExistingAccount = Boolean(existingAccount);
     const normalizedEstablishmentName = normalizeText(establishmentName);
 
-    await writeFunctionLog(supabaseAdmin, hasExistingProfile ? "warn" : "info", {
+    await writeFunctionLog(supabaseAdmin, hasExistingAccount ? "warn" : "info", {
       request_id: requestId,
-      outcome: hasExistingProfile ? "existing_account_detected" : "allowed",
+      outcome: hasExistingAccount ? "existing_account_detected" : "allowed",
       email_hash: emailHash,
       ip_hash: ipHash,
       attempts,
@@ -266,7 +264,7 @@ Deno.serve(async (req) => {
       duration_ms: Date.now() - startedAt,
     });
 
-    if (hasExistingProfile) {
+    if (hasExistingAccount) {
       return jsonResponse(origin, {
         can_proceed: false,
         code: "signup_precheck_blocked",
