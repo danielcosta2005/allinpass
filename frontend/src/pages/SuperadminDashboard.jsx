@@ -19,7 +19,6 @@ import {
   canManageProject as canManageProjectByRole,
   canSeeSuperadminTabs,
   getDefaultAdminTab,
-  isAdminRole,
 } from '@/lib/adminPermissions';
 
 const SuperadminDashboard = () => {
@@ -27,7 +26,6 @@ const SuperadminDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const isSuperadmin = canSeeSuperadminTabs(role);
-  const isAdmin = isAdminRole(role);
   const defaultTab = getDefaultAdminTab(role);
 
   const [selectedProject, setSelectedProject] = useState(() => {
@@ -100,7 +98,7 @@ const SuperadminDashboard = () => {
     }
   }, [selectedProject, canManageProject]);
 
-  const TABS = useMemo(() => {
+  const mainTabs = useMemo(() => {
     const tabs = [];
 
     if (isSuperadmin) {
@@ -110,24 +108,41 @@ const SuperadminDashboard = () => {
       );
     }
 
-    tabs.push(
-      { value: 'projects', label: 'Projetos', icon: Settings, disabled: false },
-      { value: 'wallet', label: 'Wallet', icon: Wallet, disabled: !selectedProject || !canManageSelectedProject },
-    );
+    tabs.push({ value: 'projects', label: 'Projetos', icon: Settings, disabled: false });
+
+    return tabs;
+  }, [isSuperadmin]);
+
+  const projectTabs = useMemo(() => {
+    if (!selectedProject) {
+      return [];
+    }
+
+    const tabs = [
+      { value: 'wallet', label: 'Wallet', icon: Wallet, disabled: !canManageSelectedProject },
+    ];
 
     if (isSuperadmin) {
       tabs.push(
-        { value: 'notifications', label: 'Notificações', icon: Bell, disabled: !selectedProject },
-        { value: 'members', label: 'Membros', icon: Users, disabled: !selectedProject },
-        { value: 'customers', label: 'Clientes', icon: Users, disabled: !selectedProject },
+        { value: 'notifications', label: 'Notificações', icon: Bell, disabled: false },
+        { value: 'members', label: 'Membros', icon: Users, disabled: false },
+        { value: 'customers', label: 'Clientes', icon: Users, disabled: false },
       );
     }
 
     return tabs;
   }, [canManageSelectedProject, isSuperadmin, selectedProject]);
 
+  const availableTabs = useMemo(() => {
+    return [...mainTabs, ...projectTabs];
+  }, [mainTabs, projectTabs]);
+
+  const isProjectTabActive = useMemo(() => {
+    return projectTabs.some((tab) => tab.value === activeTab);
+  }, [projectTabs, activeTab]);
+
   useEffect(() => {
-    const currentTab = TABS.find((tab) => tab.value === activeTab);
+    const currentTab = availableTabs.find((tab) => tab.value === activeTab);
     if (!currentTab || currentTab.disabled) {
       const fallback = 'projects';
       setActiveTab(fallback);
@@ -135,7 +150,7 @@ const SuperadminDashboard = () => {
         sessionStorage.setItem('superadmin_active_tab', fallback);
       } catch (_) {}
     }
-  }, [TABS, activeTab]);
+  }, [availableTabs, activeTab]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -214,13 +229,54 @@ const SuperadminDashboard = () => {
           >
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
               <TabsList className="flex w-full flex-wrap justify-start gap-1 lg:w-auto">
-                {TABS.map((tab) => (
+                {mainTabs.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value} className="gap-2" disabled={tab.disabled}>
                     <tab.icon className="w-4 h-4" />
                     {tab.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
+
+              {selectedProject && isProjectTabActive && (
+                <div className="space-y-0">
+                  <TabsList className="flex w-full flex-wrap items-end justify-start gap-1 rounded-none bg-transparent p-0 text-gray-600">
+                    {projectTabs.map((tab) => (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        disabled={tab.disabled}
+                        className="gap-2 rounded-t-xl rounded-b-none border border-b border-gray-300 bg-gray-200/80 px-4 py-2 text-sm font-medium text-gray-600 shadow-none transition-colors duration-200 hover:bg-gray-100 hover:text-gray-800 data-[state=active]:-mb-px data-[state=active]:border-gray-300 data-[state=active]:border-b-white data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-none"
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        {tab.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+
+                  <div className="rounded-b-xl rounded-tr-xl border border-gray-300 bg-white p-4 sm:p-6">
+                    <TabsContent value="wallet" className="mt-0">
+                      {selectedProject && canManageSelectedProject && (
+                        <WalletConfigTab projectId={selectedProject.id} onBack={handleBackToProjects} />
+                      )}
+                    </TabsContent>
+                    {isSuperadmin && (
+                      <TabsContent value="notifications" className="mt-0">
+                        {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                    {isSuperadmin && (
+                      <TabsContent value="members" className="mt-0">
+                        {selectedProject && <MembersTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                    {isSuperadmin && (
+                      <TabsContent value="customers" className="mt-0">
+                        {selectedProject && <CustomersTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {isSuperadmin && <TabsContent value="dashboard"><DashboardTab /></TabsContent>}
               {isSuperadmin && <TabsContent value="admins"><AdminTab /></TabsContent>}
@@ -231,26 +287,6 @@ const SuperadminDashboard = () => {
                   canDeleteProjects={canDeleteProject(role)}
                 />
               </TabsContent>
-              <TabsContent value="wallet">
-                {selectedProject && canManageSelectedProject && (
-                  <WalletConfigTab projectId={selectedProject.id} onBack={handleBackToProjects} />
-                )}
-              </TabsContent>
-              {isSuperadmin && (
-                <TabsContent value="notifications">
-                  {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
-                </TabsContent>
-              )}
-              {isSuperadmin && (
-                <TabsContent value="members">
-                  {selectedProject && <MembersTab projectId={selectedProject.id} />}
-                </TabsContent>
-              )}
-              {isSuperadmin && (
-                <TabsContent value="customers">
-                  {selectedProject && <CustomersTab projectId={selectedProject.id} />}
-                </TabsContent>
-              )}
             </Tabs>
           </motion.div>
         </main>
