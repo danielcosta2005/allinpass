@@ -38,10 +38,10 @@ let turnstileScriptPromise = null;
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
-  { id: 'upper', label: 'Uma letra maiuscula', test: (value) => /[A-Z]/.test(value) },
-  { id: 'lower', label: 'Uma letra minuscula', test: (value) => /[a-z]/.test(value) },
-  { id: 'number', label: 'Um numero', test: (value) => /\d/.test(value) },
-  { id: 'symbol', label: 'Um simbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
+  { id: 'upper', label: 'Uma letra maiúscula', test: (value) => /[A-Z]/.test(value) },
+  { id: 'lower', label: 'Uma letra minúscula', test: (value) => /[a-z]/.test(value) },
+  { id: 'number', label: 'Um número', test: (value) => /\d/.test(value) },
+  { id: 'symbol', label: 'Um símbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
 function evaluatePassword(password) {
@@ -70,7 +70,7 @@ function evaluatePassword(password) {
 
 function loadTurnstileScript() {
   if (typeof window === 'undefined') {
-    return Promise.reject(new Error('Turnstile indisponivel fora do navegador.'));
+    return Promise.reject(new Error('Turnstile indisponível fora do navegador.'));
   }
 
   if (window.turnstile) {
@@ -96,7 +96,7 @@ function loadTurnstileScript() {
 
     const handleError = () => {
       turnstileScriptPromise = null;
-      reject(new Error('Nao foi possivel carregar o Turnstile.'));
+      reject(new Error('Não foi possível carregar o Turnstile.'));
     };
 
     if (existingScript) {
@@ -203,11 +203,11 @@ function TurnstileWidget({ siteKey, onTokenChange, onResetReady }) {
   }, [siteKey]);
 
   const statusMessage = {
-    loading: 'Carregando verificacao anti-abuso...',
-    pending: 'Confirme a verificacao para continuar.',
-    verified: 'Verificacao concluida.',
-    expired: 'A verificacao expirou. Confirme novamente para continuar.',
-    error: 'Nao foi possivel carregar a verificacao. Recarregue a pagina e tente novamente.',
+    loading: 'Carregando verificação antiabuso...',
+    pending: 'Confirme a verificação para continuar.',
+    verified: 'Verificação concluída.',
+    expired: 'A verificação expirou. Confirme novamente para continuar.',
+    error: 'Não foi possível carregar a verificação. Recarregue a página e tente novamente.',
   }[status];
 
   return (
@@ -297,7 +297,7 @@ function SignupPage() {
     if (!formData.emailConfirmation.trim()) {
       nextErrors.emailConfirmation = 'Confirme o e-mail para evitar erros de acesso.';
     } else if (formData.emailConfirmation !== formData.email) {
-      nextErrors.emailConfirmation = 'Os e-mails nao conferem. Ajuste para continuar.';
+      nextErrors.emailConfirmation = 'Os e-mails não conferem. Ajuste para continuar.';
     }
 
     if (!formData.password) {
@@ -337,10 +337,10 @@ function SignupPage() {
     }
 
     if (signupCaptchaEnabled && !captchaToken) {
-      const message = 'Confirme a verificacao anti-abuso para iniciar o Free Trial.';
+      const message = 'Confirme a verificação antiabuso para iniciar o Free Trial.';
       setSignupError(message);
       toast({
-        title: 'Verificacao pendente',
+        title: 'Verificação pendente',
         description: message,
         variant: 'destructive',
       });
@@ -361,7 +361,7 @@ function SignupPage() {
 
       if (!precheck.canProceed) {
         const message = precheck.message
-          || 'Nao foi possivel iniciar o cadastro agora. Se voce ja possui conta, faca login ou tente novamente.';
+          || 'Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.';
         throw new Error(message);
       }
 
@@ -383,7 +383,7 @@ function SignupPage() {
       if (!data?.session) {
         setFinishedFlow('confirm-email');
         toast({
-          title: 'Confirme seu email',
+          title: 'Confirme seu e-mail',
           description: 'Enviamos um link para finalizar seu Free Trial.',
         });
         return;
@@ -392,7 +392,7 @@ function SignupPage() {
       await provisionFreeTrial({ establishmentName, planCode });
       setFinishedFlow('trial');
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar o Free Trial.';
+      const message = error?.message || 'Não foi possível iniciar o Free Trial.';
       setSignupError(message);
       toast({
         title: 'Erro no cadastro',
@@ -457,7 +457,7 @@ function SignupPage() {
 
         if (error) throw error;
         if (!session?.user) {
-          throw new Error('Sua sessao de cadastro nao foi encontrada. Faca login para continuar.');
+          throw new Error('Sua sessão de cadastro não foi encontrada. Faça login para continuar.');
         }
 
         const establishmentName = String(
@@ -466,7 +466,7 @@ function SignupPage() {
         const planCode = String(session.user.user_metadata?.plan_code || 'free_trial');
 
         if (!establishmentName) {
-          throw new Error('Nao encontramos o nome do estabelecimento neste cadastro.');
+          throw new Error('Não encontramos o nome do estabelecimento neste cadastro.');
         }
 
         await provisionFreeTrial({ establishmentName, planCode });
@@ -478,7 +478,7 @@ function SignupPage() {
         }));
         setFinishedFlow('trial');
       } catch (error) {
-        const message = error?.message || 'Nao foi possivel finalizar o Free Trial.';
+        const message = error?.message || 'Não foi possível finalizar o Free Trial.';
         setSignupError(message);
         toast({
           title: 'Erro ao finalizar cadastro',
@@ -499,7 +499,7 @@ function SignupPage() {
         <title>Cadastro - Allin Pass</title>
         <meta
           name="description"
-          content="Crie sua conta Allin Pass e avance no fluxo de contratacao do plano escolhido."
+          content="Crie sua conta Allin Pass e avance no fluxo de contratação do plano escolhido."
         />
       </Helmet>
 
@@ -596,7 +596,7 @@ function SignupPage() {
                       <CheckCircle2 className="w-10 h-10 text-rose-600 mb-4" />
                     )}
                     <h2 className="text-2xl font-bold text-slate-900">
-                      {signupLoading ? 'Finalizando seu Free Trial' : 'Nao foi possivel finalizar automaticamente'}
+                      {signupLoading ? 'Finalizando seu Free Trial' : 'Não foi possível finalizar automaticamente'}
                     </h2>
                     <p className="text-slate-700 mt-2">
                       {signupLoading
@@ -650,7 +650,7 @@ function SignupPage() {
 
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
+                        <Label htmlFor="email">E-mail</Label>
                         <Input
                           id="email"
                           type="email"
@@ -675,7 +675,7 @@ function SignupPage() {
                           value={formData.emailConfirmation}
                           onChange={(event) => setField('emailConfirmation', event.target.value)}
                           onBlur={() => setFieldTouched('emailConfirmation')}
-                          placeholder="repita seu email"
+                          placeholder="repita seu e-mail"
                           aria-invalid={shouldShowError('emailConfirmation')}
                         />
                         {shouldShowError('emailConfirmation') && (
@@ -824,7 +824,7 @@ function SignupPage() {
                       onClick={handlePaymentContinue}
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
                     >
-                      Concluir assinatura (simulacao)
+                      Concluir assinatura (simulação)
                     </Button>
                   </motion.div>
                 )}
@@ -864,10 +864,10 @@ function SignupPage() {
                     className="rounded-2xl border border-sky-200 bg-sky-50 p-6"
                   >
                     <CheckCircle2 className="w-10 h-10 text-sky-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-sky-950">Confirme seu email</h2>
+                    <h2 className="text-2xl font-bold text-sky-950">Confirme seu e-mail</h2>
                     <p className="text-sky-900 mt-2">
                       Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
-                      finalizar o Free Trial e provisionar seu painel. Nao se esqueca de olhar o lixo eletronico!
+                      finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Link to="/login">
@@ -892,7 +892,7 @@ function SignupPage() {
                     className="rounded-2xl border border-purple-200 bg-purple-50 p-6"
                   >
                     <CheckCircle2 className="w-10 h-10 text-purple-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-purple-900">Cadastro concluido</h2>
+                    <h2 className="text-2xl font-bold text-purple-900">Cadastro concluído</h2>
                     <p className="text-purple-800 mt-2">
                       Fluxo frontend finalizado com sucesso para o plano {selectedPlan.name}.
                       A etapa de pagamento real ficará conectada ao provider na implementação backend.
