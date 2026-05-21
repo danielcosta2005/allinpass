@@ -3,13 +3,11 @@ create table if not exists public.rewards (
   project_id uuid not null references public.projects(id) on delete cascade,
   name text not null,
   points_required integer not null,
-  notification_message text not null,
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint rewards_name_not_blank check (length(btrim(name)) > 0),
   constraint rewards_points_required_check check (points_required > 0),
-  constraint rewards_notification_message_not_blank check (length(btrim(notification_message)) > 0),
   constraint rewards_status_check check (status = any (array['active'::text, 'inactive'::text]))
 );
 
@@ -24,7 +22,6 @@ create table if not exists public.reward_redemptions (
   points_spent integer not null,
   points_before integer not null,
   points_after integer not null,
-  notification_message text not null,
   notification_id uuid references public.notifications(id) on delete set null,
   notification_warning text,
   created_at timestamptz not null default now(),
@@ -83,7 +80,7 @@ declare
   v_points_after integer;
   v_redemption_id uuid;
 begin
-  select r.id, r.project_id, r.name, r.points_required, r.notification_message, r.status
+  select r.id, r.project_id, r.name, r.points_required, r.status
     into v_reward
   from public.rewards r
   where r.id = p_reward_id;
@@ -165,8 +162,7 @@ begin
     pass_token,
     points_spent,
     points_before,
-    points_after,
-    notification_message
+    points_after
   )
   values (
     p_project_id,
@@ -177,8 +173,7 @@ begin
     v_pass_token,
     v_reward.points_required,
     v_points_before,
-    v_points_after,
-    v_reward.notification_message
+    v_points_after
   )
   returning id into v_redemption_id;
 
@@ -191,8 +186,7 @@ begin
     'customer_id', v_customer_id,
     'points_spent', v_reward.points_required,
     'points_before', v_points_before,
-    'points_after', v_points_after,
-    'notification_message', v_reward.notification_message
+    'points_after', v_points_after
   );
 end;
 $$;
