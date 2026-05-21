@@ -302,10 +302,93 @@ function pickFirstPoints(fields: any): string {
   return "0";
 }
 
+type AvailableReward = {
+  id: string;
+  name: string;
+  points_required: number;
+};
+
+function parsePointsValue(value: unknown): number | null {
+  const raw = typeof value === "string" ? value.trim() : value;
+  const points = Number(raw);
+  if (!Number.isFinite(points)) return null;
+  return Math.max(Math.trunc(points), 0);
+}
+
+function normalizeRewards(rows: unknown): AvailableReward[] {
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .map((row: any) => {
+      const id = cleanString(row?.id);
+      const name = cleanString(row?.name);
+      const pointsRequired = parsePointsValue(row?.points_required);
+
+      if (!id || !name || pointsRequired === null) return null;
+
+      return {
+        id,
+        name,
+        points_required: pointsRequired,
+      };
+    })
+    .filter((reward): reward is AvailableReward => Boolean(reward));
+}
+
+function formatRewardNames(rewards: AvailableReward[]) {
+  const names = rewards.map((reward) => reward.name).filter(Boolean);
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} e ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+function truncateChangeMessage(message: string, maxLength = 140) {
+  if (message.length <= maxLength) return message;
+  return `${message.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function formatPoints(points: number) {
+  return points === 1 ? "1 ponto" : `${points} pontos`;
+}
+
+function buildPointsChangeMessage(points: number | null, rewards: AvailableReward[]) {
+  const rewardNames = formatRewardNames(rewards);
+  if (!rewardNames) return "Você agora tem %@ pontos";
+
+  const pointsLabel = points === 1 ? "ponto" : "pontos";
+  return truncateChangeMessage(`Você agora tem %@ ${pointsLabel} e pode resgatar: ${rewardNames}.`);
+}
+
+async function loadAvailableRewardsForPoints(
+  sb: ReturnType<typeof createClient>,
+  projectId: string,
+  points: number | null,
+): Promise<AvailableReward[]> {
+  if (points === null) return [];
+
+  const { data, error } = await sb
+    .from("rewards")
+    .select("id, name, points_required")
+    .eq("project_id", projectId)
+    .eq("status", "active")
+    .eq("points_required", points)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.warn("[apple-pass] rewards lookup failed (ignored):", error.message);
+    return [];
+  }
+
+  return normalizeRewards(data);
+}
+
 function buildAppleFields(finalPassData: any) {
   const fields = finalPassData?.fields ?? {};
   const points = pickFirstPoints(fields);
+  const numericPoints = parsePointsValue(points);
   const exp = formatBRDate(finalPassData?.exp_date);
+  const rewardsAvailable = normalizeRewards(finalPassData?.rewards_available);
 
   const lastMessage = cleanString(fields?.last_message);
   const backText = lastMessage ? lastMessage : "Nenhuma mensagem ainda.";
@@ -324,7 +407,7 @@ function buildAppleFields(finalPassData: any) {
         key: "points",
         label: "PONTOS",
         value: String(points),
-        changeMessage: "Você agora tem %@ pontos",
+        changeMessage: buildPointsChangeMessage(numericPoints, rewardsAvailable),
       },
     ],
     secondaryFields: [],
@@ -1044,6 +1127,9 @@ serve(async (req: Request) => {
       finalPassData.colors = normalizeDefaults(passDesign?.colors);
       finalPassData.images = normalizeDefaults(passDesign?.images);
     }
+
+    const currentPoints = parsePointsValue(pickFirstPoints(finalPassData?.fields ?? {}));
+    finalPassData.rewards_available = await loadAvailableRewardsForPoints(sb, project_id, currentPoints);
 
     const resolvedSerialNumber = cleanString(finalPassData.serialNumber) ?? crypto.randomUUID();
     const resolvedDescription =

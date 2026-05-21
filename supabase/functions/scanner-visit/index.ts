@@ -88,7 +88,8 @@ async function hmacVerify(secret: string, msg: string, sigB64u: string): Promise
     ["verify"],
   );
   const sig = b64urlDecodeToBytes(sigB64u);
-  return await crypto.subtle.verify("HMAC", key, sig, te.encode(msg));
+  const sigBuffer = sig.buffer.slice(sig.byteOffset, sig.byteOffset + sig.byteLength) as ArrayBuffer;
+  return await crypto.subtle.verify("HMAC", key, sigBuffer, te.encode(msg));
 }
 
 type ChallengePayload = {
@@ -132,6 +133,72 @@ function formatDateBR(iso: string | null): string | null {
     dateStyle: "short",
     timeStyle: "short",
   }).format(d);
+}
+
+type AvailableReward = {
+  id: string;
+  name: string;
+  points_required: number;
+};
+
+function normalizeRewards(rows: unknown): AvailableReward[] {
+  if (!Array.isArray(rows)) return [];
+
+  return rows
+    .map((row: any) => {
+      const id = cleanString(row?.id);
+      const name = cleanString(row?.name);
+      const pointsRequired = Number(row?.points_required);
+
+      if (!id || !name || !Number.isFinite(pointsRequired)) return null;
+
+      return {
+        id,
+        name,
+        points_required: pointsRequired,
+      };
+    })
+    .filter((row): row is AvailableReward => Boolean(row));
+}
+
+function formatPoints(points: number) {
+  return points === 1 ? "1 ponto" : `${points} pontos`;
+}
+
+function formatRewardNames(rewards: AvailableReward[]) {
+  const names = rewards.map((reward) => reward.name).filter(Boolean);
+  if (names.length === 0) return null;
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} e ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
+}
+
+function truncateMessage(message: string, maxLength = 200) {
+  if (message.length <= maxLength) return message;
+  return `${message.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+}
+
+function buildGooglePointsNotificationMessage(
+  points: number,
+  reset: boolean,
+  expiresFmt: string | null,
+  rewards: AvailableReward[],
+) {
+  const rewardNames = formatRewardNames(rewards);
+
+  if (rewardNames) {
+    const base = reset
+      ? `Validade renovada${expiresFmt ? ` ate ${expiresFmt}` : ""}. Voce tem ${formatPoints(points)}`
+      : `+1 ponto adicionado! Voce tem ${formatPoints(points)}`;
+
+    return truncateMessage(`${base} e pode resgatar: ${rewardNames}.`);
+  }
+
+  return truncateMessage(
+    reset
+      ? `Validade renovada${expiresFmt ? ` ate ${expiresFmt}` : ""} e pontos resetados. Pontos atuais: ${points}.`
+      : `+1 ponto adicionado! Pontos atuais: ${points}.`,
+  );
 }
 
 Deno.serve(async (req) => {
@@ -392,7 +459,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ---------- Pushes + notificação (não bloqueantes) ----------
+    // ---------- Recompensas disponiveis ----------
+    let rewardsAvailable: AvailableReward[] = [];
+    let rewardLookupWarning: string | null = null;
+
+    try {
+      const { data: rewardRows, error: rewardsErr } = await sbAdmin
+        .from("rewards")
+        .select("id, name, points_required")
+        .eq("project_id", projectId)
+        .eq("status", "active")
+        .eq("points_required", newPoints)
+        .order("created_at", { ascending: true });
+
+      if (rewardsErr) {
+        rewardLookupWarning = rewardsErr.message;
+        console.log("[scanner-visit] rewards lookup failed (ignored):", rewardsErr.message);
+      } else {
+        rewardsAvailable = normalizeRewards(rewardRows);
+      }
+    } catch (err) {
+      rewardLookupWarning = String((err as any)?.message ?? err);
+      console.log("[scanner-visit] rewards lookup failed (ignored):", rewardLookupWarning);
+    }
+
+    const rewardAvailable = rewardsAvailable[0] ?? null;
+    const expiresFmt = formatDateBR(newExpiresAtISO);
+    const googleNotificationMessage = buildGooglePointsNotificationMessage(
+      newPoints,
+      reset,
+      expiresFmt,
+      rewardsAvailable,
+    );
+
+    // ---------- Pushes + notificacao (nao bloqueantes) ----------
     try {
       const pushRes = await fetch(`${SUPABASE_URL}/functions/v1/apple-push`, {
         method: "POST",
@@ -431,13 +531,7 @@ Deno.serve(async (req) => {
         console.log("[scanner-visit] send-google-notification skipped: google_object_id vazio no user_passes");
       } else {
         const header = "Allin Pass";
-        const expiresFmt = formatDateBR(newExpiresAtISO);
-
-        const message = reset
-          ? `Validade renovada${expiresFmt ? ` até ${expiresFmt}` : ""} e pontos resetados. Pontos atuais: ${newPoints}.`
-          : `+1 ponto adicionado! Pontos atuais: ${newPoints}.`;
-
-        // target único no formato que a função segmentada espera
+        const message = googleNotificationMessage;
         const target = {
           project_id: String(passRow.project_id),          // já validado acima
           user_pass_id: String(up.id),
@@ -478,6 +572,9 @@ Deno.serve(async (req) => {
         reset,
         expires_at: newExpiresAtISO,
         confirmed: confirm ? true : false,
+        reward_available: rewardAvailable,
+        rewards_available: rewardsAvailable,
+        reward_lookup_warning: rewardLookupWarning,
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
     );

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2, MessageCircle } from 'lucide-react';
+import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2, MessageCircle, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ScannerTab from '@/components/restaurant/ScannerTab';
@@ -9,6 +9,7 @@ import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
+import RewardsTab from '@/components/restaurant/RewardsTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -38,7 +39,7 @@ const RestaurantDashboard = () => {
   };
 
   useEffect(() => {
-    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications']);
+    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications', 'rewards']);
     if (!allowedTabs.has(activeTab)) {
       setActiveTab('kpis');
       try {
@@ -149,6 +150,10 @@ const RestaurantDashboard = () => {
                     <Bell className="w-4 h-4" />
                     Notificações
                   </TabsTrigger>
+                  <TabsTrigger value="rewards" className="gap-2">
+                    <Gift className="w-4 h-4" />
+                    Recompensas
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="kpis">
@@ -159,6 +164,9 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
+                </TabsContent>
+                <TabsContent value="rewards">
+                  <RewardsTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="customers">
                   <CustomersTab projectId={projectId} />

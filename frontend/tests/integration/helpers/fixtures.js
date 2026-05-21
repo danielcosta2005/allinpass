@@ -236,6 +236,8 @@ async function cleanupProjectDataWithClient(projectId, client) {
   const byProjectId = [["id", projectId]];
 
   const deletes = [
+    ["reward_redemptions", byProject],
+    ["rewards", byProject],
     ["notification_jobs", byProject],
     ["notifications", byProject],
     ["automation_dispatches", byProject],
