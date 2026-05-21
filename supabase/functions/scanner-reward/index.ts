@@ -1,8 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const REWARD_NOTIFICATION_MESSAGE = "Parabens! Voce resgatou sua recompensa. Obrigado pela preferencia.";
-
 function corsHeaders(origin?: string) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
@@ -164,63 +162,7 @@ serve(async (req) => {
       return jsonResponse(statusForRedeemError(result.error), result, origin);
     }
 
-    let notificationId: string | null = null;
-    let notificationWarning: string | null = null;
-
-    try {
-      const notifRes = await fetch(`${SUPABASE_URL}/functions/v1/notifications-enqueue`, {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          projectId,
-          title: `Recompensa resgatada: ${result.reward_name || "Allin Pass"}`,
-          message: REWARD_NOTIFICATION_MESSAGE,
-          sendMode: "now",
-          user_pass_ids: [result.user_pass_id],
-          channels: { apple: true, google: true },
-          data: {
-            source: "scanner-reward",
-            reward_id: result.reward_id,
-            redemption_id: result.redemption_id,
-            points_spent: result.points_spent,
-            points_before: result.points_before,
-            points_after: result.points_after,
-          },
-        }),
-      });
-
-      const notifJson = await notifRes.json().catch(() => ({}));
-      if (!notifRes.ok || !notifJson?.ok) {
-        notificationWarning = notifJson?.error || notifJson?.message || `notifications-enqueue retornou ${notifRes.status}`;
-      } else {
-        notificationId = notifJson.notification_id || null;
-      }
-    } catch (err) {
-      notificationWarning = err instanceof Error ? err.message : String(err);
-    }
-
-    if (result.redemption_id) {
-      await admin
-        .from("reward_redemptions")
-        .update({
-          notification_id: notificationId,
-          notification_warning: notificationWarning,
-        })
-        .eq("id", result.redemption_id);
-    }
-
-    return jsonResponse(
-      200,
-      {
-        ...result,
-        notification_id: notificationId,
-        notification_warning: notificationWarning,
-      },
-      origin,
-    );
+    return jsonResponse(200, result, origin);
   } catch (err) {
     return jsonResponse(
       500,
