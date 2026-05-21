@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion";
 import {
   CheckCircle,
+  Eye,
   Gift,
+  History,
   Loader2,
   Plus,
   Power,
@@ -14,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/use-toast";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
@@ -51,6 +54,67 @@ function normalizeScanResult(result) {
 
 function statusLabel(status) {
   return status === "active" ? "Ativa" : "Inativa";
+}
+
+function formatDateTime(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("pt-BR");
+}
+
+function normalizeCustomer(customer) {
+  if (Array.isArray(customer)) return customer[0] || null;
+  return customer || null;
+}
+
+function RedemptionsTable({ redemptions, isCompact = false }) {
+  if (!redemptions?.length) {
+    return (
+      <div className="px-4 py-6 text-sm text-gray-500">
+        Nenhum resgate encontrado.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[720px] text-left text-sm">
+        <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+          <tr>
+            {!isCompact && <th className="px-4 py-3">Recompensa</th>}
+            <th className="px-4 py-3">Cliente</th>
+            <th className="px-4 py-3">Email</th>
+            <th className="px-4 py-3">Data/Hora</th>
+            <th className="px-4 py-3 text-center">Pontos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {redemptions.map((redemption) => {
+            const customer = normalizeCustomer(redemption.customers);
+            const customerName = customer?.name || "Cliente não identificado";
+            const customerEmail = customer?.email || "-";
+
+            return (
+              <tr key={redemption.id} className="border-t">
+                {!isCompact && (
+                  <td className="px-4 py-3 font-medium text-gray-900">
+                    {redemption.reward_name || "-"}
+                  </td>
+                )}
+                <td className="px-4 py-3 text-gray-800">{customerName}</td>
+                <td className="px-4 py-3 text-gray-700">{customerEmail}</td>
+                <td className="px-4 py-3 text-gray-700">{formatDateTime(redemption.created_at)}</td>
+                <td className="px-4 py-3 text-center font-medium text-gray-800">
+                  {redemption.points_before} -&gt; {redemption.points_after}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 async function readFunctionErrorBody(error, response) {
@@ -104,6 +168,7 @@ export default function RewardsTab({ projectId }) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [updatingRewardId, setUpdatingRewardId] = useState(null);
+  const [activeSubTab, setActiveSubTab] = useState("rewards");
 
   const [name, setName] = useState("");
   const [pointsRequired, setPointsRequired] = useState(10);
@@ -112,6 +177,12 @@ export default function RewardsTab({ projectId }) {
   const [isScanning, setIsScanning] = useState(false);
   const [isProcessingScan, setIsProcessingScan] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [expandedRewardId, setExpandedRewardId] = useState(null);
+  const [redemptionsByRewardId, setRedemptionsByRewardId] = useState({});
+  const [redemptionsLoadingByRewardId, setRedemptionsLoadingByRewardId] = useState({});
+  const [generalRedemptions, setGeneralRedemptions] = useState([]);
+  const [isLoadingGeneralRedemptions, setIsLoadingGeneralRedemptions] = useState(false);
+  const [hasLoadedGeneralRedemptions, setHasLoadedGeneralRedemptions] = useState(false);
 
   const activeRewards = useMemo(
     () => rewards.filter((reward) => reward.status === "active"),
@@ -150,10 +221,84 @@ export default function RewardsTab({ projectId }) {
     }
   }
 
+  const fetchRedemptions = useCallback(async ({ rewardId, limit = 100 } = {}) => {
+    if (!projectId) return [];
+
+    let query = supabase
+      .from("reward_redemptions")
+      .select(
+        "id, reward_id, reward_name, customer_id, user_pass_id, points_spent, points_before, points_after, notification_warning, created_at, customers(name, email)"
+      )
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (rewardId) query = query.eq("reward_id", rewardId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  }, [projectId]);
+
+  const fetchRewardRedemptions = useCallback(async (rewardId, { force = false } = {}) => {
+    if (!rewardId) return;
+    if (!force && redemptionsByRewardId[rewardId]) return;
+
+    setRedemptionsLoadingByRewardId((prev) => ({ ...prev, [rewardId]: true }));
+    try {
+      const data = await fetchRedemptions({ rewardId, limit: 50 });
+      setRedemptionsByRewardId((prev) => ({ ...prev, [rewardId]: data }));
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar resgates",
+        description: err?.message || "Nao foi possivel buscar o historico desta recompensa.",
+      });
+      setRedemptionsByRewardId((prev) => ({ ...prev, [rewardId]: [] }));
+    } finally {
+      setRedemptionsLoadingByRewardId((prev) => ({ ...prev, [rewardId]: false }));
+    }
+  }, [fetchRedemptions, redemptionsByRewardId, toast]);
+
+  const fetchGeneralRedemptions = useCallback(async ({ force = false } = {}) => {
+    if (!projectId) return;
+    if (!force && hasLoadedGeneralRedemptions) return;
+
+    setIsLoadingGeneralRedemptions(true);
+    try {
+      const data = await fetchRedemptions({ limit: 100 });
+      setGeneralRedemptions(data);
+      setHasLoadedGeneralRedemptions(true);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Erro ao carregar historico",
+        description: err?.message || "Nao foi possivel buscar o historico geral de resgates.",
+      });
+      setGeneralRedemptions([]);
+    } finally {
+      setIsLoadingGeneralRedemptions(false);
+    }
+  }, [fetchRedemptions, hasLoadedGeneralRedemptions, projectId, toast]);
+
   useEffect(() => {
     fetchRewards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    setExpandedRewardId(null);
+    setRedemptionsByRewardId({});
+    setRedemptionsLoadingByRewardId({});
+    setGeneralRedemptions([]);
+    setHasLoadedGeneralRedemptions(false);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (activeSubTab === "history") {
+      fetchGeneralRedemptions();
+    }
+  }, [activeSubTab, fetchGeneralRedemptions]);
 
   useEffect(() => {
     return () => {
@@ -311,6 +456,19 @@ export default function RewardsTab({ projectId }) {
       });
 
       setScanResult({ success: true, data });
+      setRedemptionsByRewardId((prev) => {
+        if (!redeemingReward?.id || !prev[redeemingReward.id]) return prev;
+        const next = { ...prev };
+        delete next[redeemingReward.id];
+        return next;
+      });
+      setHasLoadedGeneralRedemptions(false);
+      if (expandedRewardId === redeemingReward.id) {
+        fetchRewardRedemptions(redeemingReward.id, { force: true });
+      }
+      if (activeSubTab === "history") {
+        fetchGeneralRedemptions({ force: true });
+      }
       toast({
         title: "Recompensa contabilizada",
         description: `${data.reward_name}: ${data.points_before} -> ${data.points_after} ponto(s).`,
@@ -329,7 +487,18 @@ export default function RewardsTab({ projectId }) {
         setScanResult(null);
       }, 5000);
     }
-  }, [callScannerReward, clearResetTimer, isProcessingScan, redeemingReward, stopScan, toast]);
+  }, [
+    activeSubTab,
+    callScannerReward,
+    clearResetTimer,
+    expandedRewardId,
+    fetchGeneralRedemptions,
+    fetchRewardRedemptions,
+    isProcessingScan,
+    redeemingReward,
+    stopScan,
+    toast,
+  ]);
 
   useEffect(() => {
     onScanRef.current = onScan;
@@ -373,6 +542,15 @@ export default function RewardsTab({ projectId }) {
   async function toggleScan() {
     if (isScanning) await stopScan();
     else await startScan();
+  }
+
+  async function toggleRewardRedemptions(rewardId) {
+    const nextExpandedId = expandedRewardId === rewardId ? null : rewardId;
+    setExpandedRewardId(nextExpandedId);
+
+    if (nextExpandedId) {
+      await fetchRewardRedemptions(nextExpandedId);
+    }
   }
 
   return (
@@ -512,89 +690,181 @@ export default function RewardsTab({ projectId }) {
         </motion.div>
       )}
 
-      {isLoading ? (
-        <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
-          <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
-          <p className="mt-3 text-sm text-gray-600">Carregando recompensas...</p>
-        </div>
-      ) : rewards.length === 0 ? (
-        <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
-          <Gift className="mx-auto h-10 w-10 text-gray-400" />
-          <p className="mt-4 text-base font-medium text-gray-800">Voce ainda nao possui recompensas</p>
-          <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
-            <Plus className="h-4 w-4" />
-            Criar recompensa
-          </Button>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr className="border-b text-left text-gray-600">
-                <th className="px-4 py-3">Recompensa</th>
-                <th className="px-4 py-3">Pontos</th>
-                <th className="px-4 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rewards.map((reward) => {
-                const isActive = reward.status === "active";
-                return (
-                  <tr key={reward.id} className="border-b last:border-b-0">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{reward.name}</p>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {reward.points_required} ponto(s)
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                          isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                        }`}
-                      >
-                        {statusLabel(reward.status)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleRewardStatus(reward)}
-                          disabled={updatingRewardId === reward.id}
-                          title={isActive ? "Desativar recompensa" : "Ativar recompensa"}
-                        >
-                          {updatingRewardId === reward.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Power className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => openRedeem(reward)}
-                          disabled={!isActive}
-                          className="gap-2"
-                        >
-                          <ScanLine className="h-4 w-4" />
-                          Contabilizar
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="space-y-4">
+        <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
+          <TabsTrigger value="rewards" className="gap-2">
+            <Gift className="h-4 w-4" />
+            Recompensas
+          </TabsTrigger>
+          <TabsTrigger value="history" className="gap-2">
+            <History className="h-4 w-4" />
+            Historico de resgates
+          </TabsTrigger>
+        </TabsList>
 
-          {activeRewards.length === 0 ? (
-            <div className="border-t bg-gray-50 px-4 py-3 text-sm text-gray-600">
-              Todas as recompensas estao inativas.
+        <TabsContent value="rewards" className="space-y-4">
+          {isLoading ? (
+            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
+              <p className="mt-3 text-sm text-gray-600">Carregando recompensas...</p>
             </div>
-          ) : null}
-        </div>
-      )}
+          ) : rewards.length === 0 ? (
+            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+              <Gift className="mx-auto h-10 w-10 text-gray-400" />
+              <p className="mt-4 text-base font-medium text-gray-800">Voce ainda nao possui recompensas</p>
+              <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
+                <Plus className="h-4 w-4" />
+                Criar recompensa
+              </Button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-gray-50">
+                  <tr className="border-b text-left text-gray-600">
+                    <th className="px-4 py-3">Recompensa</th>
+                    <th className="px-4 py-3">Pontos</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">
+                      <div className="ml-auto w-[280px] text-center">Ações</div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rewards.map((reward) => {
+                    const isActive = reward.status === "active";
+                    const isExpanded = expandedRewardId === reward.id;
+                    const redemptions = redemptionsByRewardId[reward.id] || [];
+                    const isLoadingRedemptions = Boolean(redemptionsLoadingByRewardId[reward.id]);
+
+                    return (
+                      <React.Fragment key={reward.id}>
+                        <tr className="border-b last:border-b-0">
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-gray-900">{reward.name}</p>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {reward.points_required} ponto(s)
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
+                                isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                              }`}
+                            >
+                              {statusLabel(reward.status)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleRewardRedemptions(reward.id)}
+                                disabled={isLoadingRedemptions}
+                                title="Visualizar resgates"
+                              >
+                                {isLoadingRedemptions ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Eye className={`h-4 w-4 ${isExpanded ? "text-indigo-600" : ""}`} />
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleRewardStatus(reward)}
+                                disabled={updatingRewardId === reward.id}
+                                title={isActive ? "Desativar recompensa" : "Ativar recompensa"}
+                              >
+                                {updatingRewardId === reward.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Power className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => openRedeem(reward)}
+                                disabled={!isActive}
+                                className="gap-2"
+                              >
+                                <ScanLine className="h-4 w-4" />
+                                Contabilizar
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isExpanded ? (
+                          <tr className="border-b bg-gray-50">
+                            <td colSpan={4} className="px-4 py-4">
+                              <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                                <div className="flex items-center justify-between border-b px-4 py-3">
+                                  <div className="text-sm font-semibold text-gray-900">
+                                    Historico de resgates
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {isLoadingRedemptions ? "Carregando..." : `${redemptions.length} resgate(s)`}
+                                  </div>
+                                </div>
+
+                                {isLoadingRedemptions ? (
+                                  <div className="flex justify-center py-6">
+                                    <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                                  </div>
+                                ) : (
+                                  <RedemptionsTable redemptions={redemptions} isCompact />
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              {activeRewards.length === 0 ? (
+                <div className="border-t bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                  Todas as recompensas estao inativas.
+                </div>
+              ) : null}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-4">
+          <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Historico geral de resgates</h3>
+                <p className="mt-1 text-sm text-gray-600">
+                  Todos os resgates contabilizados pelo scanner neste projeto.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchGeneralRedemptions({ force: true })}
+                disabled={isLoadingGeneralRedemptions || !projectId}
+              >
+                {isLoadingGeneralRedemptions ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Atualizar
+              </Button>
+            </div>
+
+            {isLoadingGeneralRedemptions ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+              </div>
+            ) : (
+              <RedemptionsTable redemptions={generalRedemptions} />
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
