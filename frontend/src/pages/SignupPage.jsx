@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -35,6 +35,7 @@ import PlanCard from '@/components/landing/PlanCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 let turnstileScriptPromise = null;
+const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
@@ -228,6 +229,20 @@ function TurnstileWidget({ siteKey, onTokenChange, onResetReady }) {
   );
 }
 
+function normalizeSignupErrorMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  if (
+    message.includes('email rate limit exceeded')
+    || code === 'over_email_send_rate_limit'
+  ) {
+    return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
+  }
+
+  return error?.message || 'NÃ£o foi possÃ­vel iniciar o Free Trial.';
+}
+
 function SignupPage() {
   const [searchParams] = useSearchParams();
   const { signUp, refreshAuthProfile } = useAuth();
@@ -312,15 +327,16 @@ function SignupPage() {
     return nextErrors;
   };
 
-  const provisionFreeTrial = async ({ establishmentName, planCode }) => {
+  const provisionFreeTrial = useCallback(async ({ establishmentName, planCode, userId }) => {
     const result = await finalizeFreeTrialSignup({
       establishmentName,
       planCode: planCode || 'free_trial',
+      dedupeKey: userId ? `free-trial:${userId}` : '',
     });
 
     await refreshAuthProfile();
     return result;
-  };
+  }, [refreshAuthProfile]);
 
   const handleStepOneSubmit = async (event) => {
     event.preventDefault();
@@ -389,10 +405,14 @@ function SignupPage() {
         return;
       }
 
-      await provisionFreeTrial({ establishmentName, planCode });
+      await provisionFreeTrial({
+        establishmentName,
+        planCode,
+        userId: data?.session?.user?.id || data?.user?.id,
+      });
       setFinishedFlow('trial');
     } catch (error) {
-      const message = error?.message || 'Não foi possível iniciar o Free Trial.';
+      const message = normalizeSignupErrorMessage(error);
       setSignupError(message);
       toast({
         title: 'Erro no cadastro',
@@ -469,7 +489,11 @@ function SignupPage() {
           throw new Error('Não encontramos o nome do estabelecimento neste cadastro.');
         }
 
-        await provisionFreeTrial({ establishmentName, planCode });
+        await provisionFreeTrial({
+          establishmentName,
+          planCode,
+          userId: session.user.id,
+        });
         setFormData((previous) => ({
           ...previous,
           establishmentName,
@@ -491,7 +515,7 @@ function SignupPage() {
     };
 
     finalizePendingSignup();
-  }, [shouldFinalizeFromRedirect, toast]);
+  }, [provisionFreeTrial, shouldFinalizeFromRedirect, toast]);
 
   return (
     <>
