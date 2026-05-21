@@ -178,7 +178,7 @@ function truncateMessage(message: string, maxLength = 200) {
   return `${message.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
-function buildPointsNotificationMessage(
+function buildGooglePointsNotificationMessage(
   points: number,
   reset: boolean,
   expiresFmt: string | null,
@@ -485,7 +485,7 @@ Deno.serve(async (req) => {
 
     const rewardAvailable = rewardsAvailable[0] ?? null;
     const expiresFmt = formatDateBR(newExpiresAtISO);
-    const notificationMessage = buildPointsNotificationMessage(
+    const googleNotificationMessage = buildGooglePointsNotificationMessage(
       newPoints,
       reset,
       expiresFmt,
@@ -531,7 +531,7 @@ Deno.serve(async (req) => {
         console.log("[scanner-visit] send-google-notification skipped: google_object_id vazio no user_passes");
       } else {
         const header = "Allin Pass";
-        const message = notificationMessage;
+        const message = googleNotificationMessage;
         const target = {
           project_id: String(passRow.project_id),          // já validado acima
           user_pass_id: String(up.id),
@@ -574,8 +574,6 @@ Deno.serve(async (req) => {
         confirmed: confirm ? true : false,
         reward_available: rewardAvailable,
         rewards_available: rewardsAvailable,
-        reward_notification_message: notificationMessage,
-        notification_message: notificationMessage,
         reward_lookup_warning: rewardLookupWarning,
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },

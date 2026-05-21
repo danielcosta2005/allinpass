@@ -154,8 +154,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     if (rewardNames) {
       toast({
         title: confirmed ? "Recompensa liberada no scan confirmado!" : "Recompensa liberada!",
-        description: data?.reward_notification_message ||
-          `Cliente tem ${data.points} ponto(s) e pode resgatar: ${rewardNames}.`,
+        description: `Cliente tem ${data.points} ponto(s) e pode resgatar: ${rewardNames}.`,
       });
       return;
     }

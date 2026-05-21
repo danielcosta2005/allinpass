@@ -188,7 +188,6 @@ describe("Edge Function scanner-visit", () => {
     expect(scanResponse.body?.points).toBe(1);
     expect(scanResponse.body?.reward_available?.id).toBe(reward.id);
     expect(scanResponse.body?.reward_available?.name).toBe("Bala");
-    expect(scanResponse.body?.notification_message).toContain("1 ponto");
-    expect(scanResponse.body?.notification_message).toContain("Bala");
+    expect(scanResponse.body?.notification_message).toBeUndefined();
   });
 });
