@@ -266,6 +266,7 @@ function SignupPage() {
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
   const [signupLoading, setSignupLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [signupError, setSignupError] = useState('');
   const [captchaToken, setCaptchaToken] = useState('');
   const turnstileResetRef = useRef(null);
@@ -338,6 +339,11 @@ function SignupPage() {
     return result;
   }, [refreshAuthProfile]);
 
+  const buildFreeTrialEmailRedirectTo = useCallback(() => {
+    const planKey = selectedPlan?.key || 'free-trial';
+    return `${window.location.origin}/cadastro?plano=${encodeURIComponent(planKey)}&finalizar=1`;
+  }, [selectedPlan?.key]);
+
   const handleStepOneSubmit = async (event) => {
     event.preventDefault();
     setAttemptedSubmit(true);
@@ -381,9 +387,7 @@ function SignupPage() {
         throw new Error(message);
       }
 
-      const emailRedirectTo = `${window.location.origin}/cadastro?plano=${encodeURIComponent(
-        selectedPlan?.key || 'free-trial',
-      )}&finalizar=1`;
+      const emailRedirectTo = buildFreeTrialEmailRedirectTo();
 
       const { data, error } = await signUp(normalizedEmail, formData.password, {
         data: {
@@ -422,6 +426,52 @@ function SignupPage() {
       turnstileResetRef.current?.();
     } finally {
       setSignupLoading(false);
+    }
+  };
+
+  const handleResendConfirmationEmail = async () => {
+    if (resendLoading) return;
+
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+      const message = 'Informe um e-mail válido para reenviar a confirmação.';
+      setSignupError(message);
+      toast({
+        title: 'E-mail inválido',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSignupError('');
+    setResendLoading(true);
+
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: normalizedEmail,
+        options: {
+          emailRedirectTo: buildFreeTrialEmailRedirectTo(),
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'E-mail reenviado',
+        description: 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+      });
+    } catch (error) {
+      const message = normalizeSignupErrorMessage(error);
+      setSignupError(message);
+      toast({
+        title: 'Não foi possível reenviar',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -893,7 +943,22 @@ function SignupPage() {
                       Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
                       finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!
                     </p>
+                    <p className="text-sm text-sky-800 mt-3">
+                      Se o link não chegou, você pode pedir um novo envio sem refazer o cadastro.
+                    </p>
                     <div className="flex flex-wrap gap-3 mt-5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleResendConfirmationEmail}
+                        disabled={resendLoading}
+                        className="border-sky-300 text-sky-900 hover:bg-sky-100"
+                      >
+                        {resendLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Reenviar e-mail
+                      </Button>
                       <Link to="/login">
                         <Button className="bg-sky-700 hover:bg-sky-800 text-white">
                           Ir para login

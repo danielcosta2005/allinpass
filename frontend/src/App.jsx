@@ -1,4 +1,4 @@
-import React, {useEffect} from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import AuthCallback from '@/pages/AuthCallback';
@@ -11,6 +11,7 @@ import NotFound from '@/pages/NotFound';
 import { Toaster } from '@/components/ui/toaster';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Loader2 } from 'lucide-react';
+import AuthProgressScreen from '@/components/app/AuthProgressScreen';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
@@ -21,6 +22,47 @@ import SignupPage from '@/pages/SignupPage';
 // ✅ NOVOS imports
 import WalletClaimCard from '@/pages/WalletClaimCard';
 import ClaimCallback from '@/pages/ClaimCallback';
+
+const AUTH_RETURN_TYPES = new Set([
+  'signup',
+  'magiclink',
+  'recovery',
+  'invite',
+  'email_change',
+]);
+
+const hasAuthReturnParams = (params) => (
+  params.has('code') ||
+  params.has('token_hash') ||
+  params.has('access_token') ||
+  params.has('refresh_token') ||
+  AUTH_RETURN_TYPES.has(params.get('type'))
+);
+
+const isAuthReturnUrl = () => {
+  if (typeof window === 'undefined') return false;
+
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const hash = String(window.location.hash || '').replace(/^#/, '');
+  const hashParams = new URLSearchParams(hash);
+
+  return hasAuthReturnParams(searchParams) || hasAuthReturnParams(hashParams);
+};
+
+const HomeRoute = () => {
+  const { user, loading, initialized } = useAuth();
+  const shouldShowAuthReturnProgress = isAuthReturnUrl();
+  const shouldShowSessionProgress = Boolean(user) && (loading || !initialized);
+
+  if (
+    (shouldShowAuthReturnProgress && (loading || !initialized)) ||
+    shouldShowSessionProgress
+  ) {
+    return <AuthProgressScreen />;
+  }
+
+  return <LandingPage />;
+};
 
 const AuthRedirect = () => {
   const { role, loading, initialized, user } = useAuth();
@@ -75,7 +117,7 @@ export default function App() {
 
       <Routes>
         {/* ✅ landing page pública */}
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<HomeRoute />} />
 
         <Route path="/login" element={!loading && user ? <Navigate to="/app" replace /> : <Login />} />
 
