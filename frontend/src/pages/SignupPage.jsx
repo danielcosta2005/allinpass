@@ -959,16 +959,6 @@ function SignupPage() {
                         ) : null}
                         Reenviar e-mail
                       </Button>
-                      <Link to="/login">
-                        <Button className="bg-sky-700 hover:bg-sky-800 text-white">
-                          Ir para login
-                        </Button>
-                      </Link>
-                      <Link to="/#planos">
-                        <Button variant="outline" className="border-sky-300 text-sky-900 hover:bg-sky-100">
-                          Voltar aos planos
-                        </Button>
-                      </Link>
                     </div>
                   </motion.div>
                 )}

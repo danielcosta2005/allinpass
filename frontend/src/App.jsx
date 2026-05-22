@@ -12,6 +12,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Loader2 } from 'lucide-react';
 import AuthProgressScreen from '@/components/app/AuthProgressScreen';
+import HashScrollHandler from '@/components/app/HashScrollHandler';
 import MePage from '@/pages/MePage';
 import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
@@ -114,6 +115,8 @@ export default function App() {
         <title>Allin Pass - Programa de Fidelidade Digital</title>
         <meta name="description" content="Sistema completo de fidelidade com Apple Wallet e Google Wallet" />
       </Helmet>
+
+      <HashScrollHandler />
 
       <Routes>
         {/* ✅ landing page pública */}

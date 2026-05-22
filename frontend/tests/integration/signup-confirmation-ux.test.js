@@ -15,6 +15,15 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("type: 'signup'");
     expect(signupPageSource).toContain("emailRedirectTo");
     expect(signupPageSource).toContain("Reenviar e-mail");
+
+    const confirmEmailBlock = signupPageSource.slice(
+      signupPageSource.indexOf("finishedFlow === 'confirm-email'"),
+      signupPageSource.indexOf("finishedFlow === 'paid'")
+    );
+
+    expect(confirmEmailBlock).toContain("Reenviar e-mail");
+    expect(confirmEmailBlock).not.toContain("Ir para login");
+    expect(confirmEmailBlock).not.toContain("Voltar aos planos");
   });
 
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {
@@ -35,5 +44,25 @@ describe("signup confirmation UX", () => {
     expect(authProgressScreenSource).toContain("Confirmando seu e-mail");
     expect(authProgressScreenSource).toContain("bg-gradient-to-br from-purple-50 via-white to-indigo-50");
     expect(authProgressScreenSource).not.toContain("radial-gradient");
+  });
+
+  test("signup page top plans link scrolls to the landing plans section", () => {
+    const appSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/App.jsx"),
+      "utf8"
+    );
+    const hashScrollSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/components/app/HashScrollHandler.jsx"),
+      "utf8"
+    );
+    const landingSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/LandingPage.jsx"),
+      "utf8"
+    );
+
+    expect(landingSource).toContain('id="planos"');
+    expect(appSource).toContain("@/components/app/HashScrollHandler");
+    expect(appSource).toContain("<HashScrollHandler />");
+    expect(hashScrollSource).toContain("scrollIntoView");
   });
 });

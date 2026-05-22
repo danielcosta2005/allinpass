@@ -31,6 +31,13 @@ function normalizeSignupErrorMessage(error) {
   return error?.message || 'Something went wrong';
 }
 
+function isEmailNotConfirmedError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  return code === 'email_not_confirmed' || message.includes('email not confirmed');
+}
+
 function isSignupFinalizeCallbackPath() {
   if (typeof window === 'undefined') return false;
 
@@ -486,7 +493,7 @@ export const AuthProvider = ({ children }) => {
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
+    if (error && !isEmailNotConfirmedError(error)) {
       toast({
         variant: 'destructive',
         title: 'Sign in Failed',
