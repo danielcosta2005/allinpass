@@ -3,7 +3,7 @@ import { corsHeaders } from "./cors.ts";
 
 const FUNCTION_NAME = "signup-precheck";
 const GENERIC_BLOCK_MESSAGE =
-  "Nao foi possivel iniciar o cadastro agora. Se voce ja possui conta, faca login ou tente novamente.";
+  "Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.";
 
 const RATE_LIMIT_WINDOW_SECONDS = 600;
 const RATE_LIMIT_MAX_ATTEMPTS = 8;
