@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, RefreshCcw, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { Loader2, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -37,15 +37,27 @@ function ProjectNames({ projects }) {
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {linkedProjects.map((project) => (
-        <span
-          key={project.id}
-          className="rounded-full border border-purple-100 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700"
-        >
-          {project.name || 'Projeto sem nome'}
-        </span>
-      ))}
+    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+          <tr>
+            <th className="px-4 py-2.5">Projeto</th>
+            <th className="px-4 py-2.5">Criado em</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linkedProjects.map((project) => (
+            <tr key={project.id} className="border-b last:border-b-0">
+              <td className="px-4 py-2.5 font-semibold text-gray-900">
+                {project.name || 'Projeto sem nome'}
+              </td>
+              <td className="whitespace-nowrap px-4 py-2.5 text-gray-700">
+                {formatDate(project.created_at)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -171,10 +183,6 @@ const AdminTab = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchAdmins} disabled={loading || isSubmitting}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
-            Atualizar
-          </Button>
           <Button
             onClick={() => setShowCreateModal(true)}
             className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
@@ -210,7 +218,7 @@ const AdminTab = () => {
                 {admins.map((admin) => {
                   const linkedProjects = getLinkedProjects(admin.projects);
                   const isExpanded = expandedAdminId === admin.id;
-                  const canExpandProjects = linkedProjects.length > 1;
+                  const canExpandProjects = linkedProjects.length >= 1;
 
                   return (
                     <React.Fragment key={admin.id}>
@@ -256,7 +264,7 @@ const AdminTab = () => {
                         </td>
                       </tr>
                       {canExpandProjects && isExpanded && (
-                        <tr className="border-t bg-indigo-50/20">
+                        <tr className="border-t bg-white">
                           <td colSpan={4} className="px-6 py-4">
                             <div className="space-y-2">
                               <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
