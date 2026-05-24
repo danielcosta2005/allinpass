@@ -60,7 +60,7 @@ export async function getProjectDetails(id) {
 	if (error) throw error; return data;
 }
 export async function createProject(payload) {
-	const { data, error: invokeError } = await supabase.functions.invoke('create-project', {
+	const { data, error: invokeError } = await supabase.functions.invoke('create-project-teste', {
 		body: payload,
 	});
 

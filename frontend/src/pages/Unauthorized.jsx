@@ -10,7 +10,7 @@ export default function Unauthorized() {
 
   useEffect(() => {
     if (loading || !initialized || !user) return;
-    if (role === 'superadmin') navigate('/admin', { replace: true });
+    if (role === 'superadmin' || role === 'admin') navigate('/admin', { replace: true });
     if (role === 'establishment' || role === 'customer') navigate('/org', { replace: true });
   }, [loading, initialized, user, role, navigate]);
 

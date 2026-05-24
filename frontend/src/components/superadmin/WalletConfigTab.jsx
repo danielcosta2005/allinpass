@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Loader2,
+  ChevronLeft,
   Apple,
   Smartphone,
   Upload,
@@ -833,7 +834,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         app_base_url: window.location.origin,
       };
 
-      const result = await invokeWalletFunction('create-pass', body);
+      const result = await invokeWalletFunction('create-pass-teste', body);
 
       setFormState((prev) => ({ ...prev, qr_url: result.qr_url || prev.qr_url }));
       setGenerationResult(result);
@@ -890,7 +891,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         },
       };
 
-      const result = await invokeWalletFunction('update-pass', body);
+      const result = await invokeWalletFunction('update-pass-teste', body);
 
       const pushes = result?.pushes || {};
       const appleFailed = pushes?.apple?.failed ?? 0;
@@ -952,13 +953,26 @@ const WalletConfigTab = ({ projectId, onBack }) => {
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Criar novo passe
                 </Button>
-                <Button size="sm" onClick={onBack} variant="outline" className="ml-auto">Voltar aos Projetos</Button>
+                <Button
+                  size="sm"
+                  onClick={onBack}
+                  className="ml-auto bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+                >
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Voltar aos Projetos
+                </Button>
               </div>
             </div>
           ) : (
             <div className="flex items-center justify-between">
               <h1 className="text-3xl font-bold">Configuração da Wallet</h1>
-              <Button onClick={onBack} variant="outline">Voltar aos Projetos</Button>
+              <Button
+                onClick={onBack}
+                className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Voltar aos Projetos
+              </Button>
             </div>
           )}
         </div>
