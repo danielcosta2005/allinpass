@@ -14,6 +14,7 @@ import AdminTab from '@/components/superadmin/AdminTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import {
+  canAccessAdminPanel,
   canDeleteProject,
   canGeneratePass,
   canManageProject as canManageProjectByRole,
@@ -26,6 +27,7 @@ const SuperadminDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const isSuperadmin = canSeeSuperadminTabs(role);
+  const canAccessKpiMembersAndCustomers = canAccessAdminPanel(role);
   const defaultTab = getDefaultAdminTab(role);
 
   const [selectedProject, setSelectedProject] = useState(() => {
@@ -108,10 +110,14 @@ const SuperadminDashboard = () => {
       );
     }
 
+    if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
+      tabs.push({ value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false });
+    }
+
     tabs.push({ value: 'projects', label: 'Projetos', icon: Settings, disabled: false });
 
     return tabs;
-  }, [isSuperadmin]);
+  }, [canAccessKpiMembersAndCustomers, isSuperadmin]);
 
   const projectTabs = useMemo(() => {
     if (!selectedProject) {
@@ -130,8 +136,15 @@ const SuperadminDashboard = () => {
       );
     }
 
+    if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
+      tabs.push(
+        { value: 'members', label: 'Membros', icon: Users, disabled: false },
+        { value: 'customers', label: 'Clientes', icon: Users, disabled: false },
+      );
+    }
+
     return tabs;
-  }, [canManageSelectedProject, isSuperadmin, selectedProject]);
+  }, [canAccessKpiMembersAndCustomers, canManageSelectedProject, isSuperadmin, selectedProject]);
 
   const availableTabs = useMemo(() => {
     return [...mainTabs, ...projectTabs];
@@ -264,12 +277,12 @@ const SuperadminDashboard = () => {
                         {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
                       </TabsContent>
                     )}
-                    {isSuperadmin && (
+                    {canAccessKpiMembersAndCustomers && (
                       <TabsContent value="members" className="mt-0">
                         {selectedProject && <MembersTab projectId={selectedProject.id} />}
                       </TabsContent>
                     )}
-                    {isSuperadmin && (
+                    {canAccessKpiMembersAndCustomers && (
                       <TabsContent value="customers" className="mt-0">
                         {selectedProject && <CustomersTab projectId={selectedProject.id} />}
                       </TabsContent>
@@ -278,7 +291,7 @@ const SuperadminDashboard = () => {
                 </div>
               )}
 
-              {isSuperadmin && <TabsContent value="dashboard"><DashboardTab /></TabsContent>}
+              {canAccessKpiMembersAndCustomers && <TabsContent value="dashboard"><DashboardTab /></TabsContent>}
               {isSuperadmin && <TabsContent value="admins"><AdminTab /></TabsContent>}
               <TabsContent value="projects">
                 <ProjectsTab
