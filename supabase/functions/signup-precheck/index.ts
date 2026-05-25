@@ -4,10 +4,18 @@ import { corsHeaders } from "./cors.ts";
 const FUNCTION_NAME = "signup-precheck";
 const GENERIC_BLOCK_MESSAGE =
   "Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.";
+const EXISTING_CUSTOMER_MESSAGE =
+  "Encontramos uma conta cliente com esse email. Enviaremos um link de acesso para finalizar seu Free Trial.";
 
 const RATE_LIMIT_WINDOW_SECONDS = 600;
 const RATE_LIMIT_MAX_ATTEMPTS = 8;
 const RATE_LIMIT_BLOCK_MINUTES = 20;
+const ACCOUNT_STATUSES = new Set([
+  "available",
+  "existing_customer",
+  "existing_establishment",
+  "existing_account",
+]);
 
 function requiredEnv(name: string) {
   const value = Deno.env.get(name);
@@ -244,19 +252,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: existingAccount, error: existingAccountError } = await supabaseAdmin.rpc(
-      "signup_precheck_auth_email_exists",
+    const { data: accountStatusData, error: accountStatusError } = await supabaseAdmin.rpc(
+      "signup_precheck_auth_account_status",
       { p_email: email },
     );
 
-    if (existingAccountError) throw existingAccountError;
+    if (accountStatusError) throw accountStatusError;
 
-    const hasExistingAccount = Boolean(existingAccount);
+    const accountStatus = ACCOUNT_STATUSES.has(String(accountStatusData))
+      ? String(accountStatusData)
+      : "existing_account";
+    const hasExistingAccount = accountStatus !== "available";
     const normalizedEstablishmentName = normalizeText(establishmentName);
 
     await writeFunctionLog(supabaseAdmin, hasExistingAccount ? "warn" : "info", {
       request_id: requestId,
-      outcome: hasExistingAccount ? "existing_account_detected" : "allowed",
+      outcome: hasExistingAccount ? accountStatus : "allowed",
+      account_status: accountStatus,
       email_hash: emailHash,
       ip_hash: ipHash,
       attempts,
@@ -264,10 +276,20 @@ Deno.serve(async (req) => {
       duration_ms: Date.now() - startedAt,
     });
 
+    if (accountStatus === "existing_customer") {
+      return jsonResponse(origin, {
+        can_proceed: true,
+        code: "existing_customer",
+        message: EXISTING_CUSTOMER_MESSAGE,
+      });
+    }
+
     if (hasExistingAccount) {
       return jsonResponse(origin, {
         can_proceed: false,
-        code: "signup_precheck_blocked",
+        code: accountStatus === "existing_establishment"
+          ? "existing_establishment"
+          : "signup_precheck_blocked",
         message: GENERIC_BLOCK_MESSAGE,
       });
     }

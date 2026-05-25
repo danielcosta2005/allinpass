@@ -15,6 +15,18 @@ describe("signup finalize auth redirect", () => {
     expect(authContextSource).toContain("p === '/cadastro'");
   });
 
+  test("signup finalize callback waits for the AuthProvider session before invoking backend finalization", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+
+    expect(signupPageSource).toContain("session: authSession");
+    expect(signupPageSource).toContain("if (!authSession?.user)");
+    expect(signupPageSource).toContain("const session = authSession");
+    expect(signupPageSource).toContain("[authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]");
+  });
+
   test("pending free trial signups are auto-finalized before redirecting to /org", () => {
     const authContextSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/contexts/SupabaseAuthContext.jsx"),
@@ -25,6 +37,8 @@ describe("signup finalize auth redirect", () => {
     expect(authContextSource).toContain("getPendingFreeTrialSignup");
     expect(authContextSource).toContain("shouldAutoFinalizeSignup");
     expect(authContextSource).toContain("didAutoFinalizeSignup");
+    expect(authContextSource).toContain("shouldAllowAutoFinalizeOnCallbackPath");
+    expect(authContextSource).toContain("isClaimOrCallbackPath() && !shouldAllowAutoFinalizeOnCallbackPath");
   });
 
   test("signup-finalize calls are deduplicated across auth events and strict-mode effects", () => {

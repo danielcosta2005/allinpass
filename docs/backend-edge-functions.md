@@ -8,7 +8,7 @@ Este arquivo documenta as Supabase Edge Functions do projeto, explicando o objet
 
 Executa a verificacao previa do cadastro Free Trial antes de criar o usuario no Supabase Auth.
 
-Ela protege o fluxo contra tentativas abusivas, valida captcha quando configurado e verifica se o email ja pertence a uma conta existente. A fonte da verdade para existencia de conta e `auth.users`, nao `public.profiles`.
+Ela protege o fluxo contra tentativas abusivas, valida captcha quando configurado e verifica se o email ja pertence a uma conta existente. A fonte da verdade para existencia de conta e `auth.users`, com `public.profiles.role` usado apenas para classificar contas existentes.
 
 ### Quando e utilizada
 
@@ -38,9 +38,9 @@ Pode ser chamada pelo frontend publico, sem sessao autenticada. Por isso, a func
 8. Consome rate limit pela RPC `consume_signup_precheck_rate_limit`.
 9. Se captcha estiver obrigatorio, valida presenca de secret e token.
 10. Quando ha token e secret, valida o token no Cloudflare Turnstile.
-11. Verifica se o email ja existe em `auth.users` pela RPC `signup_precheck_auth_email_exists`.
+11. Classifica o email pela RPC `signup_precheck_auth_account_status`, cruzando `auth.users` com `profiles.role`.
 12. Grava logs sanitizados em `function_logs`.
-13. Retorna `can_proceed = true` somente quando todas as verificacoes passam.
+13. Retorna `can_proceed = true` para email novo ou para `existing_customer`, que segue por magic link em vez de `signUp`.
 
 ### Fluxo interno
 
@@ -51,7 +51,7 @@ Frontend publico
   -> gera hashes com salt
   -> consume_signup_precheck_rate_limit
   -> valida Turnstile quando requerido
-  -> signup_precheck_auth_email_exists(auth.users)
+  -> signup_precheck_auth_account_status(auth.users + profiles.role)
   -> grava function_logs
   -> retorna can_proceed
 ```
@@ -88,6 +88,14 @@ Em sucesso permitido:
 | `code` | `string` | `ok`. |
 | `message` | `string` | `ok`. |
 
+Em conta cliente existente:
+
+| Campo | Tipo | Descricao |
+|---|---|---|
+| `can_proceed` | `boolean` | `true`, mas o frontend deve seguir por `supabase.auth.signInWithOtp` com `shouldCreateUser=false`. |
+| `code` | `string` | `existing_customer`. |
+| `message` | `string` | Mensagem orientando o envio de link de acesso. |
+
 Em bloqueio ou indisponibilidade:
 
 | Campo | Tipo | Descricao |
@@ -102,7 +110,7 @@ Em bloqueio ou indisponibilidade:
 | Codigo HTTP | Codigo interno | Causa provavel | Acao recomendada |
 |---:|---|---|---|
 | 400 | sem `code` | `email` ausente. | Corrigir formulario/chamada. |
-| 403 | `signup_precheck_blocked` | Captcha ausente, captcha invalido ou email ja existente. | Mostrar mensagem generica e orientar login quando aplicavel. |
+| 403 | `signup_precheck_blocked` | Captcha ausente, captcha invalido ou conta existente sem fluxo alternativo seguro. | Mostrar mensagem generica e orientar login quando aplicavel. |
 | 405 | sem `code` | Metodo diferente de `POST` ou `OPTIONS`. | Corrigir chamada. |
 | 429 | `signup_precheck_blocked` | Rate limit excedido para hash de IP/email. | Respeitar `retry_after_seconds`. |
 | 503 | `signup_precheck_unavailable` | Captcha obrigatorio, mas `SIGNUP_PRECHECK_CAPTCHA_SECRET` ausente. | Configurar secret ou desligar obrigatoriedade. |
@@ -114,6 +122,7 @@ Em bloqueio ou indisponibilidade:
 |---|---|---|
 | `public.signup_precheck_rate_limits` | `select`, `insert`, `update` via RPC | Guarda tentativas por hash de IP/email, janela, bloqueio e `last_seen_at`. |
 | `auth.users` | `select` via RPC | Fonte da verdade para existencia de conta por email. Ignora usuarios deletados (`deleted_at is null`). |
+| `public.profiles` | `select` via RPC | Classifica a conta existente por `role`, sem depender de `profiles.email`. |
 | `public.function_logs` | `insert` | Logs sanitizados com hashes, outcome, tentativas e duracao. |
 
 ### Funcoes RPC utilizadas
@@ -121,7 +130,7 @@ Em bloqueio ou indisponibilidade:
 | RPC | Uso |
 |---|---|
 | `public.consume_signup_precheck_rate_limit(...)` | Consome a tentativa de forma atomica, cria/atualiza janela e retorna `allowed`, `retry_after_seconds`, `attempts`, `blocked_until`. |
-| `public.signup_precheck_auth_email_exists(p_email text)` | Verifica existencia de email em `auth.users`; substitui a consulta antiga em `profiles.email`. |
+| `public.signup_precheck_auth_account_status(p_email text)` | Retorna `available`, `existing_customer`, `existing_establishment` ou `existing_account` a partir de `auth.users` e `profiles.role`. |
 
 ### Integracoes externas
 
@@ -142,10 +151,11 @@ Em bloqueio ou indisponibilidade:
 
 Esta function usa `service_role_key` e e chamada por usuario nao autenticado. Por isso:
 
-- nao retorna se o email existe de forma explicita; usa mensagem generica;
+- retorna apenas o status minimo necessario para o fluxo; `existing_customer` e permitido somente depois de rate limit/captcha;
 - nao grava email/IP em claro nos logs ou rate limit, apenas hashes com salt;
 - aplica rate limit antes de captcha e antes de verificar existencia de conta;
 - usa `auth.users` como fonte da verdade para evitar inconsistencias de `profiles.email`;
+- usa `profiles.role` apenas para decidir se uma conta `customer` pode receber magic link;
 - executa RPCs liberadas para `service_role`.
 
 Ponto de atencao: `SIGNUP_PRECHECK_HASH_SALT` deve ser longo, aleatorio e secreto. Se o fallback default for usado em producao, hashes ficam mais faceis de correlacionar.
@@ -166,7 +176,9 @@ Outcomes relevantes:
 - `captcha_secret_missing`
 - `captcha_missing`
 - `captcha_failed`
-- `existing_account_detected`
+- `existing_customer`
+- `existing_establishment`
+- `existing_account`
 - `allowed`
 - `internal_error`
 
@@ -175,7 +187,7 @@ Para debugar:
 - conferir secrets de Turnstile e salt;
 - verificar se `SIGNUP_PRECHECK_CAPTCHA_REQUIRED` esta alinhado com o widget frontend;
 - consultar `signup_precheck_rate_limits` por hashes quando possivel;
-- validar se `signup_precheck_auth_email_exists` foi aplicada pela migration;
+- validar se `signup_precheck_auth_account_status` foi aplicada pela migration;
 - checar logs de erro sem expor email, IP, JWT ou secrets.
 
 ### Cenarios de teste recomendados
@@ -187,7 +199,8 @@ Para debugar:
 - Captcha obrigatorio sem token retorna `403`.
 - Token Turnstile invalido retorna `403`.
 - Rate limit excedido retorna `429` com `retry_after_seconds`.
-- Email existente em `auth.users` retorna `can_proceed=false`.
+- Email existente com `profiles.role = customer` retorna `can_proceed=true` e `code=existing_customer`.
+- Email existente com `profiles.role = establishment` retorna `can_proceed=false`.
 - Email inexistente com captcha valido retorna `can_proceed=true`.
 
 ### Observacoes e riscos

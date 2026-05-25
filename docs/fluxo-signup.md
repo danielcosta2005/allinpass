@@ -7,6 +7,7 @@ Este documento resume o fluxo atual de cadastro do AllinPass para o plano `free_
 O signup segue este modelo:
 
 ```text
+Frontend -> signup-precheck
 Frontend -> supabase.auth.signUp
 Supabase Auth -> cria usuario em auth.users
 Frontend -> signup-finalize
@@ -18,6 +19,8 @@ Usuario -> /org
 A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha passa apenas pelo Supabase Auth.
 
 Os fluxos pagos `signup_start_checkout` e `signup_finalize_paid` ficaram para uma segunda etapa.
+
+Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. Ele envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`.
 
 ## Arquivos Principais
 
@@ -31,12 +34,23 @@ Os fluxos pagos `signup_start_checkout` e `signup_finalize_paid` ficaram para um
 
 1. Usuario acessa `/cadastro?plano=free-trial`.
 2. Frontend valida nome do estabelecimento, email e senha.
-3. Frontend chama `supabase.auth.signUp`.
-4. Supabase cria o usuario em `auth.users` e retorna uma sessao.
-5. Frontend chama `signup-finalize`.
-6. Edge Function cria/garante perfil, projeto, assinatura trial e estruturas iniciais.
-7. Frontend chama `refreshAuthProfile`.
-8. Usuario acessa `/org`.
+3. Frontend chama `signup-precheck`.
+4. Se o email estiver disponivel, frontend chama `supabase.auth.signUp`.
+5. Supabase cria o usuario em `auth.users` e retorna uma sessao.
+6. Frontend chama `signup-finalize`.
+7. Edge Function cria/garante perfil, projeto, assinatura trial e estruturas iniciais.
+8. Frontend chama `refreshAuthProfile`.
+9. Usuario acessa `/org`.
+
+## Fluxo Com Cliente Existente
+
+Se `signup-precheck` retornar `code = existing_customer`:
+
+1. Frontend nao chama `supabase.auth.signUp`.
+2. Frontend chama `supabase.auth.signInWithOtp` com `shouldCreateUser=false`.
+3. O magic link retorna para `/cadastro?plano=free-trial&finalizar=1&establishmentName=...&planCode=free_trial`.
+4. Ao voltar autenticado, a pagina chama `signup-finalize`.
+5. `signup-finalize` atualiza `profiles.role` para `establishment` e provisiona o projeto.
 
 ## Fluxo Com Confirmacao de Email
 
@@ -95,6 +109,7 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - Esses dados sempre vem de `billing_plans`.
 - A function aceita apenas `planCode = free_trial`.
 - A senha nunca passa pela Edge Function.
+- Para clientes existentes, a senha preenchida no formulario nao e usada; o acesso e confirmado por magic link.
 - `/cadastro` nao redireciona automaticamente durante o signup, para evitar conflito enquanto `profiles.role` muda de `customer` para `establishment`.
 - Depois do provisionamento, `refreshAuthProfile` recarrega `profiles` e `project_members`.
 
@@ -135,3 +150,4 @@ Para validar o fluxo:
 5. Conferir assinatura em `billing_subscriptions.status = 'trialing'`.
 6. Conferir `trial_ends_at` de acordo com `billing_plans.trial_days`.
 7. Conferir acesso a `/org`.
+8. Repetir com email de `customer` existente e conferir que o mesmo `auth.users.id` vira `establishment`.

@@ -22,7 +22,13 @@ import {
   isPaidPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
-import { finalizeFreeTrialSignup, precheckFreeTrialSignup } from '@/lib/signup';
+import {
+  clearExistingCustomerSignupContext,
+  finalizeFreeTrialSignup,
+  precheckFreeTrialSignup,
+  readExistingCustomerSignupContext,
+  sendExistingCustomerSignupLink,
+} from '@/lib/signup';
 import {
   TURNSTILE_SCRIPT_SRC,
   getTurnstileSiteKey,
@@ -245,7 +251,7 @@ function normalizeSignupErrorMessage(error) {
 
 function SignupPage() {
   const [searchParams] = useSearchParams();
-  const { signUp, refreshAuthProfile } = useAuth();
+  const { signUp, refreshAuthProfile, session: authSession } = useAuth();
   const { toast } = useToast();
   const finalizeFromRedirectRef = useRef(false);
   const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
@@ -260,6 +266,7 @@ function SignupPage() {
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
+  const [confirmationFlow, setConfirmationFlow] = useState('signup');
   const [acceptMockCheckout, setAcceptMockCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
@@ -339,9 +346,19 @@ function SignupPage() {
     return result;
   }, [refreshAuthProfile]);
 
-  const buildFreeTrialEmailRedirectTo = useCallback(() => {
+  const buildFreeTrialEmailRedirectTo = useCallback((metadata = {}) => {
     const planKey = selectedPlan?.key || 'free-trial';
-    return `${window.location.origin}/cadastro?plano=${encodeURIComponent(planKey)}&finalizar=1`;
+    const params = new URLSearchParams({
+      plano: planKey,
+      finalizar: '1',
+    });
+    const establishmentName = String(metadata.establishmentName || '').trim();
+    const planCode = String(metadata.planCode || '').trim();
+
+    if (establishmentName) params.set('establishmentName', establishmentName);
+    if (planCode) params.set('planCode', planCode);
+
+    return `${window.location.origin}/cadastro?${params.toString()}`;
   }, [selectedPlan?.key]);
 
   const handleStepOneSubmit = async (event) => {
@@ -381,6 +398,24 @@ function SignupPage() {
         captchaToken: signupCaptchaEnabled ? captchaToken : '',
       });
 
+      if (precheck.code === 'existing_customer') {
+        const emailRedirectTo = buildFreeTrialEmailRedirectTo({ establishmentName, planCode });
+        await sendExistingCustomerSignupLink({
+          email: normalizedEmail,
+          emailRedirectTo,
+          establishmentName,
+          planCode,
+        });
+
+        setConfirmationFlow('existing-customer');
+        setFinishedFlow('confirm-email');
+        toast({
+          title: 'Confira seu email',
+          description: 'Enviamos um link de acesso para finalizar seu Free Trial.',
+        });
+        return;
+      }
+
       if (!precheck.canProceed) {
         const message = precheck.message
           || 'Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.';
@@ -399,8 +434,10 @@ function SignupPage() {
       });
 
       if (error) throw error;
+      clearExistingCustomerSignupContext();
 
       if (!data?.session) {
+        setConfirmationFlow('signup');
         setFinishedFlow('confirm-email');
         toast({
           title: 'Confirme seu e-mail',
@@ -448,19 +485,33 @@ function SignupPage() {
     setResendLoading(true);
 
     try {
-      const { error } = await supabase.auth.resend({
-        type: 'signup',
-        email: normalizedEmail,
-        options: {
-          emailRedirectTo: buildFreeTrialEmailRedirectTo(),
-        },
-      });
+      if (confirmationFlow === 'existing-customer') {
+        await sendExistingCustomerSignupLink({
+          email: normalizedEmail,
+          emailRedirectTo: buildFreeTrialEmailRedirectTo({
+            establishmentName: formData.establishmentName.trim(),
+            planCode: selectedPlan?.code || 'free_trial',
+          }),
+          establishmentName: formData.establishmentName.trim(),
+          planCode: selectedPlan?.code || 'free_trial',
+        });
+      } else {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: normalizedEmail,
+          options: {
+            emailRedirectTo: buildFreeTrialEmailRedirectTo(),
+          },
+        });
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       toast({
         title: 'E-mail reenviado',
-        description: 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+        description: confirmationFlow === 'existing-customer'
+          ? 'Enviamos um novo link de acesso para finalizar o Free Trial.'
+          : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
       });
     } catch (error) {
       const message = normalizeSignupErrorMessage(error);
@@ -512,28 +563,46 @@ function SignupPage() {
   }, []);
 
   useEffect(() => {
-    if (!shouldFinalizeFromRedirect || finalizeFromRedirectRef.current) return;
+    const session = authSession;
+    const user = session?.user ?? null;
+    const existingCustomerContext = readExistingCustomerSignupContext();
+    const sessionEmail = String(user?.email || '').trim().toLowerCase();
+    const hasSignupProjectId = Boolean(user?.app_metadata?.signup_project_id);
+    const shouldFinalizeFromExistingCustomerContext =
+      !shouldFinalizeFromRedirect &&
+      !hasSignupProjectId &&
+      Boolean(user) &&
+      Boolean(existingCustomerContext) &&
+      existingCustomerContext.email === sessionEmail;
+    const shouldAttemptFinalize = shouldFinalizeFromRedirect || shouldFinalizeFromExistingCustomerContext;
 
-    finalizeFromRedirectRef.current = true;
+    if (!shouldAttemptFinalize || finalizeFromRedirectRef.current) return;
+
     setSignupLoading(true);
     setSignupError('');
 
+    if (!user) {
+      return;
+    }
+
+    finalizeFromRedirectRef.current = true;
+
     const finalizePendingSignup = async () => {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) throw error;
-        if (!session?.user) {
-          throw new Error('Sua sessão de cadastro não foi encontrada. Faça login para continuar.');
-        }
-
+        const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
+        const redirectPlanCode = String(searchParams.get('planCode') || '').trim();
         const establishmentName = String(
-          session.user.user_metadata?.establishment_name || '',
+          user.user_metadata?.establishment_name
+            || redirectEstablishmentName
+            || existingCustomerContext?.establishmentName
+            || '',
         ).trim();
-        const planCode = String(session.user.user_metadata?.plan_code || 'free_trial');
+        const planCode = String(
+          user.user_metadata?.plan_code
+            || redirectPlanCode
+            || existingCustomerContext?.planCode
+            || 'free_trial',
+        );
 
         if (!establishmentName) {
           throw new Error('Não encontramos o nome do estabelecimento neste cadastro.');
@@ -542,13 +611,14 @@ function SignupPage() {
         await provisionFreeTrial({
           establishmentName,
           planCode,
-          userId: session.user.id,
+          userId: user.id,
         });
+        clearExistingCustomerSignupContext();
         setFormData((previous) => ({
           ...previous,
           establishmentName,
-          email: session.user.email || previous.email,
-          emailConfirmation: session.user.email || previous.emailConfirmation,
+          email: user.email || previous.email,
+          emailConfirmation: user.email || previous.emailConfirmation,
         }));
         setFinishedFlow('trial');
       } catch (error) {
@@ -565,7 +635,7 @@ function SignupPage() {
     };
 
     finalizePendingSignup();
-  }, [provisionFreeTrial, shouldFinalizeFromRedirect, toast]);
+  }, [authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]);
 
   return (
     <>
@@ -938,13 +1008,16 @@ function SignupPage() {
                     className="rounded-2xl border border-sky-200 bg-sky-50 p-6"
                   >
                     <CheckCircle2 className="w-10 h-10 text-sky-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-sky-950">Confirme seu e-mail</h2>
+                    <h2 className="text-2xl font-bold text-sky-950">
+                      {confirmationFlow === 'existing-customer' ? 'Confira seu e-mail' : 'Confirme seu e-mail'}
+                    </h2>
                     <p className="text-sky-900 mt-2">
-                      Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
-                      finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!
+                      {confirmationFlow === 'existing-customer'
+                        ? `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
+                        : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Nao se esqueca de olhar o lixo eletronico!`}
                     </p>
                     <p className="text-sm text-sky-800 mt-3">
-                      Se o link não chegou, você pode pedir um novo envio sem refazer o cadastro.
+                      Se o link nao chegou, voce pode pedir um novo envio sem refazer o cadastro.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Button

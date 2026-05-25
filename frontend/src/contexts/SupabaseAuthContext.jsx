@@ -9,7 +9,11 @@ import React, {
 } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
-import { finalizeFreeTrialSignup } from '@/lib/signup';
+import {
+  clearExistingCustomerSignupContext,
+  finalizeFreeTrialSignup,
+  readExistingCustomerSignupContext,
+} from '@/lib/signup';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
@@ -52,11 +56,30 @@ function getPendingFreeTrialSignup(currentUser) {
   const establishmentName = String(metadata.establishment_name || '').trim();
   const planCode = String(metadata.plan_code || FREE_TRIAL_PLAN_CODE).trim();
 
-  if (!establishmentName || planCode !== FREE_TRIAL_PLAN_CODE || appMetadata.signup_project_id) {
+  if (appMetadata.signup_project_id) {
+    clearExistingCustomerSignupContext();
     return null;
   }
 
-  return { establishmentName, planCode };
+  if (establishmentName && planCode === FREE_TRIAL_PLAN_CODE) {
+    return { establishmentName, planCode };
+  }
+
+  const existingCustomerContext = readExistingCustomerSignupContext();
+  if (!existingCustomerContext) return null;
+
+  const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
+  if (!currentUserEmail || existingCustomerContext.email !== currentUserEmail) {
+    clearExistingCustomerSignupContext();
+    return null;
+  }
+
+  if (existingCustomerContext.planCode !== FREE_TRIAL_PLAN_CODE) return null;
+
+  return {
+    establishmentName: existingCustomerContext.establishmentName,
+    planCode: existingCustomerContext.planCode,
+  };
 }
 
 export const AuthProvider = ({ children }) => {
@@ -257,6 +280,7 @@ export const AuthProvider = ({ children }) => {
         ...pendingSignup,
         dedupeKey: `free-trial:${currentUser.id}`,
       });
+      clearExistingCustomerSignupContext();
       return getProfileAndProject(currentUser);
     } catch (error) {
       console.error('[auth] signup-finalize auto recovery failed', error);
@@ -331,7 +355,13 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
 
       if (currentUser) {
-        if (isClaimOrCallbackPath()) {
+        const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
+        const shouldAllowAutoFinalizeOnCallbackPath =
+          hasPendingSignup &&
+          !isSignupFinalizeCallbackPath() &&
+          (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
+
+        if (isClaimOrCallbackPath() && !shouldAllowAutoFinalizeOnCallbackPath) {
           setLoading(false);
           setInitialized(true);
           return;

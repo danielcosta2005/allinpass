@@ -51,14 +51,10 @@ const isAuthReturnUrl = () => {
 };
 
 const HomeRoute = () => {
-  const { user, loading, initialized } = useAuth();
+  const { loading, initialized } = useAuth();
   const shouldShowAuthReturnProgress = isAuthReturnUrl();
-  const shouldShowSessionProgress = Boolean(user) && (loading || !initialized);
 
-  if (
-    (shouldShowAuthReturnProgress && (loading || !initialized)) ||
-    shouldShowSessionProgress
-  ) {
+  if (shouldShowAuthReturnProgress && (loading || !initialized)) {
     return <AuthProgressScreen />;
   }
 

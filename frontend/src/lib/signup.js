@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabaseClient';
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
 const pendingFinalizeRequests = new Map();
 const completedFinalizeRequests = new Map();
+const EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY = '__allinpass_existing_customer_signup_context_v1';
+const EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
 
 async function readFunctionError(error) {
   if (error?.context && typeof error.context.clone === 'function') {
@@ -29,6 +31,84 @@ function buildSignupError(message, code = null) {
   const nextError = new Error(message);
   if (code) nextError.code = code;
   return nextError;
+}
+
+function safeReadExistingCustomerSignupContextRaw() {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearExistingCustomerSignupContext() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function readExistingCustomerSignupContext() {
+  const raw = safeReadExistingCustomerSignupContextRaw();
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const email = String(parsed?.email || '').trim().toLowerCase();
+    const establishmentName = String(parsed?.establishmentName || '').trim();
+    const planCode = String(parsed?.planCode || 'free_trial').trim().toLowerCase();
+    const createdAt = Number(parsed?.createdAt || 0);
+    const now = Date.now();
+    const expired = !Number.isFinite(createdAt) || createdAt <= 0 || now - createdAt > EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS;
+
+    if (!email || !establishmentName || expired) {
+      clearExistingCustomerSignupContext();
+      return null;
+    }
+
+    return {
+      email,
+      establishmentName,
+      planCode: planCode || 'free_trial',
+      createdAt,
+    };
+  } catch {
+    clearExistingCustomerSignupContext();
+    return null;
+  }
+}
+
+export function rememberExistingCustomerSignupContext({
+  email,
+  establishmentName,
+  planCode = 'free_trial',
+}) {
+  if (typeof window === 'undefined') return;
+
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedEstablishmentName = String(establishmentName || '').trim();
+  const normalizedPlanCode = String(planCode || 'free_trial').trim().toLowerCase();
+
+  if (!normalizedEmail || !normalizedEstablishmentName) {
+    clearExistingCustomerSignupContext();
+    return;
+  }
+
+  const payload = {
+    email: normalizedEmail,
+    establishmentName: normalizedEstablishmentName,
+    planCode: normalizedPlanCode || 'free_trial',
+    createdAt: Date.now(),
+  };
+
+  try {
+    window.localStorage.setItem(EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
 }
 
 function buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode }) {
@@ -102,6 +182,31 @@ export async function finalizeFreeTrialSignup({
   } finally {
     pendingFinalizeRequests.delete(requestKey);
   }
+}
+
+export async function sendExistingCustomerSignupLink({
+  email,
+  emailRedirectTo,
+  establishmentName,
+  planCode = 'free_trial',
+}) {
+  rememberExistingCustomerSignupContext({ email, establishmentName, planCode });
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      shouldCreateUser: false,
+      emailRedirectTo,
+    },
+  });
+
+  if (error) {
+    clearExistingCustomerSignupContext();
+    const parsedError = await readFunctionError(error);
+    throw buildSignupError(parsedError.message, parsedError.code);
+  }
+
+  return { success: true };
 }
 
 export async function precheckFreeTrialSignup({ email, establishmentName, captchaToken = '' }) {

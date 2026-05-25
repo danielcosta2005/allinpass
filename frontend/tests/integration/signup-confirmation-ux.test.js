@@ -26,6 +26,26 @@ describe("signup confirmation UX", () => {
     expect(confirmEmailBlock).not.toContain("Voltar aos planos");
   });
 
+  test("existing customer precheck sends a passwordless login link without creating a new auth user", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const signupClientSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/lib/signup.js"),
+      "utf8"
+    );
+
+    expect(signupPageSource).toContain("precheck.code === 'existing_customer'");
+    expect(signupPageSource).toContain("sendExistingCustomerSignupLink");
+    expect(signupPageSource).toContain("buildFreeTrialEmailRedirectTo({ establishmentName, planCode })");
+    expect(signupPageSource).toContain("searchParams.get('establishmentName')");
+    expect(signupPageSource).toContain("setFinishedFlow('confirm-email')");
+    expect(signupClientSource).toContain("supabase.auth.signInWithOtp");
+    expect(signupClientSource).toContain("shouldCreateUser: false");
+    expect(signupClientSource).toContain("emailRedirectTo");
+  });
+
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {
     const appSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/App.jsx"),
