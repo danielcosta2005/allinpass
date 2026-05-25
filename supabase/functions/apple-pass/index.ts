@@ -1,7 +1,10 @@
 // supabase/functions/apple-pass/index.ts
 /// <reference types="https://deno.land/x/deno/cli/types/dts/index.d.ts" />
 
-import { serve, type Request } from "https://deno.land/std@0.224.0/http/server.ts";
+import {
+  type Request,
+  serve,
+} from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { Template } from "npm:@walletpass/pass-js@6.9.1";
 import { decodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
@@ -45,7 +48,8 @@ class ApiError extends Error {
   }
 }
 
-const DEFAULT_LOCATION_RELEVANT_TEXT = "Aproveite que está por perto e venha conferir as melhores ofertas!";
+const DEFAULT_LOCATION_RELEVANT_TEXT =
+  "Aproveite que está por perto e venha conferir as melhores ofertas!";
 
 function cleanString(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -68,7 +72,8 @@ function ensureHttpUrl(v: unknown): string | null {
 function corsHeaders(origin?: string) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   };
 }
@@ -177,7 +182,11 @@ function storagePublicUrl(path: string) {
   return `${SUPABASE_URL}/storage/v1/object/public/pass-assets/${path}`;
 }
 
-function decodePemOrBase64(value: string, name: string, requestId: string): string {
+function decodePemOrBase64(
+  value: string,
+  name: string,
+  requestId: string,
+): string {
   try {
     const trimmed = value.trim();
     const pemText = trimmed.includes("BEGIN")
@@ -222,10 +231,19 @@ function resolveIdentifier(
   defaults: any,
   key: "passTypeIdentifier" | "teamIdentifier",
 ): string | null {
-  const paths =
-    key === "passTypeIdentifier"
-      ? ["passTypeIdentifier", "pass.passTypeIdentifier", "pass_type_identifier", "pass.pass_type_identifier"]
-      : ["teamIdentifier", "pass.teamIdentifier", "team_identifier", "pass.team_identifier"];
+  const paths = key === "passTypeIdentifier"
+    ? [
+      "passTypeIdentifier",
+      "pass.passTypeIdentifier",
+      "pass_type_identifier",
+      "pass.pass_type_identifier",
+    ]
+    : [
+      "teamIdentifier",
+      "pass.teamIdentifier",
+      "team_identifier",
+      "pass.team_identifier",
+    ];
 
   for (const p of paths) {
     const s = cleanString(getPath(defaults, p));
@@ -243,12 +261,21 @@ function forcePassRequiredFields(
     teamIdentifier: string;
   },
 ) {
-  const { description, organizationName, passTypeIdentifier, teamIdentifier } = required;
+  const { description, organizationName, passTypeIdentifier, teamIdentifier } =
+    required;
 
-  try { pass.description = description; } catch {}
-  try { pass.organizationName = organizationName; } catch {}
-  try { pass.passTypeIdentifier = passTypeIdentifier; } catch {}
-  try { pass.teamIdentifier = teamIdentifier; } catch {}
+  try {
+    pass.description = description;
+  } catch {}
+  try {
+    pass.organizationName = organizationName;
+  } catch {}
+  try {
+    pass.passTypeIdentifier = passTypeIdentifier;
+  } catch {}
+  try {
+    pass.teamIdentifier = teamIdentifier;
+  } catch {}
 }
 
 function mapTemplateStyle(typeRaw: unknown): AppleStyle {
@@ -352,12 +379,17 @@ function formatPoints(points: number) {
   return points === 1 ? "1 ponto" : `${points} pontos`;
 }
 
-function buildPointsChangeMessage(points: number | null, rewards: AvailableReward[]) {
+function buildPointsChangeMessage(
+  points: number | null,
+  rewards: AvailableReward[],
+) {
   const rewardNames = formatRewardNames(rewards);
   if (!rewardNames) return "Você agora tem %@ pontos";
 
   const pointsLabel = points === 1 ? "ponto" : "pontos";
-  return truncateChangeMessage(`Você agora tem %@ ${pointsLabel} e pode resgatar: ${rewardNames}.`);
+  return truncateChangeMessage(
+    `Você agora tem %@ ${pointsLabel} e pode resgatar: ${rewardNames}.`,
+  );
 }
 
 async function loadAvailableRewardsForPoints(
@@ -376,14 +408,20 @@ async function loadAvailableRewardsForPoints(
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.warn("[apple-pass] rewards lookup failed (ignored):", error.message);
+    console.warn(
+      "[apple-pass] rewards lookup failed (ignored):",
+      error.message,
+    );
     return [];
   }
 
   return normalizeRewards(data);
 }
 
-function buildAppleFields(finalPassData: any) {
+function buildAppleFields(
+  finalPassData: any,
+  options: { suppressPointsNotification?: boolean } = {},
+) {
   const fields = finalPassData?.fields ?? {};
   const points = pickFirstPoints(fields);
   const numericPoints = parsePointsValue(points);
@@ -407,7 +445,12 @@ function buildAppleFields(finalPassData: any) {
         key: "points",
         label: "PONTOS",
         value: String(points),
-        changeMessage: buildPointsChangeMessage(numericPoints, rewardsAvailable),
+        ...(options.suppressPointsNotification ? {} : {
+          changeMessage: buildPointsChangeMessage(
+            numericPoints,
+            rewardsAvailable,
+          ),
+        }),
       },
     ],
     secondaryFields: [],
@@ -424,7 +467,9 @@ function buildAppleFields(finalPassData: any) {
 
 function toNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) {
+    return Number(v);
+  }
   return null;
 }
 
@@ -445,7 +490,10 @@ async function resolvePassIdForLocations(
     .maybeSingle();
 
   if (error) {
-    throw upstreamError("pass_lookup_failed", `Erro ao resolver pass_id por short_code: ${error.message}`);
+    throw upstreamError(
+      "pass_lookup_failed",
+      `Erro ao resolver pass_id por short_code: ${error.message}`,
+    );
   }
 
   return cleanString((data as any)?.id);
@@ -457,7 +505,12 @@ async function loadPassLocationsApple(
   passId: string | null,
   shortCode: string | null,
 ) {
-  const resolvedPassId = await resolvePassIdForLocations(sb, projectId, passId, shortCode);
+  const resolvedPassId = await resolvePassIdForLocations(
+    sb,
+    projectId,
+    passId,
+    shortCode,
+  );
   if (!resolvedPassId) return [];
 
   const { data: mapRows, error: mapError } = await sb
@@ -468,10 +521,19 @@ async function loadPassLocationsApple(
     .limit(100);
 
   if (mapError) {
-    throw upstreamError("pass_locations_lookup_failed", `Erro ao buscar pass_locations: ${mapError.message}`);
+    throw upstreamError(
+      "pass_locations_lookup_failed",
+      `Erro ao buscar pass_locations: ${mapError.message}`,
+    );
   }
 
-  const locationIds = [...new Set((mapRows ?? []).map((row: any) => cleanString(row.location_id)).filter(Boolean) as string[])];
+  const locationIds = [
+    ...new Set(
+      (mapRows ?? []).map((row: any) => cleanString(row.location_id)).filter(
+        Boolean,
+      ) as string[],
+    ),
+  ];
   if (locationIds.length === 0) return [];
 
   const { data: locations, error: locationsError } = await sb
@@ -482,7 +544,10 @@ async function loadPassLocationsApple(
     .limit(100);
 
   if (locationsError) {
-    throw upstreamError("locations_lookup_failed", `Erro ao buscar locations por pass_locations: ${locationsError.message}`);
+    throw upstreamError(
+      "locations_lookup_failed",
+      `Erro ao buscar locations por pass_locations: ${locationsError.message}`,
+    );
   }
 
   const order = new Map(locationIds.map((id, index) => [id, index]));
@@ -501,13 +566,26 @@ async function loadPassLocationsApple(
       };
     })
     .filter(Boolean)
-    .sort((a: any, b: any) => (order.get(a.id ?? "") ?? 999) - (order.get(b.id ?? "") ?? 999))
+    .sort((a: any, b: any) =>
+      (order.get(a.id ?? "") ?? 999) - (order.get(b.id ?? "") ?? 999)
+    )
     .slice(0, 10);
 
-  return cleaned as Array<{ id: string | null; label: string | null; description: string | null; lat: number; lng: number }>;
+  return cleaned as Array<
+    {
+      id: string | null;
+      label: string | null;
+      description: string | null;
+      lat: number;
+      lng: number;
+    }
+  >;
 }
 
-async function loadProjectName(sb: ReturnType<typeof createClient>, projectId: string): Promise<string | null> {
+async function loadProjectName(
+  sb: ReturnType<typeof createClient>,
+  projectId: string,
+): Promise<string | null> {
   const { data, error } = await sb
     .from("projects")
     .select("name")
@@ -515,7 +593,10 @@ async function loadProjectName(sb: ReturnType<typeof createClient>, projectId: s
     .maybeSingle();
 
   if (error) {
-    throw upstreamError("project_lookup_failed", `Erro ao buscar project.name: ${error.message}`);
+    throw upstreamError(
+      "project_lookup_failed",
+      `Erro ao buscar project.name: ${error.message}`,
+    );
   }
 
   const name = cleanString((data as any)?.name);
@@ -536,26 +617,46 @@ async function loadByToken(token: string) {
 
   const { data: up, error: eUp } = await sb
     .from("user_passes")
-    .select("id, pass_id, pass_token, issued_at, expires_at, pass_type, metadata")
+    .select(
+      "id, pass_id, pass_token, issued_at, expires_at, pass_type, metadata",
+    )
     .eq("pass_token", token)
     .maybeSingle();
   if (eUp) {
-    throw upstreamError("user_pass_lookup_failed", `Erro ao buscar user_passes: ${eUp.message}`);
+    throw upstreamError(
+      "user_pass_lookup_failed",
+      `Erro ao buscar user_passes: ${eUp.message}`,
+    );
   }
   if (!up) {
-    throw validationError("invalid_token", "Token inválido ou não encontrado.", { field: "token" }, false);
+    throw validationError(
+      "invalid_token",
+      "Token inválido ou não encontrado.",
+      { field: "token" },
+      false,
+    );
   }
 
   const { data: passRow, error: eP } = await sb
     .from("passes")
-    .select("id, project_id, type, title, description, fields, design, short_code")
+    .select(
+      "id, project_id, type, title, description, fields, design, short_code",
+    )
     .eq("id", up.pass_id)
     .maybeSingle();
   if (eP) {
-    throw upstreamError("pass_lookup_failed", `Erro ao buscar passes: ${eP.message}`);
+    throw upstreamError(
+      "pass_lookup_failed",
+      `Erro ao buscar passes: ${eP.message}`,
+    );
   }
   if (!passRow) {
-    throw validationError("pass_not_found_for_token", "Passe não encontrado para este token.", { token }, false);
+    throw validationError(
+      "pass_not_found_for_token",
+      "Passe não encontrado para este token.",
+      { token },
+      false,
+    );
   }
 
   const { data: walletTemplateRaw, error: templateError } = await sb
@@ -564,7 +665,10 @@ async function loadByToken(token: string) {
     .eq("project_id", passRow.project_id)
     .maybeSingle();
   if (templateError) {
-    throw upstreamError("project_template_lookup_failed", "Erro ao buscar template do projeto.");
+    throw upstreamError(
+      "project_template_lookup_failed",
+      "Erro ao buscar template do projeto.",
+    );
   }
 
   const { data: globalTemplateRaw, error: globalTemplateError } = await sb
@@ -573,7 +677,10 @@ async function loadByToken(token: string) {
     .is("project_id", null)
     .maybeSingle();
   if (globalTemplateError) {
-    throw upstreamError("global_template_lookup_failed", "Erro ao buscar template global.");
+    throw upstreamError(
+      "global_template_lookup_failed",
+      "Erro ao buscar template global.",
+    );
   }
 
   const templateDefaults = normalizeDefaults(walletTemplateRaw?.defaults);
@@ -588,18 +695,28 @@ async function loadPassRowByReference(
   passId: string | null,
   shortCode: string | null,
 ) {
-  const resolvedPassId = await resolvePassIdForLocations(sb, projectId, passId, shortCode);
+  const resolvedPassId = await resolvePassIdForLocations(
+    sb,
+    projectId,
+    passId,
+    shortCode,
+  );
   if (!resolvedPassId) return null;
 
   const { data, error } = await sb
     .from("passes")
-    .select("id, project_id, type, title, description, fields, design, short_code")
+    .select(
+      "id, project_id, type, title, description, fields, design, short_code",
+    )
     .eq("project_id", projectId)
     .eq("id", resolvedPassId)
     .maybeSingle();
 
   if (error) {
-    throw upstreamError("pass_lookup_failed", `Erro ao buscar passe por referencia: ${error.message}`);
+    throw upstreamError(
+      "pass_lookup_failed",
+      `Erro ao buscar passe por referencia: ${error.message}`,
+    );
   }
 
   return data;
@@ -623,7 +740,12 @@ function readPngMetadata(bytes: Uint8Array, assetName: string) {
     }
   }
 
-  const chunkType = String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+  const chunkType = String.fromCharCode(
+    bytes[12],
+    bytes[13],
+    bytes[14],
+    bytes[15],
+  );
   if (chunkType !== "IHDR") {
     throw validationError(
       "apple_asset_missing_ihdr",
@@ -647,7 +769,10 @@ function readPngMetadata(bytes: Uint8Array, assetName: string) {
     );
   }
 
-  if (compressionMethod !== 0 || filterMethod !== 0 || (interlaceMethod !== 0 && interlaceMethod !== 1)) {
+  if (
+    compressionMethod !== 0 || filterMethod !== 0 ||
+    (interlaceMethod !== 0 && interlaceMethod !== 1)
+  ) {
     throw validationError(
       "apple_asset_invalid_properties",
       `${assetName} inválido: propriedades PNG incompatíveis com o pacote do passe.`,
@@ -700,7 +825,8 @@ function detectAppleLogoDensity(width: number, height: number): Density {
         { density: "2x", maxWidth: 320, maxHeight: 100 },
         { density: "3x", maxWidth: 480, maxHeight: 150 },
       ],
-      documentation: "Apple PassKit: logo.png is shown on all pass styles and should fit within 160x50 points.",
+      documentation:
+        "Apple PassKit: logo.png is shown on all pass styles and should fit within 160x50 points.",
     }),
   );
 }
@@ -724,7 +850,11 @@ async function createAppleLogoVariants(logoBytes: Uint8Array) {
   };
 }
 
-function detectAppleStripDensity(style: AppleStyle, width: number, height: number): Density {
+function detectAppleStripDensity(
+  style: AppleStyle,
+  width: number,
+  height: number,
+): Density {
   if (style === "generic") {
     throw validationError(
       "apple_strip_unsupported_for_style",
@@ -740,30 +870,34 @@ function detectAppleStripDensity(style: AppleStyle, width: number, height: numbe
   // valid PNG strip and packaged it as a high-density asset.
   return "3x";
 
-  const allowed =
-    style === "eventTicket"
-      ? [
-          { density: "1x", width: 375, height: 98 },
-          { density: "2x", width: 750, height: 196 },
-          { density: "3x", width: 1125, height: 294 },
-        ]
-      : [
-          { density: "1x", width: 375, height: 144 },
-          { density: "2x", width: 750, height: 288 },
-          { density: "3x", width: 1125, height: 432 },
-        ];
+  const allowed = style === "eventTicket"
+    ? [
+      { density: "1x", width: 375, height: 98 },
+      { density: "2x", width: 750, height: 196 },
+      { density: "3x", width: 1125, height: 294 },
+    ]
+    : [
+      { density: "1x", width: 375, height: 144 },
+      { density: "2x", width: 750, height: 288 },
+      { density: "3x", width: 1125, height: 432 },
+    ];
 
-  const matched = allowed.find((size) => size.width === width && size.height === height);
+  const matched = allowed.find((size) =>
+    size.width === width && size.height === height
+  );
   if (matched) return matched.density as Density;
 
   throw validationError(
     "apple_strip_invalid_dimensions",
-    `Apple Strip inválida para ${styleLabel(style)}: ${width}x${height}px. Reenvie um PNG exatamente em um dos tamanhos suportados.`,
+    `Apple Strip inválida para ${
+      styleLabel(style)
+    }: ${width}x${height}px. Reenvie um PNG exatamente em um dos tamanhos suportados.`,
     createAssetDetails("appleStrip", "images.appleStrip", "Apple Strip", {
       style,
       actual: { width, height, unit: "px" },
       expected: allowed,
-      documentation: "Use strip.png apenas nos estilos suportados, no tamanho correto para o layout do passe.",
+      documentation:
+        "Use strip.png apenas nos estilos suportados, no tamanho correto para o layout do passe.",
     }),
   );
 }
@@ -829,10 +963,15 @@ async function fetchValidatedPngAsset(params: {
   const response = await fetch(params.url);
 
   if (!response.ok) {
-    const details = createAssetDetails(params.key, params.field, params.displayName, {
-      url: params.url,
-      httpStatus: response.status,
-    });
+    const details = createAssetDetails(
+      params.key,
+      params.field,
+      params.displayName,
+      {
+        url: params.url,
+        httpStatus: response.status,
+      },
+    );
 
     if (params.isFallback) {
       throw configError(
@@ -876,10 +1015,15 @@ async function fetchValidatedPngAsset(params: {
   } as ResolvedAsset;
 }
 
-function assertNoUnsupportedImageCombination(style: AppleStyle, mergedImages: any) {
+function assertNoUnsupportedImageCombination(
+  style: AppleStyle,
+  mergedImages: any,
+) {
   const hasStrip = !!cleanString(mergedImages?.appleStrip);
-  const hasBackground = !!cleanString(mergedImages?.background) || !!cleanString(mergedImages?.appleBackground);
-  const hasThumbnail = !!cleanString(mergedImages?.thumbnail) || !!cleanString(mergedImages?.appleThumbnail);
+  const hasBackground = !!cleanString(mergedImages?.background) ||
+    !!cleanString(mergedImages?.appleBackground);
+  const hasThumbnail = !!cleanString(mergedImages?.thumbnail) ||
+    !!cleanString(mergedImages?.appleThumbnail);
 
   if (style === "generic" && hasStrip) {
     throw validationError(
@@ -912,12 +1056,10 @@ async function resolveAndValidateAssets(params: {
 }) {
   assertNoUnsupportedImageCombination(params.style, params.mergedImages);
 
-  const iconUrl =
-    ensureHttpUrl(params.mergedImages?.icon) ??
+  const iconUrl = ensureHttpUrl(params.mergedImages?.icon) ??
     storagePublicUrl("templates/default/icon.png");
 
-  const logoUrl =
-    ensureHttpUrl(params.mergedImages?.appleLogo) ??
+  const logoUrl = ensureHttpUrl(params.mergedImages?.appleLogo) ??
     ensureHttpUrl(params.mergedImages?.logo) ??
     storagePublicUrl("templates/default/logo.png");
 
@@ -950,13 +1092,19 @@ async function resolveAndValidateAssets(params: {
     }),
     fetchValidatedPngAsset({
       key: "appleLogo",
-      field: cleanString(params.mergedImages?.appleLogo) ? "images.appleLogo" : "images.logo",
+      field: cleanString(params.mergedImages?.appleLogo)
+        ? "images.appleLogo"
+        : "images.logo",
       displayName: "Logo Apple",
       url: logoUrl,
-      isFallback: !cleanString(params.mergedImages?.appleLogo) && !cleanString(params.mergedImages?.logo),
+      isFallback: !cleanString(params.mergedImages?.appleLogo) &&
+        !cleanString(params.mergedImages?.logo),
     }).then((asset) => ({
       ...asset,
-      density: detectAppleLogoDensity(asset.metadata.width, asset.metadata.height),
+      density: detectAppleLogoDensity(
+        asset.metadata.width,
+        asset.metadata.height,
+      ),
     })),
   ];
 
@@ -970,7 +1118,11 @@ async function resolveAndValidateAssets(params: {
         isFallback: false,
       }).then((asset) => ({
         ...asset,
-        density: detectAppleStripDensity(params.style, asset.metadata.width, asset.metadata.height),
+        density: detectAppleStripDensity(
+          params.style,
+          asset.metadata.width,
+          asset.metadata.height,
+        ),
       })),
     );
   }
@@ -1006,11 +1158,11 @@ function buildValidationResult(params: {
       },
       appleStrip: params.assets.appleStrip
         ? {
-            width: params.assets.appleStrip.metadata.width,
-            height: params.assets.appleStrip.metadata.height,
-            field: params.assets.appleStrip.field,
-            density: params.assets.appleStrip.density,
-          }
+          width: params.assets.appleStrip.metadata.width,
+          height: params.assets.appleStrip.metadata.height,
+          field: params.assets.appleStrip.field,
+          density: params.assets.appleStrip.density,
+        }
         : null,
     },
   };
@@ -1026,15 +1178,25 @@ serve(async (req: Request) => {
 
   try {
     let tokenFromQuery: string | null = null;
+    let suppressPointsNotification = false;
     if (req.method === "GET") {
       const url = new URL(req.url);
       tokenFromQuery = url.searchParams.get("token");
+      suppressPointsNotification =
+        url.searchParams.get("suppress_points_notification") === "1";
       if (!tokenFromQuery) {
-        throw validationError("missing_token", "Missing token", { field: "token" }, false);
+        throw validationError("missing_token", "Missing token", {
+          field: "token",
+        }, false);
       }
     }
 
-    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
+    const body = req.method === "POST"
+      ? await req.json().catch(() => ({}))
+      : {};
+    if (req.method === "POST") {
+      suppressPointsNotification = body?.suppress_points_notification === true;
+    }
     const validateOnly = body?.validate_only === true;
 
     let project_id = body?.project_id ?? null;
@@ -1073,7 +1235,12 @@ serve(async (req: Request) => {
     }
 
     if (!project_id) {
-      throw validationError("missing_project_id", "O campo project_id é obrigatório.", { field: "project_id" }, false);
+      throw validationError(
+        "missing_project_id",
+        "O campo project_id é obrigatório.",
+        { field: "project_id" },
+        false,
+      );
     }
 
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -1090,8 +1257,7 @@ serve(async (req: Request) => {
     }
 
     if (!passRow) {
-      const explicitPassId =
-        cleanString(pass_data?.pass_id) ??
+      const explicitPassId = cleanString(pass_data?.pass_id) ??
         cleanString(pass_data?.id) ??
         cleanString(body?.pass_id);
       const explicitShortCode = cleanString(pass_data?.short_code);
@@ -1120,7 +1286,11 @@ serve(async (req: Request) => {
     }
 
     const projectName = await loadProjectName(sb, project_id);
-    const finalPassData: any = { ...globalDefaults, ...templateDefaults, ...pass_data };
+    const finalPassData: any = {
+      ...globalDefaults,
+      ...templateDefaults,
+      ...pass_data,
+    };
 
     if (passRow) {
       const passDesign = normalizeDefaults(passRow?.design);
@@ -1128,12 +1298,18 @@ serve(async (req: Request) => {
       finalPassData.images = normalizeDefaults(passDesign?.images);
     }
 
-    const currentPoints = parsePointsValue(pickFirstPoints(finalPassData?.fields ?? {}));
-    finalPassData.rewards_available = await loadAvailableRewardsForPoints(sb, project_id, currentPoints);
+    const currentPoints = parsePointsValue(
+      pickFirstPoints(finalPassData?.fields ?? {}),
+    );
+    finalPassData.rewards_available = await loadAvailableRewardsForPoints(
+      sb,
+      project_id,
+      currentPoints,
+    );
 
-    const resolvedSerialNumber = cleanString(finalPassData.serialNumber) ?? crypto.randomUUID();
-    const resolvedDescription =
-      cleanString(finalPassData.description) ??
+    const resolvedSerialNumber = cleanString(finalPassData.serialNumber) ??
+      crypto.randomUUID();
+    const resolvedDescription = cleanString(finalPassData.description) ??
       cleanString(templateDefaults.description) ??
       cleanString(globalDefaults.description) ??
       "Cartão de fidelidade";
@@ -1144,13 +1320,12 @@ serve(async (req: Request) => {
 
     const resolvedPassTypeIdentifier =
       cleanString(finalPassData.passTypeIdentifier) ??
-      resolveIdentifier(templateDefaults, "passTypeIdentifier") ??
-      resolveIdentifier(globalDefaults, "passTypeIdentifier") ??
-      cleanString(getPath(finalPassData, "pass.passTypeIdentifier")) ??
-      envPassType;
+        resolveIdentifier(templateDefaults, "passTypeIdentifier") ??
+        resolveIdentifier(globalDefaults, "passTypeIdentifier") ??
+        cleanString(getPath(finalPassData, "pass.passTypeIdentifier")) ??
+        envPassType;
 
-    const resolvedTeamIdentifier =
-      cleanString(finalPassData.teamIdentifier) ??
+    const resolvedTeamIdentifier = cleanString(finalPassData.teamIdentifier) ??
       resolveIdentifier(templateDefaults, "teamIdentifier") ??
       resolveIdentifier(globalDefaults, "teamIdentifier") ??
       cleanString(getPath(finalPassData, "pass.teamIdentifier")) ??
@@ -1168,13 +1343,13 @@ serve(async (req: Request) => {
     const colors = mapColors(finalPassData.colors);
     const mergedImages = passRow
       ? {
-          ...(finalPassData?.images ?? {}),
-        }
+        ...(finalPassData?.images ?? {}),
+      }
       : {
-          ...(globalDefaults?.images ?? {}),
-          ...(templateDefaults?.images ?? {}),
-          ...(pass_data?.images ?? {}),
-        };
+        ...(globalDefaults?.images ?? {}),
+        ...(templateDefaults?.images ?? {}),
+        ...(pass_data?.images ?? {}),
+      };
 
     const assets = await resolveAndValidateAssets({
       mergedImages,
@@ -1182,19 +1357,24 @@ serve(async (req: Request) => {
     });
 
     if (validateOnly) {
-      return jsonResponse({
-        ...buildValidationResult({ style, assets }),
-        requestId,
-      }, 200, origin);
+      return jsonResponse(
+        {
+          ...buildValidationResult({ style, assets }),
+          requestId,
+        },
+        200,
+        origin,
+      );
     }
 
-    const qrMessage =
-      cleanString(finalPassData.qrMessage) ??
+    const qrMessage = cleanString(finalPassData.qrMessage) ??
       cleanString(finalPassData.qr_url) ??
       cleanString(finalPassData.universal_url) ??
       resolvedSerialNumber;
 
-    const appleFields = buildAppleFields(finalPassData);
+    const appleFields = buildAppleFields(finalPassData, {
+      suppressPointsNotification,
+    });
 
     const applePayload: any = {
       description: resolvedDescription,
@@ -1212,13 +1392,11 @@ serve(async (req: Request) => {
       ],
     };
 
-    const resolvedPassId =
-      cleanString(finalPassData.pass_id) ??
+    const resolvedPassId = cleanString(finalPassData.pass_id) ??
       cleanString(finalPassData.id) ??
       cleanString(passRow?.id);
 
-    const resolvedShortCode =
-      cleanString(finalPassData.short_code) ??
+    const resolvedShortCode = cleanString(finalPassData.short_code) ??
       cleanString(passRow?.short_code);
 
     const passLocations = await loadPassLocationsApple(
@@ -1232,7 +1410,8 @@ serve(async (req: Request) => {
       applePayload.locations = passLocations.map((l) => ({
         latitude: l.lat,
         longitude: l.lng,
-        relevantText: cleanString(l.description) ?? DEFAULT_LOCATION_RELEVANT_TEXT,
+        relevantText: cleanString(l.description) ??
+          DEFAULT_LOCATION_RELEVANT_TEXT,
       }));
     }
 
@@ -1262,16 +1441,23 @@ serve(async (req: Request) => {
       );
     }
 
-    const certificate = decodePemOrBase64(certEnv, "CERTIFICATE_PEM", requestId);
+    const certificate = decodePemOrBase64(
+      certEnv,
+      "CERTIFICATE_PEM",
+      requestId,
+    );
     const privateKey = decodePemOrBase64(keyEnv, "PRIVATE_KEY_PEM", requestId);
 
     const signerSecret = cleanString(Deno.env.get("SIGNER_SECRET"));
-    if (signerSecret) (template as any).setCertificate(certificate, signerSecret);
-    else (template as any).setCertificate(certificate);
+    if (signerSecret) {
+      (template as any).setCertificate(certificate, signerSecret);
+    } else (template as any).setCertificate(certificate);
 
     (template as any).setPrivateKey(privateKey);
 
-    const pass = (template as any).createPass({ serialNumber: resolvedSerialNumber });
+    const pass = (template as any).createPass({
+      serialNumber: resolvedSerialNumber,
+    });
 
     forcePassRequiredFields(pass, {
       description: resolvedDescription,
@@ -1281,7 +1467,9 @@ serve(async (req: Request) => {
     });
 
     const images = (pass as any).images;
-    const { logo1xBytes, logo3xBytes } = await createAppleLogoVariants(assets.appleLogo.bytes);
+    const { logo1xBytes, logo3xBytes } = await createAppleLogoVariants(
+      assets.appleLogo.bytes,
+    );
 
     await images.add("icon", Buffer.from(assets.icon.bytes));
 
@@ -1298,7 +1486,8 @@ serve(async (req: Request) => {
       headers: {
         ...corsHeaders(origin),
         "Content-Type": "application/vnd.apple.pkpass",
-        "Content-Disposition": `attachment; filename="pass_${project_id}.pkpass"`,
+        "Content-Disposition":
+          `attachment; filename="pass_${project_id}.pkpass"`,
       },
     });
   } catch (err: unknown) {
