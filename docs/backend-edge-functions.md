@@ -40,7 +40,8 @@ Pode ser chamada pelo frontend publico, sem sessao autenticada. Por isso, a func
 10. Quando ha token e secret, valida o token no Cloudflare Turnstile.
 11. Classifica o email pela RPC `signup_precheck_auth_account_status`, cruzando `auth.users` com `profiles.role`.
 12. Grava logs sanitizados em `function_logs`.
-13. Retorna `can_proceed = true` para email novo ou para `existing_customer`, que segue por magic link em vez de `signUp`.
+13. Para `existing_customer`, grava uma intencao em `signup_existing_customer_intents` com email, estabelecimento e plano.
+14. Retorna `can_proceed = true` para email novo ou para `existing_customer`, que segue por magic link em vez de `signUp`.
 
 ### Fluxo interno
 
@@ -52,6 +53,7 @@ Frontend publico
   -> consume_signup_precheck_rate_limit
   -> valida Turnstile quando requerido
   -> signup_precheck_auth_account_status(auth.users + profiles.role)
+  -> grava signup_existing_customer_intents quando existing_customer
   -> grava function_logs
   -> retorna can_proceed
 ```
@@ -123,6 +125,7 @@ Em bloqueio ou indisponibilidade:
 | `public.signup_precheck_rate_limits` | `select`, `insert`, `update` via RPC | Guarda tentativas por hash de IP/email, janela, bloqueio e `last_seen_at`. |
 | `auth.users` | `select` via RPC | Fonte da verdade para existencia de conta por email. Ignora usuarios deletados (`deleted_at is null`). |
 | `public.profiles` | `select` via RPC | Classifica a conta existente por `role`, sem depender de `profiles.email`. |
+| `public.signup_existing_customer_intents` | `upsert` | Guarda a intencao de Free Trial para conta `customer` existente, permitindo finalizar em outro dispositivo. |
 | `public.function_logs` | `insert` | Logs sanitizados com hashes, outcome, tentativas e duracao. |
 
 ### Funcoes RPC utilizadas
@@ -162,9 +165,11 @@ Ponto de atencao: `SIGNUP_PRECHECK_HASH_SALT` deve ser longo, aleatorio e secret
 
 ### Idempotencia
 
-A function nao cria recursos de negocio permanentes. Chamadas repetidas sao seguras do ponto de vista de dados de signup, mas cada chamada consome uma tentativa de rate limit.
+A function nao provisiona recursos de negocio permanentes. Para `existing_customer`, ela grava ou atualiza uma intencao temporaria em `signup_existing_customer_intents`.
 
 O rate limit e atomico via `for update` dentro da RPC `consume_signup_precheck_rate_limit`.
+
+Chamadas repetidas para o mesmo email `existing_customer` sobrescrevem a intencao pendente e renovam `expires_at` para 24 horas.
 
 ### Logs e debugging
 
@@ -222,6 +227,7 @@ Esta function nao cria usuario, nao recebe senha e nao executa checkout. Ela rec
 - Apos `supabase.auth.signUp` retornar uma sessao no fluxo `/cadastro?plano=free-trial`.
 - Apos confirmacao de email, quando o usuario volta para `/cadastro?plano=free-trial&finalizar=1` e ja possui sessao valida.
 - Em recuperacao automatica feita pelo frontend quando o Auth redireciona o usuario antes de provisionar o projeto.
+- Em retorno de magic link `existing_customer` aberto em outro dispositivo, mesmo sem dados locais, desde que exista intencao pendente em `signup_existing_customer_intents`.
 - Em chamadas repetidas de recuperacao do provisionamento, desde que o usuario ainda use o plano `free_trial`.
 
 ### Quem pode chamar
@@ -243,21 +249,22 @@ Nao ha validacao de role previa, porque a propria function cria ou atualiza `pro
 3. Carrega `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY`.
 4. Valida o header `Authorization` e confirma a sessao com `supabase.auth.getUser()`.
 5. Le o payload JSON, tolerando body vazio ou invalido como `{}`.
-6. Resolve `establishmentName` pelo body ou por `user.user_metadata.establishment_name`.
-7. Resolve `planCode` pelo body, por `user.user_metadata.plan_code` ou pelo default `free_trial`.
-8. Bloqueia qualquer plano diferente de `free_trial`.
-9. Reivindica a finalizacao persistida em `signup_finalizations`.
-10. Se a finalizacao ja estiver completa, retorna a resposta persistida.
-11. Se outra chamada estiver processando, aguarda por um curto periodo e reutiliza a resposta quando disponivel.
-12. Busca o plano `free_trial` ativo em `billing_plans`.
-13. Cria ou atualiza `profiles` com papel `establishment`.
-14. Reaproveita o primeiro projeto em que o usuario ja e `owner`, quando existir.
-15. Se nao houver projeto, cria um novo `projects` com `auth_mode = 'form_only'` e slug gerado por nome + sufixo aleatorio.
-16. Garante `project_members` com o usuario como `owner`.
-17. Para projeto novo, cria o `wallet_templates` inicial com defaults de Wallet.
-18. Garante `billing_accounts`, `billing_subscriptions`, `billing_cycles`, `billing_credit_wallets` e `projects_notifications`.
-19. Atualiza `auth.users` com metadados de signup em `app_metadata` e `user_metadata`.
-20. Marca `signup_finalizations` como `completed` e persiste a resposta final.
+6. Busca uma intencao pendente em `signup_existing_customer_intents` pelo email autenticado, quando existir.
+7. Resolve `establishmentName` pelo body, por `user.user_metadata.establishment_name` ou pela intencao de cliente existente.
+8. Resolve `planCode` pelo body, por `user.user_metadata.plan_code`, pela intencao ou pelo default `free_trial`.
+9. Bloqueia qualquer plano diferente de `free_trial`.
+10. Reivindica a finalizacao persistida em `signup_finalizations`.
+11. Se a finalizacao ja estiver completa, retorna a resposta persistida e marca a intencao como `completed`.
+12. Se outra chamada estiver processando, aguarda por um curto periodo e reutiliza a resposta quando disponivel.
+13. Busca o plano `free_trial` ativo em `billing_plans`.
+14. Cria ou atualiza `profiles` com papel `establishment`.
+15. Reaproveita o primeiro projeto em que o usuario ja e `owner`, quando existir.
+16. Se nao houver projeto, cria um novo `projects` com `auth_mode = 'form_only'` e slug gerado por nome + sufixo aleatorio.
+17. Garante `project_members` com o usuario como `owner`.
+18. Para projeto novo, cria o `wallet_templates` inicial com defaults de Wallet.
+19. Garante `billing_accounts`, `billing_subscriptions`, `billing_cycles`, `billing_credit_wallets` e `projects_notifications`.
+20. Atualiza `auth.users` com metadados de signup em `app_metadata` e `user_metadata`.
+21. Marca `signup_finalizations` como `completed`, marca a intencao como `completed` e persiste a resposta final.
 
 ### Fluxo interno
 
@@ -266,6 +273,7 @@ Frontend autenticado
   -> signup-finalize
   -> valida JWT com client anon + Authorization do usuario
   -> cria client admin com service_role_key
+  -> busca signup_existing_customer_intents por user.email quando necessario
   -> claimSignupFinalization(user.id)
      -> completed: retorna resposta persistida
      -> processing: espera ate ~7s por resposta concluida ou retorna 409
@@ -279,6 +287,7 @@ Frontend autenticado
   -> garante credit wallet e limite legado de notificacoes
   -> atualiza metadados do usuario no Supabase Auth
   -> completeSignupFinalization()
+  -> completeExistingCustomerSignupIntent()
   -> retorna resposta
 ```
 
@@ -288,8 +297,8 @@ Se ocorrer erro depois da criacao de um projeto novo, a function tenta apagar es
 
 | Campo | Tipo | Obrigatorio | Descricao |
 |---|---|---:|---|
-| `establishmentName` | `string` | Condicional | Nome do estabelecimento usado em `profiles.name`, `projects.name`, `billing_accounts.legal_name` e defaults do Wallet. Se ausente no body, a function tenta usar `user.user_metadata.establishment_name`. |
-| `planCode` | `string` | Nao | Codigo do plano solicitado. Hoje somente `free_trial` e aceito. Se ausente, usa `user.user_metadata.plan_code` ou `free_trial`. |
+| `establishmentName` | `string` | Condicional | Nome do estabelecimento usado em `profiles.name`, `projects.name`, `billing_accounts.legal_name` e defaults do Wallet. Se ausente no body, a function tenta usar `user.user_metadata.establishment_name` ou a intencao pendente em `signup_existing_customer_intents`. |
+| `planCode` | `string` | Nao | Codigo do plano solicitado. Hoje somente `free_trial` e aceito. Se ausente, usa `user.user_metadata.plan_code`, a intencao pendente ou `free_trial`. |
 
 > O frontend nao deve enviar preco, franquias, status de assinatura, datas de trial ou valores de cobranca. Esses dados sao sempre lidos de `billing_plans`.
 
@@ -354,6 +363,7 @@ Em erro, retorna:
 |---|---|---|
 | `auth.users` | Leitura via `getUser()` e update via `auth.admin.updateUserById()` | Valida o JWT e grava `signup_project_id`, `signup_plan_code`, `establishment_name` e `plan_code`. |
 | `public.signup_finalizations` | `insert`, `select`, `update` | Guarda status de idempotencia por `auth.users.id`, resposta final, erro e tentativas. |
+| `public.signup_existing_customer_intents` | `select`, `update` | Fallback para recuperar `establishmentName` e `planCode` de cliente existente quando o magic link abre em outro dispositivo. |
 | `public.billing_plans` | `select` | Fonte oficial do plano `free_trial`, precos, franquias e `trial_days`. |
 | `public.profiles` | `upsert` | Garante `id`, `email`, `name` e `role = 'establishment'`. |
 | `public.project_members` | `select`, `upsert` | Reaproveita projeto existente em que o usuario e `owner` e garante vinculo de ownership. |
@@ -392,6 +402,7 @@ Esta function utiliza `service_role_key`, portanto pode bypassar RLS. Por isso, 
 - valida o token com `supabase.auth.getUser()`;
 - usa `user.id` do token como usuario provisionado;
 - usa `signup_finalizations.user_id = user.id` como chave de idempotencia;
+- busca intencao de cliente existente apenas pelo `user.email` ja autenticado;
 - nao aceita valores financeiros, limites, status ou datas vindos do frontend;
 - aceita apenas `planCode = free_trial`;
 - ao reaproveitar projeto, busca apenas `project_members.user_id = user.id` e `role = 'owner'`.
@@ -414,6 +425,7 @@ Comportamento:
 - se ainda estiver processando apos a espera, retorna `409 SIGNUP_FINALIZE_IN_PROGRESS`;
 - se a tentativa falhar, grava `status = 'failed'`, `error_code` e `error_message`, permitindo retry;
 - se `processing` ficar travado por mais de `FINALIZATION_STALE_AFTER_MS` (2min), uma chamada posterior pode reassumir a finalizacao.
+- quando usa ou reutiliza uma finalizacao de `existing_customer`, marca `signup_existing_customer_intents.status = 'completed'`.
 
 Tambem ha protecoes locais:
 
@@ -438,6 +450,7 @@ Para investigar falhas, conferir:
 
 - se a migration `20260521133225_signup_finalize_idempotency.sql` foi aplicada antes do deploy da function;
 - se existe linha em `signup_finalizations` para o `user.id`, com `status`, `attempts`, `project_id`, `error_code` e `error_message`;
+- se existe linha pendente em `signup_existing_customer_intents` para `lower(user.email)`, ainda dentro de `expires_at`, quando o fluxo for de cliente existente;
 - se os secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` existem no ambiente da function;
 - se o frontend esta chamando com sessao valida e `Authorization` presente;
 - se `billing_plans` possui `code = 'free_trial'` e `is_active = true`;
@@ -455,6 +468,7 @@ Logs futuros uteis: `user.id`, `projectId`, `plan.code`, etapa atual do provisio
 - `POST` sem `Authorization` retorna `401`.
 - `POST` com token invalido ou expirado retorna `401`.
 - Payload sem `establishmentName` e sem metadata retorna `400`.
+- Cliente existente sem dados no frontend finaliza usando `signup_existing_customer_intents`.
 - `planCode` diferente de `free_trial` retorna `400`.
 - `billing_plans.free_trial` ausente ou inativo retorna `404`.
 - Signup Free Trial novo cria profile, project, membership owner, wallet template, billing account, subscription, cycle, credit wallet, projects notifications e signup finalization completed.

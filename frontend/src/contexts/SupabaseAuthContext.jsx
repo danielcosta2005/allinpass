@@ -50,6 +50,37 @@ function isSignupFinalizeCallbackPath() {
   return p === '/cadastro' && params.get('finalizar') === '1';
 }
 
+function isAuthReturnUrl() {
+  if (typeof window === 'undefined') return false;
+
+  const authReturnTypes = new Set(['signup', 'magiclink', 'recovery', 'invite', 'email_change']);
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const hashParams = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  const hasAuthParams = (params) => (
+    params.has('code') ||
+    params.has('token_hash') ||
+    params.has('access_token') ||
+    params.has('refresh_token') ||
+    authReturnTypes.has(params.get('type'))
+  );
+
+  return hasAuthParams(searchParams) || hasAuthParams(hashParams);
+}
+
+function canProbeSignupIntentOnPath(pathname) {
+  if (typeof window === 'undefined') return false;
+
+  const p = String(pathname || '');
+  if (p === '/' || p === '/login' || p === '/cadastro') return true;
+
+  if (p === '/auth/callback') {
+    const params = new URLSearchParams(window.location.search || '');
+    return !params.get('projectId');
+  }
+
+  return false;
+}
+
 function getPendingFreeTrialSignup(currentUser) {
   const metadata = currentUser?.user_metadata || {};
   const appMetadata = currentUser?.app_metadata || {};
@@ -271,8 +302,15 @@ export const AuthProvider = ({ children }) => {
     return { role: currentRole, projectId: null };
   }, []);
 
-  const finalizePendingSignupSession = useCallback(async (currentUser) => {
-    const pendingSignup = getPendingFreeTrialSignup(currentUser);
+  const finalizePendingSignupSession = useCallback(async (
+    currentUser,
+    { allowBackendIntentFallback = false, suppressMissingIntentError = false } = {}
+  ) => {
+    const pendingSignup = getPendingFreeTrialSignup(currentUser) || (
+      allowBackendIntentFallback
+        ? { establishmentName: '', planCode: FREE_TRIAL_PLAN_CODE }
+        : null
+    );
     if (!pendingSignup) return null;
 
     try {
@@ -283,6 +321,10 @@ export const AuthProvider = ({ children }) => {
       clearExistingCustomerSignupContext();
       return getProfileAndProject(currentUser);
     } catch (error) {
+      if (suppressMissingIntentError && error?.code === 'SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME') {
+        return null;
+      }
+
       console.error('[auth] signup-finalize auto recovery failed', error);
       toast({
         title: 'Erro ao finalizar cadastro',
@@ -356,8 +398,14 @@ export const AuthProvider = ({ children }) => {
 
       if (currentUser) {
         const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
+        const hasAuthReturn = isAuthReturnUrl();
+        const canProbeBackendSignupIntent =
+          (hasAuthReturn || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+          canProbeSignupIntentOnPath(currentPath) &&
+          !currentPath.startsWith('/claim') &&
+          currentPath !== '/thanks';
         const shouldAllowAutoFinalizeOnCallbackPath =
-          hasPendingSignup &&
+          (hasPendingSignup || canProbeBackendSignupIntent) &&
           !isSignupFinalizeCallbackPath() &&
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
 
@@ -383,16 +431,24 @@ export const AuthProvider = ({ children }) => {
           let { role: newRole, projectId: newProjectId } = await getProfileAndProject(currentUser);
           if (cancelled) return;
           let didAutoFinalizeSignup = false;
+          const shouldProbeBackendSignupIntent =
+            canProbeBackendSignupIntent &&
+            !hasPendingSignup &&
+            newRole === 'customer' &&
+            !newProjectId;
 
           const shouldAutoFinalizeSignup =
             !isSignupFinalizeCallbackPath() &&
-            Boolean(getPendingFreeTrialSignup(currentUser)) &&
+            (hasPendingSignup || shouldProbeBackendSignupIntent) &&
             (newRole === 'customer' || newRole === 'establishment') &&
             !newProjectId &&
             (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
 
           if (shouldAutoFinalizeSignup) {
-            const finalizedState = await finalizePendingSignupSession(currentUser);
+            const finalizedState = await finalizePendingSignupSession(currentUser, {
+              allowBackendIntentFallback: shouldProbeBackendSignupIntent,
+              suppressMissingIntentError: shouldProbeBackendSignupIntent,
+            });
             if (cancelled) return;
 
             if (finalizedState?.role) {

@@ -29,6 +29,11 @@ type SignupFinalizationClaim =
   | { action: "completed"; response: Record<string, unknown> }
   | { action: "processing" };
 
+type ExistingCustomerSignupIntentRow = {
+  establishment_name: string;
+  plan_code: string;
+};
+
 type ProjectMemberRow = {
   project_id: string;
   role: string;
@@ -329,6 +334,44 @@ async function markSignupFinalizationFailed(
   }
 }
 
+async function getExistingCustomerSignupIntent(
+  supabaseAdmin: SupabaseAdminClient,
+  email: string,
+): Promise<ExistingCustomerSignupIntentRow | null> {
+  if (!email) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("signup_existing_customer_intents")
+    .select("establishment_name, plan_code")
+    .eq("email", email)
+    .eq("status", "pending")
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as ExistingCustomerSignupIntentRow | null) ?? null;
+}
+
+async function completeExistingCustomerSignupIntent(
+  supabaseAdmin: SupabaseAdminClient,
+  email: string,
+  userId: string,
+) {
+  if (!email) return;
+
+  const { error } = await supabaseAdmin
+    .from("signup_existing_customer_intents")
+    .update({
+      status: "completed",
+      user_id: userId,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("email", email)
+    .eq("status", "pending");
+
+  if (error) throw error;
+}
+
 function buildWalletDefaults(projectName: string) {
   return {
     type: "loyalty",
@@ -407,27 +450,47 @@ Deno.serve(async (req) => {
       );
     }
 
-    const payload = await req.json().catch(() => ({}));
-    const establishmentName = String(
-      payload.establishmentName ?? user.user_metadata?.establishment_name ?? "",
-    ).trim();
-    const planCode = String(payload.planCode ?? user.user_metadata?.plan_code ?? FREE_PLAN_CODE).trim();
     const email = String(user.email ?? "").trim().toLowerCase();
-
-    if (!establishmentName) {
-      return errorResponse(
-        origin,
-        "SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME",
-        "Informe o nome do estabelecimento.",
-        400,
-      );
-    }
 
     if (!email) {
       return errorResponse(
         origin,
         "SIGNUP_FINALIZE_MISSING_USER_EMAIL",
         "Usuario autenticado sem email.",
+        400,
+      );
+    }
+
+    supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const payload = await req.json().catch(() => ({}));
+    const existingCustomerIntent = await getExistingCustomerSignupIntent(supabaseAdmin, email);
+    const payloadEstablishmentName = String(payload.establishmentName ?? "").trim();
+    const metadataEstablishmentName = String(user.user_metadata?.establishment_name ?? "").trim();
+    const intentEstablishmentName = String(existingCustomerIntent?.establishment_name ?? "").trim();
+    const payloadPlanCode = String(payload.planCode ?? "").trim();
+    const metadataPlanCode = String(user.user_metadata?.plan_code ?? "").trim();
+    const intentPlanCode = String(existingCustomerIntent?.plan_code ?? "").trim();
+    const establishmentName = String(
+      payloadEstablishmentName
+        || metadataEstablishmentName
+        || intentEstablishmentName
+        || "",
+    ).trim();
+    const planCode = String(
+      payloadPlanCode
+        || metadataPlanCode
+        || intentPlanCode
+        || FREE_PLAN_CODE,
+    ).trim();
+
+    if (!establishmentName) {
+      return errorResponse(
+        origin,
+        "SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME",
+        "Informe o nome do estabelecimento.",
         400,
       );
     }
@@ -441,13 +504,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
     const finalizationClaim = await claimSignupFinalization(supabaseAdmin, user.id);
 
     if (finalizationClaim.action === "completed") {
+      await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
       return jsonResponse(origin, finalizationClaim.response);
     }
 
@@ -754,6 +814,7 @@ Deno.serve(async (req) => {
       };
 
       await completeSignupFinalization(supabaseAdmin, user.id, projectId, responseBody);
+      await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
       claimedFinalizationUserId = null;
 
       return jsonResponse(origin, responseBody);

@@ -13,6 +13,8 @@ describe("signup-precheck auth source", () => {
     expect(functionSource).toContain("signup_precheck_auth_account_status");
     expect(functionSource).toContain("existing_customer");
     expect(functionSource).toContain("existing_establishment");
+    expect(functionSource).toContain("rememberExistingCustomerSignupIntent");
+    expect(functionSource).toContain("signup_existing_customer_intents");
     expect(functionSource).not.toContain('.from("profiles")\n      .select("id")\n      .eq("email", email)');
   });
 
@@ -28,6 +30,8 @@ describe("signup-precheck auth source", () => {
     expect(migrationSources).toContain("public.profiles p");
     expect(migrationSources).toContain("p.role = 'customer'");
     expect(migrationSources).toContain("drop function if exists public.signup_precheck_auth_email_exists(text)");
+    expect(migrationSources).toContain("create table if not exists public.signup_existing_customer_intents");
+    expect(migrationSources).toContain("grant select, insert, update on table public.signup_existing_customer_intents to service_role");
     expect(migrationSources).toContain("update public.profiles");
     expect(migrationSources).toContain("lower(new.email)");
   });

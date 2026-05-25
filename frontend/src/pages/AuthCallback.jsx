@@ -49,12 +49,7 @@ export default function AuthCallback() {
         return;
       }
 
-      toast({
-        title: "Erro",
-        description: "ID do projeto nao encontrado para redirecionamento.",
-        variant: "destructive",
-      });
-      navigate('/', { replace: true });
+      navigate('/cadastro?finalizar=1', { replace: true });
     };
 
     const start = async () => {

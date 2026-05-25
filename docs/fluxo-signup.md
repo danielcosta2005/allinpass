@@ -20,7 +20,7 @@ A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha pas
 
 Os fluxos pagos `signup_start_checkout` e `signup_finalize_paid` ficaram para uma segunda etapa.
 
-Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. Ele envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`.
+Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`.
 
 ## Arquivos Principais
 
@@ -47,10 +47,12 @@ Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com 
 Se `signup-precheck` retornar `code = existing_customer`:
 
 1. Frontend nao chama `supabase.auth.signUp`.
-2. Frontend chama `supabase.auth.signInWithOtp` com `shouldCreateUser=false`.
-3. O magic link retorna para `/cadastro?plano=free-trial&finalizar=1&establishmentName=...&planCode=free_trial`.
-4. Ao voltar autenticado, a pagina chama `signup-finalize`.
-5. `signup-finalize` atualiza `profiles.role` para `establishment` e provisiona o projeto.
+2. `signup-precheck` grava `email`, `establishment_name` e `plan_code` em `signup_existing_customer_intents`.
+3. Frontend chama `supabase.auth.signInWithOtp` com `shouldCreateUser=false`.
+4. O magic link tenta retornar para `/cadastro?plano=free-trial&finalizar=1&establishmentName=...&planCode=free_trial`.
+5. Ao voltar autenticado, a pagina chama `signup-finalize`; se o link cair fora de `/cadastro`, o `SupabaseAuthContext` pode sondar o backend durante o retorno de Auth.
+6. Se o link abrir em outro navegador/dispositivo e os dados nao vierem pela URL/localStorage, `signup-finalize` busca a intencao pendente por `user.email`.
+7. `signup-finalize` atualiza `profiles.role` para `establishment`, provisiona o projeto e marca a intencao como `completed`.
 
 ## Fluxo Com Confirmacao de Email
 
@@ -102,6 +104,7 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - `billing_cycles`: ciclo aberto do periodo trial.
 - `billing_credit_wallets`: carteira de creditos inicial.
 - `projects_notifications`: limite legado de notificacoes usado por telas existentes.
+- `signup_existing_customer_intents`: fallback backend para finalizar cliente existente mesmo quando o magic link abre em outro dispositivo.
 
 ## Regras Importantes
 
@@ -110,6 +113,7 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - A function aceita apenas `planCode = free_trial`.
 - A senha nunca passa pela Edge Function.
 - Para clientes existentes, a senha preenchida no formulario nao e usada; o acesso e confirmado por magic link.
+- Para clientes existentes, a intencao backend expira em 24 horas e so e acessada pelas Edge Functions com `service_role`.
 - `/cadastro` nao redireciona automaticamente durante o signup, para evitar conflito enquanto `profiles.role` muda de `customer` para `establishment`.
 - Depois do provisionamento, `refreshAuthProfile` recarrega `profiles` e `project_members`.
 

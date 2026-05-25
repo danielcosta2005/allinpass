@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
+type SupabaseAdminClient = ReturnType<typeof createClient<any, "public", any>>;
+
 const FUNCTION_NAME = "signup-precheck";
 const GENERIC_BLOCK_MESSAGE =
   "Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.";
@@ -10,6 +12,7 @@ const EXISTING_CUSTOMER_MESSAGE =
 const RATE_LIMIT_WINDOW_SECONDS = 600;
 const RATE_LIMIT_MAX_ATTEMPTS = 8;
 const RATE_LIMIT_BLOCK_MINUTES = 20;
+const FREE_PLAN_CODE = "free_trial";
 const ACCOUNT_STATUSES = new Set([
   "available",
   "existing_customer",
@@ -91,7 +94,7 @@ function jsonResponse(origin: string | null, body: unknown, status = 200) {
 }
 
 async function writeFunctionLog(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdminClient,
   level: "info" | "warn" | "error",
   meta: Record<string, unknown>,
 ) {
@@ -104,6 +107,31 @@ async function writeFunctionLog(
   } catch (logError) {
     console.error(`${FUNCTION_NAME} log error`, logError);
   }
+}
+
+async function rememberExistingCustomerSignupIntent(
+  supabaseAdmin: SupabaseAdminClient,
+  email: string,
+  establishmentName: string,
+) {
+  const normalizedEstablishmentName = String(establishmentName ?? "").trim();
+  if (!email || !normalizedEstablishmentName) return;
+
+  const { error } = await supabaseAdmin
+    .from("signup_existing_customer_intents")
+    .upsert(
+      {
+        email,
+        establishment_name: normalizedEstablishmentName,
+        plan_code: FREE_PLAN_CODE,
+        status: "pending",
+        completed_at: null,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      },
+      { onConflict: "email" },
+    );
+
+  if (error) throw error;
 }
 
 Deno.serve(async (req) => {
@@ -277,6 +305,8 @@ Deno.serve(async (req) => {
     });
 
     if (accountStatus === "existing_customer") {
+      await rememberExistingCustomerSignupIntent(supabaseAdmin, email, establishmentName);
+
       return jsonResponse(origin, {
         can_proceed: true,
         code: "existing_customer",

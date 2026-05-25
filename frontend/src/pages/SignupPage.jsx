@@ -604,19 +604,16 @@ function SignupPage() {
             || 'free_trial',
         );
 
-        if (!establishmentName) {
-          throw new Error('Não encontramos o nome do estabelecimento neste cadastro.');
-        }
-
-        await provisionFreeTrial({
+        const result = await provisionFreeTrial({
           establishmentName,
           planCode,
           userId: user.id,
         });
+        const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
         clearExistingCustomerSignupContext();
         setFormData((previous) => ({
           ...previous,
-          establishmentName,
+          establishmentName: finalizedEstablishmentName,
           email: user.email || previous.email,
           emailConfirmation: user.email || previous.emailConfirmation,
         }));
@@ -1032,6 +1029,11 @@ function SignupPage() {
                         ) : null}
                         Reenviar e-mail
                       </Button>
+                      <Link to="/login">
+                        <Button className="bg-sky-700 hover:bg-sky-800 text-white">
+                          Ir para login
+                        </Button>
+                      </Link>
                     </div>
                   </motion.div>
                 )}

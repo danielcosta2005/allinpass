@@ -29,4 +29,24 @@ describe("signup-finalize backend idempotency", () => {
     expect(functionSource).toContain("markSignupFinalizationFailed");
     expect(functionSource).toContain("SIGNUP_FINALIZE_IN_PROGRESS");
   });
+
+  test("signup-finalize can recover existing-customer intent by authenticated email", () => {
+    const functionSource = fs.readFileSync(
+      path.join(repoRoot, "supabase/functions/signup-finalize/index.ts"),
+      "utf8"
+    );
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(migrationSources).toContain("signup_existing_customer_intents");
+    expect(functionSource).toContain("getExistingCustomerSignupIntent");
+    expect(functionSource).toContain("existingCustomerIntent?.establishment_name");
+    expect(functionSource).toContain("payloadEstablishmentName");
+    expect(functionSource).toContain("|| intentEstablishmentName");
+    expect(functionSource).toContain("completeExistingCustomerSignupIntent");
+  });
 });
