@@ -17,7 +17,7 @@ import {
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
-const VALID_ROLES = new Set(['superadmin', 'establishment', 'customer']);
+const VALID_ROLES = new Set(['superadmin', 'admin', 'establishment', 'customer']);
 const FREE_TRIAL_PLAN_CODE = 'free_trial';
 const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
 
@@ -468,7 +468,7 @@ export const AuthProvider = ({ children }) => {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
 
-            if (newRole === 'superadmin' && !alreadyInAdmin) {
+            if ((newRole === 'superadmin' || newRole === 'admin') && !alreadyInAdmin) {
               navigate('/admin', { replace: true });
             } else if (
               (newRole === 'establishment' || newRole === 'customer') &&

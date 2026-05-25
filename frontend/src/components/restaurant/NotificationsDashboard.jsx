@@ -17,7 +17,7 @@ export default function NotificationsDashboard({ projectId }) {
           <h2 className="text-lg font-semibold text-gray-900">Central de Notificações</h2>
         </div>
         <p className="mt-1 text-sm text-gray-600">
-          Gerencie envios manuais, acompanhe campanhas e construa automações em um unico lugar.
+          Gerencie envios manuais, acompanhe campanhas e construa automações em um único lugar.
         </p>
       </div>
 

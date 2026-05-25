@@ -8,6 +8,7 @@ import {
   XCircle,
   Loader2,
   AlertTriangle,
+  Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
@@ -55,6 +56,21 @@ function normalizeScanResult(result) {
   if (!result) return "";
   if (typeof result === "string") return result;
   return result?.data || result?.rawValue || result?.text || "";
+}
+
+function getAvailableRewards(data) {
+  if (Array.isArray(data?.rewards_available) && data.rewards_available.length > 0) {
+    return data.rewards_available;
+  }
+  return data?.reward_available ? [data.reward_available] : [];
+}
+
+function formatRewardNames(rewards) {
+  const names = rewards.map((reward) => reward?.name).filter(Boolean);
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} e ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
 const ScannerTab = ({ projectId: establishmentProjectId }) => {
@@ -131,6 +147,27 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     return data;
   }, []);
 
+  const showVisitSuccessToast = useCallback((data, confirmed = false) => {
+    const rewards = getAvailableRewards(data);
+    const rewardNames = formatRewardNames(rewards);
+
+    if (rewardNames) {
+      toast({
+        title: confirmed ? "Recompensa liberada no scan confirmado!" : "Recompensa liberada!",
+        description: `Cliente tem ${data.points} ponto(s) e pode resgatar: ${rewardNames}.`,
+      });
+      return;
+    }
+
+    const expFmt = formatBRDateShort(data.expires_at);
+    const resetText = data.reset === true ? " (expirado -> reset + renovado)" : "";
+
+    toast({
+      title: confirmed ? "Visita registrada (confirmada)" : "Visita registrada!",
+      description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
+    });
+  }, []);
+
   const onScan = useCallback(async (result) => {
     if (isProcessing) return;
 
@@ -172,13 +209,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
 
       setScanResult({ success: true, data });
 
-      const expFmt = formatBRDateShort(data.expires_at);
-      const resetText = data.reset === true ? " (expirado → reset + renovado)" : "";
-
-      toast({
-        title: "Visita Registrada! 🎉",
-        description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
-      });
+      showVisitSuccessToast(data);
     } catch (error) {
       setScanResult({ success: false, error: error?.message || String(error) });
       toast({
@@ -193,7 +224,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         setScanResult(null);
       }, 5000);
     }
-  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit, clearResetTimer]);
+  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit, clearResetTimer, showVisitSuccessToast]);
 
   // ✅ guarda sempre a versão mais recente do handler
   const onScanRef = useRef(onScan);
@@ -255,13 +286,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
 
       setScanResult({ success: true, data });
 
-      const expFmt = formatBRDateShort(data.expires_at);
-      const resetText = data.reset === true ? " (expirado → reset + renovado)" : "";
-
-      toast({
-        title: "Visita Registrada (confirmada) ✅",
-        description: `Agora: ${data.points} ponto(s). Expira em: ${expFmt}${resetText}`,
-      });
+      showVisitSuccessToast(data, true);
     } catch (error) {
       setScanResult({ success: false, error: error?.message || String(error) });
       toast({
@@ -278,6 +303,9 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
       }, 2000);
     }
   };
+
+  const successRewards = scanResult?.success === true ? getAvailableRewards(scanResult.data) : [];
+  const successRewardNames = formatRewardNames(successRewards);
 
   return (
     <div className="space-y-6">
@@ -296,17 +324,38 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
             className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white p-4 transition-opacity"
             style={{ opacity: isScanning && !confirmOpen ? 0 : 1 }}
           >
-            {isProcessing && <Loader2 className="w-16 h-16 animate-spin text-purple-400" />}
+            {isProcessing && !scanResult && <Loader2 className="w-16 h-16 animate-spin text-purple-400" />}
 
             {scanResult?.success === true && (
               <motion.div
                 initial={{ scale: 0.5, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                className="text-center"
+                className="w-full text-center"
               >
-                <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-                <h3 className="text-2xl font-bold">Visita Registrada!</h3>
-                <p className="text-lg">{scanResult.data.points} ponto(s) no total.</p>
+                {successRewardNames ? (
+                  <div className="mx-auto flex max-w-xs flex-col items-center">
+                    <motion.div
+                      initial={{ rotate: -8, scale: 0.8 }}
+                      animate={{ rotate: [0, -6, 6, 0], scale: 1 }}
+                      transition={{ duration: 0.75, ease: "easeOut" }}
+                      className="relative mb-4 flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 via-rose-400 to-emerald-400 shadow-2xl shadow-amber-500/30"
+                    >
+                      <span className="absolute inset-2 rounded-full border border-white/60" />
+                      <Gift className="relative z-10 h-16 w-16 text-white drop-shadow" />
+                    </motion.div>
+                    <h3 className="text-2xl font-bold leading-tight">Recompensa liberada!</h3>
+                    <p className="mt-2 text-lg font-semibold leading-snug">{successRewardNames}</p>
+                    <p className="mt-2 text-sm text-white/85">
+                      Cliente tem {scanResult.data.points} ponto(s) e ja pode resgatar.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+                    <h3 className="text-2xl font-bold">Visita Registrada!</h3>
+                    <p className="text-lg">{scanResult.data.points} ponto(s) no total.</p>
+                  </>
+                )}
               </motion.div>
             )}
 

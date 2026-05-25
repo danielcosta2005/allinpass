@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, Users, Wallet, Settings, LayoutDashboard, Bell, Loader2 } from 'lucide-react';
+import { LogOut, Users, Wallet, Settings, LayoutDashboard, Bell, Loader2, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProjectsTab from '@/components/superadmin/ProjectsTab';
@@ -10,13 +10,25 @@ import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import DashboardTab from '@/components/superadmin/DashboardTab';
 import NotificationsConfigTab from '@/components/superadmin/NotificationsConfigTab';
+import AdminTab from '@/components/superadmin/AdminTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  canAccessAdminPanel,
+  canDeleteProject,
+  canGeneratePass,
+  canManageProject as canManageProjectByRole,
+  canSeeSuperadminTabs,
+  getDefaultAdminTab,
+} from '@/lib/adminPermissions';
 
 const SuperadminDashboard = () => {
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth();
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
+  const isSuperadmin = canSeeSuperadminTabs(role);
+  const canAccessKpiMembersAndCustomers = canAccessAdminPanel(role);
+  const defaultTab = getDefaultAdminTab(role);
 
   const [selectedProject, setSelectedProject] = useState(() => {
     try {
@@ -30,11 +42,19 @@ const SuperadminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
-      return sessionStorage.getItem('superadmin_active_tab') || 'dashboard';
+      return sessionStorage.getItem('superadmin_active_tab') || defaultTab;
     } catch (_) {
-      return 'dashboard';
+      return defaultTab;
     }
   });
+
+  const canManageProject = useCallback((project) => {
+    return canManageProjectByRole({ role, userId: user?.id, project });
+  }, [role, user?.id]);
+
+  const canManageSelectedProject = selectedProject
+    ? canGeneratePass({ role, userId: user?.id, project: selectedProject })
+    : false;
 
   const handleTabChange = (value) => {
     setActiveTab(value);
@@ -44,6 +64,15 @@ const SuperadminDashboard = () => {
   };
 
   const handleSelectProject = (project) => {
+    if (!canManageProject(project)) {
+      toast({
+        title: 'Somente visualização',
+        description: 'Admins só podem editar e gerar passes de projetos criados por eles.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSelectedProject(project);
     setActiveTab('wallet');
 
@@ -63,14 +92,78 @@ const SuperadminDashboard = () => {
   };
 
   useEffect(() => {
-    const projectDependentTabs = new Set(['wallet', 'notifications', 'members', 'customers']);
-    if (!selectedProject && projectDependentTabs.has(activeTab)) {
-      setActiveTab('projects');
+    if (selectedProject && !canManageProject(selectedProject)) {
+      setSelectedProject(null);
       try {
-        sessionStorage.setItem('superadmin_active_tab', 'projects');
+        sessionStorage.removeItem('superadmin_selected_project');
       } catch (_) {}
     }
-  }, [selectedProject, activeTab]);
+  }, [selectedProject, canManageProject]);
+
+  const mainTabs = useMemo(() => {
+    const tabs = [];
+
+    if (isSuperadmin) {
+      tabs.push(
+        { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
+        { value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false },
+      );
+    }
+
+    if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
+      tabs.push({ value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false });
+    }
+
+    tabs.push({ value: 'projects', label: 'Projetos', icon: Settings, disabled: false });
+
+    return tabs;
+  }, [canAccessKpiMembersAndCustomers, isSuperadmin]);
+
+  const projectTabs = useMemo(() => {
+    if (!selectedProject) {
+      return [];
+    }
+
+    const tabs = [
+      { value: 'wallet', label: 'Wallet', icon: Wallet, disabled: !canManageSelectedProject },
+    ];
+
+    if (isSuperadmin) {
+      tabs.push(
+        { value: 'notifications', label: 'Notificações', icon: Bell, disabled: false },
+        { value: 'members', label: 'Membros', icon: Users, disabled: false },
+        { value: 'customers', label: 'Clientes', icon: Users, disabled: false },
+      );
+    }
+
+    if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
+      tabs.push(
+        { value: 'members', label: 'Membros', icon: Users, disabled: false },
+        { value: 'customers', label: 'Clientes', icon: Users, disabled: false },
+      );
+    }
+
+    return tabs;
+  }, [canAccessKpiMembersAndCustomers, canManageSelectedProject, isSuperadmin, selectedProject]);
+
+  const availableTabs = useMemo(() => {
+    return [...mainTabs, ...projectTabs];
+  }, [mainTabs, projectTabs]);
+
+  const isProjectTabActive = useMemo(() => {
+    return projectTabs.some((tab) => tab.value === activeTab);
+  }, [projectTabs, activeTab]);
+
+  useEffect(() => {
+    const currentTab = availableTabs.find((tab) => tab.value === activeTab);
+    if (!currentTab || currentTab.disabled) {
+      const fallback = 'projects';
+      setActiveTab(fallback);
+      try {
+        sessionStorage.setItem('superadmin_active_tab', fallback);
+      } catch (_) {}
+    }
+  }, [availableTabs, activeTab]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -93,15 +186,6 @@ const SuperadminDashboard = () => {
       setSigningOut(false);
     }
   }
-
-  const TABS = [
-    { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
-    { value: 'projects', label: 'Projetos', icon: Settings, disabled: false },
-    { value: 'wallet', label: 'Wallet', icon: Wallet, disabled: !selectedProject },
-    { value: 'notifications', label: 'Notificações', icon: Bell, disabled: !selectedProject },
-    { value: 'members', label: 'Membros', icon: Users, disabled: !selectedProject },
-    { value: 'customers', label: 'Clientes', icon: Users, disabled: !selectedProject },
-  ];
 
   return (
     <>
@@ -127,7 +211,10 @@ const SuperadminDashboard = () => {
               </div>
 
               <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">{user?.email}</span>
+                <div className="hidden text-right sm:block">
+                  <p className="text-sm text-gray-600">{user?.email}</p>
+                  <p className="text-xs font-medium text-purple-600">{isSuperadmin ? 'Superadmin' : 'Admin'}</p>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -154,8 +241,8 @@ const SuperadminDashboard = () => {
             transition={{ duration: 0.5 }}
           >
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:w-auto lg:inline-grid">
-                {TABS.map((tab) => (
+              <TabsList className="flex w-full flex-wrap justify-start gap-1 lg:w-auto">
+                {mainTabs.map((tab) => (
                   <TabsTrigger key={tab.value} value={tab.value} className="gap-2" disabled={tab.disabled}>
                     <tab.icon className="w-4 h-4" />
                     {tab.label}
@@ -163,19 +250,55 @@ const SuperadminDashboard = () => {
                 ))}
               </TabsList>
 
-              <TabsContent value="dashboard"><DashboardTab /></TabsContent>
-              <TabsContent value="projects"><ProjectsTab onSelectProject={handleSelectProject} /></TabsContent>
-              <TabsContent value="wallet">
-                {selectedProject && <WalletConfigTab projectId={selectedProject.id} onBack={handleBackToProjects} />}
-              </TabsContent>
-              <TabsContent value="notifications">
-                {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
-              </TabsContent>
-              <TabsContent value="members">
-                {selectedProject && <MembersTab projectId={selectedProject.id} />}
-              </TabsContent>
-              <TabsContent value="customers">
-                {selectedProject && <CustomersTab projectId={selectedProject.id} />}
+              {selectedProject && isProjectTabActive && (
+                <div className="space-y-0">
+                  <TabsList className="flex w-full flex-wrap items-end justify-start gap-1 rounded-none bg-transparent p-0 text-gray-600">
+                    {projectTabs.map((tab) => (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        disabled={tab.disabled}
+                        className="gap-2 rounded-t-xl rounded-b-none border border-b border-gray-300 bg-gray-200/80 px-4 py-2 text-sm font-medium text-gray-600 shadow-none transition-colors duration-200 hover:bg-gray-100 hover:text-gray-800 data-[state=active]:-mb-px data-[state=active]:border-gray-300 data-[state=active]:border-b-white data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-none"
+                      >
+                        <tab.icon className="w-4 h-4" />
+                        {tab.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+
+                  <div className="rounded-b-xl rounded-tr-xl border border-gray-300 bg-white p-4 sm:p-6">
+                    <TabsContent value="wallet" className="mt-0">
+                      {selectedProject && canManageSelectedProject && (
+                        <WalletConfigTab projectId={selectedProject.id} onBack={handleBackToProjects} />
+                      )}
+                    </TabsContent>
+                    {isSuperadmin && (
+                      <TabsContent value="notifications" className="mt-0">
+                        {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                    {canAccessKpiMembersAndCustomers && (
+                      <TabsContent value="members" className="mt-0">
+                        {selectedProject && <MembersTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                    {canAccessKpiMembersAndCustomers && (
+                      <TabsContent value="customers" className="mt-0">
+                        {selectedProject && <CustomersTab projectId={selectedProject.id} />}
+                      </TabsContent>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {canAccessKpiMembersAndCustomers && <TabsContent value="dashboard"><DashboardTab /></TabsContent>}
+              {isSuperadmin && <TabsContent value="admins"><AdminTab /></TabsContent>}
+              <TabsContent value="projects">
+                <ProjectsTab
+                  onSelectProject={handleSelectProject}
+                  canManageProject={canManageProject}
+                  canDeleteProjects={canDeleteProject(role)}
+                />
               </TabsContent>
             </Tabs>
           </motion.div>

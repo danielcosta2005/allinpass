@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2 } from 'lucide-react';
+import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2, MessageCircle, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ScannerTab from '@/components/restaurant/ScannerTab';
@@ -9,8 +9,14 @@ import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
+import RewardsTab from '@/components/restaurant/RewardsTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
+
+const SUPPORT_MESSAGE = 'Olá, preciso de suporte no Allin Pass.';
+const SUPPORT_WHATSAPP_URL =
+  import.meta.env.VITE_RESTAURANT_SUPPORT_WHATSAPP_URL ||
+  `https://wa.me/?text=${encodeURIComponent(SUPPORT_MESSAGE)}`;
 
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
@@ -33,7 +39,7 @@ const RestaurantDashboard = () => {
   };
 
   useEffect(() => {
-    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications']);
+    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications', 'rewards']);
     if (!allowedTabs.has(activeTab)) {
       setActiveTab('kpis');
       try {
@@ -144,6 +150,10 @@ const RestaurantDashboard = () => {
                     <Bell className="w-4 h-4" />
                     Notificações
                   </TabsTrigger>
+                  <TabsTrigger value="rewards" className="gap-2">
+                    <Gift className="w-4 h-4" />
+                    Recompensas
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="kpis">
@@ -155,6 +165,9 @@ const RestaurantDashboard = () => {
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
                 </TabsContent>
+                <TabsContent value="rewards">
+                  <RewardsTab projectId={projectId} />
+                </TabsContent>
                 <TabsContent value="customers">
                   <CustomersTab projectId={projectId} />
                 </TabsContent>
@@ -165,6 +178,23 @@ const RestaurantDashboard = () => {
             </motion.div>
           )}
         </main>
+
+        <div className="group fixed bottom-5 right-5 z-40 flex items-center">
+          <a
+            href={SUPPORT_WHATSAPP_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Abrir chat de suporte no WhatsApp"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/30 transition hover:from-purple-700 hover:to-indigo-700 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-purple-300"
+          >
+            <MessageCircle className="h-7 w-7" />
+          </a>
+
+          <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-3 w-56 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl opacity-0 transition duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
+            <p className="text-sm font-semibold">Suporte pelo WhatsApp</p>
+            <p className="mt-1 text-xs text-slate-600">Precisa de ajuda? Fale com a nossa equipe!</p>
+          </div>
+        </div>
       </div>
     </>
   );

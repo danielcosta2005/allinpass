@@ -382,7 +382,7 @@ export default function NotificationsManager({ projectId }) {
         <motion.div className="h-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <Box className="h-full">
           <BoxHeader>
-            <BoxTitle>Total enviado (histórico)</BoxTitle>
+            <BoxTitle>Total enviado</BoxTitle>
           </BoxHeader>
           <BoxContent>
             {loadingKpis ? (
@@ -433,9 +433,6 @@ export default function NotificationsManager({ projectId }) {
             ) : (
               <div className="text-2xl font-bold">{kpiView.isUnlimited ? "—" : kpiView.remaining}</div>
             )}
-            <div className="text-xs text-muted-foreground mt-1">
-              (notifications_remaining)
-            </div>
           </BoxContent>
         </Box>
         </motion.div>
@@ -444,9 +441,9 @@ export default function NotificationsManager({ projectId }) {
       {/* Campaigns table */}
       <Box>
         <BoxHeader className="pb-4">
-          <div className="text-base font-semibold">Campanhas (notifications)</div>
+          <div className="text-base font-semibold">Campanhas</div>
           <div className="text-xs text-muted-foreground">
-            Clique para expandir e ver os envios (notification_jobs).
+            Clique para expandir e ver os envios
           </div>
         </BoxHeader>
 
@@ -481,7 +478,7 @@ export default function NotificationsManager({ projectId }) {
 
                     return (
                       <React.Fragment key={c.id}>
-                        <tr className="border-b align-top">
+                        <tr className="border-b align-middle">
                           <td className="py-2 pr-2">
                             <Button variant="ghost" size="icon" onClick={() => toggleExpand(c.id)}>
                               {isExpanded ? (
@@ -493,14 +490,7 @@ export default function NotificationsManager({ projectId }) {
                           </td>
 
                           <td className="py-2 pr-2">
-                            <div className="font-medium">{c.title}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-2">
-                              {c.message}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-1">
-                              Trigger: {c.trigger_type} • Channels:{" "}
-                              {Array.isArray(c.channels) ? c.channels.join(", ") : "—"}
-                            </div>
+                            <div>{c.message || "-"}</div>
                           </td>
 
                           <td className="py-2 pr-2">{c.status || "-"}</td>
@@ -535,7 +525,7 @@ export default function NotificationsManager({ projectId }) {
                               >
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="text-sm font-semibold">
-                                    Envios (notification_jobs)
+                                    Envios 
                                   </div>
 
                                   <Button
