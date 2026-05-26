@@ -220,7 +220,7 @@ Para debugar:
 
 Finaliza o cadastro Free Trial depois que o usuario ja foi criado pelo Supabase Auth.
 
-Esta function nao cria usuario, nao recebe senha e nao executa checkout. Ela recebe uma chamada autenticada do frontend, valida o JWT do usuario recem-cadastrado e provisiona os dados de negocio iniciais para que o estabelecimento consiga acessar o painel `/org`.
+Esta function nao cria usuario, nao recebe senha e nao executa checkout. Ela recebe uma chamada autenticada do frontend, valida o JWT do usuario recem-cadastrado e provisiona os dados de negocio iniciais para que o estabelecimento consiga acessar o painel `/org`. Quando a finalizacao vem de `existing_customer`, ela retorna um sinal para o frontend pedir a criacao de senha depois do magic link.
 
 ### Quando e utilizada
 
@@ -264,7 +264,8 @@ Nao ha validacao de role previa, porque a propria function cria ou atualiza `pro
 18. Para projeto novo, cria o `wallet_templates` inicial com defaults de Wallet.
 19. Garante `billing_accounts`, `billing_subscriptions`, `billing_cycles`, `billing_credit_wallets` e `projects_notifications`.
 20. Atualiza `auth.users` com metadados de signup em `app_metadata` e `user_metadata`.
-21. Marca `signup_finalizations` como `completed`, marca a intencao como `completed` e persiste a resposta final.
+21. Inclui `auth.password_setup_required = true` na resposta quando havia intencao pendente de `existing_customer`.
+22. Marca `signup_finalizations` como `completed`, marca a intencao como `completed` e persiste a resposta final.
 
 ### Fluxo interno
 
@@ -323,6 +324,7 @@ Em sucesso, retorna JSON com status HTTP `200`.
 | Campo | Tipo | Descricao |
 |---|---|---|
 | `success` | `boolean` | Sempre `true` em sucesso. |
+| `auth.password_setup_required` | `boolean` | `true` quando a finalizacao veio de `existing_customer`; o frontend deve pedir uma nova senha e chamar `supabase.auth.updateUser({ password })` com sessao autenticada. |
 | `project.id` | `string` | ID do projeto criado ou reaproveitado. |
 | `project.slug` | `string \| null` | Slug do projeto. Para projeto novo, e gerado a partir do nome do estabelecimento. |
 | `project.name` | `string` | Nome do estabelecimento usado no provisionamento. |
@@ -403,6 +405,7 @@ Esta function utiliza `service_role_key`, portanto pode bypassar RLS. Por isso, 
 - usa `user.id` do token como usuario provisionado;
 - usa `signup_finalizations.user_id = user.id` como chave de idempotencia;
 - busca intencao de cliente existente apenas pelo `user.email` ja autenticado;
+- nunca recebe nem persiste senha; o frontend so pede senha depois do `signup-precheck` e, em `existing_customer`, apenas orienta o frontend a criar a senha autenticada via Supabase Auth;
 - nao aceita valores financeiros, limites, status ou datas vindos do frontend;
 - aceita apenas `planCode = free_trial`;
 - ao reaproveitar projeto, busca apenas `project_members.user_id = user.id` e `role = 'owner'`.
@@ -426,6 +429,7 @@ Comportamento:
 - se a tentativa falhar, grava `status = 'failed'`, `error_code` e `error_message`, permitindo retry;
 - se `processing` ficar travado por mais de `FINALIZATION_STALE_AFTER_MS` (2min), uma chamada posterior pode reassumir a finalizacao.
 - quando usa ou reutiliza uma finalizacao de `existing_customer`, marca `signup_existing_customer_intents.status = 'completed'`.
+- para `existing_customer`, a resposta persistida tambem mantem `auth.password_setup_required = true`, evitando que chamadas repetidas redirecionem direto para `/org` antes da senha ser criada.
 
 Tambem ha protecoes locais:
 
@@ -469,6 +473,7 @@ Logs futuros uteis: `user.id`, `projectId`, `plan.code`, etapa atual do provisio
 - `POST` com token invalido ou expirado retorna `401`.
 - Payload sem `establishmentName` e sem metadata retorna `400`.
 - Cliente existente sem dados no frontend finaliza usando `signup_existing_customer_intents`.
+- Cliente existente recebe `auth.password_setup_required = true`, cria a senha no frontend autenticado e depois consegue login com email/senha.
 - `planCode` diferente de `free_trial` retorna `400`.
 - `billing_plans.free_trial` ausente ou inativo retorna `404`.
 - Signup Free Trial novo cria profile, project, membership owner, wallet template, billing account, subscription, cycle, credit wallet, projects notifications e signup finalization completed.

@@ -48,6 +48,11 @@ describe("signup finalize auth redirect", () => {
     expect(authContextSource).toContain("event === 'SIGNED_IN' || event === 'INITIAL_SESSION'");
     expect(authContextSource).toContain("allowBackendIntentFallback");
     expect(authContextSource).toContain("suppressMissingIntentError");
+    expect(authContextSource).toContain("passwordSetupRequired");
+    expect(authContextSource).toContain("__signup_password_setup_required");
+    expect(authContextSource).toContain("passwordSetupParams");
+    expect(authContextSource).toContain("passwordSetupParams.set('finalizar', '1')");
+    expect(authContextSource).toContain("passwordSetupParams.set('passwordSetup', '1')");
     expect(signupPageSource).toContain("shouldFinalizeFromExistingCustomerContext");
     expect(signupPageSource).toContain("shouldAttemptFinalize");
   });
@@ -59,7 +64,9 @@ describe("signup finalize auth redirect", () => {
     );
 
     expect(authCallbackSource).toContain("projectId");
-    expect(authCallbackSource).toContain("navigate('/cadastro?finalizar=1'");
+    expect(authCallbackSource).toContain("signupFinalizeParams");
+    expect(authCallbackSource).toContain("signupFinalizeParams.set('finalizar', '1')");
+    expect(authCallbackSource).toContain("navigate(`/cadastro?${signupFinalizeParams.toString()}`");
     expect(authCallbackSource).not.toContain("ID do projeto nao encontrado para redirecionamento");
   });
 

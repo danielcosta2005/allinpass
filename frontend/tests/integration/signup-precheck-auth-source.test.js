@@ -15,6 +15,8 @@ describe("signup-precheck auth source", () => {
     expect(functionSource).toContain("existing_establishment");
     expect(functionSource).toContain("rememberExistingCustomerSignupIntent");
     expect(functionSource).toContain("signup_existing_customer_intents");
+    expect(functionSource).toContain("normalizePlanCode(payload.planCode)");
+    expect(functionSource).toContain("plan_code: normalizedPlanCode");
     expect(functionSource).not.toContain('.from("profiles")\n      .select("id")\n      .eq("email", email)');
   });
 

@@ -49,4 +49,14 @@ describe("signup-finalize backend idempotency", () => {
     expect(functionSource).toContain("|| intentEstablishmentName");
     expect(functionSource).toContain("completeExistingCustomerSignupIntent");
   });
+
+  test("existing-customer finalization asks the authenticated client to create a password", () => {
+    const functionSource = fs.readFileSync(
+      path.join(repoRoot, "supabase/functions/signup-finalize/index.ts"),
+      "utf8"
+    );
+
+    expect(functionSource).toContain("password_setup_required");
+    expect(functionSource).toContain("Boolean(existingCustomerIntent)");
+  });
 });

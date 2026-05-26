@@ -20,6 +20,13 @@ const AuthContext = createContext(null);
 const VALID_ROLES = new Set(['superadmin', 'admin', 'establishment', 'customer']);
 const FREE_TRIAL_PLAN_CODE = 'free_trial';
 const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
+const SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY = '__signup_password_setup_required';
+
+function markSignupPasswordSetupRequired() {
+  try {
+    sessionStorage.setItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY, '1');
+  } catch (_) {}
+}
 
 function normalizeSignupErrorMessage(error) {
   const message = String(error?.message || '').toLowerCase();
@@ -314,12 +321,22 @@ export const AuthProvider = ({ children }) => {
     if (!pendingSignup) return null;
 
     try {
-      await finalizeFreeTrialSignup({
+      const finalizeResult = await finalizeFreeTrialSignup({
         ...pendingSignup,
         dedupeKey: `free-trial:${currentUser.id}`,
       });
+      const passwordSetupRequired = Boolean(finalizeResult?.auth?.password_setup_required);
+
+      if (passwordSetupRequired) {
+        markSignupPasswordSetupRequired();
+      }
+
       clearExistingCustomerSignupContext();
-      return getProfileAndProject(currentUser);
+      const profileState = await getProfileAndProject(currentUser);
+      return {
+        ...profileState,
+        passwordSetupRequired,
+      };
     } catch (error) {
       if (suppressMissingIntentError && error?.code === 'SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME') {
         return null;
@@ -431,6 +448,7 @@ export const AuthProvider = ({ children }) => {
           let { role: newRole, projectId: newProjectId } = await getProfileAndProject(currentUser);
           if (cancelled) return;
           let didAutoFinalizeSignup = false;
+          let passwordSetupRequired = false;
           const shouldProbeBackendSignupIntent =
             canProbeBackendSignupIntent &&
             !hasPendingSignup &&
@@ -456,9 +474,24 @@ export const AuthProvider = ({ children }) => {
               newProjectId = finalizedState.projectId;
               didAutoFinalizeSignup = true;
             }
+
+            if (finalizedState?.passwordSetupRequired) {
+              passwordSetupRequired = true;
+            }
           }
 
-          if (newRole === 'unauthorized') {
+          if (passwordSetupRequired) {
+            const alreadyOnPasswordSetup =
+              currentPath === '/cadastro' &&
+              new URLSearchParams(window.location.search || '').get('passwordSetup') === '1';
+
+            if (!alreadyOnPasswordSetup) {
+              const passwordSetupParams = new URLSearchParams(window.location.search || '');
+              passwordSetupParams.set('finalizar', '1');
+              passwordSetupParams.set('passwordSetup', '1');
+              navigate(`/cadastro?${passwordSetupParams.toString()}`, { replace: true });
+            }
+          } else if (newRole === 'unauthorized') {
             const shouldRedirectToUnauthorized =
               currentPath === '/login' || isAuthRequiredPath(currentPath) || event === 'SIGNED_IN';
             if (shouldRedirectToUnauthorized) {

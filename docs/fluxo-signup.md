@@ -4,10 +4,11 @@ Este documento resume o fluxo atual de cadastro do AllinPass para o plano `free_
 
 ## Decisao Implementada
 
-O signup segue este modelo:
+O signup de email novo segue este modelo:
 
 ```text
 Frontend -> signup-precheck
+Frontend -> pede senha
 Frontend -> supabase.auth.signUp
 Supabase Auth -> cria usuario em auth.users
 Frontend -> signup-finalize
@@ -16,11 +17,11 @@ Frontend -> refreshAuthProfile
 Usuario -> /org
 ```
 
-A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha passa apenas pelo Supabase Auth.
+A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha passa apenas pelo Supabase Auth e so e solicitada depois que `signup-precheck` confirma qual fluxo sera usado.
 
 Os fluxos pagos `signup_start_checkout` e `signup_finalize_paid` ficaram para uma segunda etapa.
 
-Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`.
+Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`. Depois que o magic link cria a sessao autenticada, o frontend pede uma nova senha e chama `supabase.auth.updateUser({ password })`.
 
 ## Arquivos Principais
 
@@ -33,14 +34,16 @@ Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com 
 ## Fluxo Sem Confirmacao de Email
 
 1. Usuario acessa `/cadastro?plano=free-trial`.
-2. Frontend valida nome do estabelecimento, email e senha.
+2. Frontend valida nome do estabelecimento, email e confirmacao de email.
 3. Frontend chama `signup-precheck`.
-4. Se o email estiver disponivel, frontend chama `supabase.auth.signUp`.
-5. Supabase cria o usuario em `auth.users` e retorna uma sessao.
-6. Frontend chama `signup-finalize`.
-7. Edge Function cria/garante perfil, projeto, assinatura trial e estruturas iniciais.
-8. Frontend chama `refreshAuthProfile`.
-9. Usuario acessa `/org`.
+4. Se o email estiver disponivel, frontend mostra a etapa de senha.
+5. Usuario cria a senha uma unica vez.
+6. Frontend chama `supabase.auth.signUp`.
+7. Supabase cria o usuario em `auth.users` e retorna uma sessao.
+8. Frontend chama `signup-finalize`.
+9. Edge Function cria/garante perfil, projeto, assinatura trial e estruturas iniciais.
+10. Frontend chama `refreshAuthProfile`.
+11. Usuario acessa `/org`.
 
 ## Fluxo Com Cliente Existente
 
@@ -53,6 +56,8 @@ Se `signup-precheck` retornar `code = existing_customer`:
 5. Ao voltar autenticado, a pagina chama `signup-finalize`; se o link cair fora de `/cadastro`, o `SupabaseAuthContext` pode sondar o backend durante o retorno de Auth.
 6. Se o link abrir em outro navegador/dispositivo e os dados nao vierem pela URL/localStorage, `signup-finalize` busca a intencao pendente por `user.email`.
 7. `signup-finalize` atualiza `profiles.role` para `establishment`, provisiona o projeto e marca a intencao como `completed`.
+8. Como a conta ja existia e o fluxo usou magic link em vez de `signUp`, `signup-finalize` retorna `auth.password_setup_required = true`.
+9. O frontend mostra a etapa "Crie sua senha de acesso" e, com a sessao ja autenticada, chama `supabase.auth.updateUser({ password })`.
 
 ## Fluxo Com Confirmacao de Email
 
@@ -112,7 +117,8 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - Esses dados sempre vem de `billing_plans`.
 - A function aceita apenas `planCode = free_trial`.
 - A senha nunca passa pela Edge Function.
-- Para clientes existentes, a senha preenchida no formulario nao e usada; o acesso e confirmado por magic link.
+- A primeira etapa do formulario nao pede senha; ela aparece somente depois do `signup-precheck`.
+- Para clientes existentes, a senha preenchida no formulario inicial nao e usada; o acesso e confirmado por magic link e a senha e criada depois com `supabase.auth.updateUser({ password })`.
 - Para clientes existentes, a intencao backend expira em 24 horas e so e acessada pelas Edge Functions com `service_role`.
 - `/cadastro` nao redireciona automaticamente durante o signup, para evitar conflito enquanto `profiles.role` muda de `customer` para `establishment`.
 - Depois do provisionamento, `refreshAuthProfile` recarrega `profiles` e `project_members`.
@@ -155,3 +161,4 @@ Para validar o fluxo:
 6. Conferir `trial_ends_at` de acordo com `billing_plans.trial_days`.
 7. Conferir acesso a `/org`.
 8. Repetir com email de `customer` existente e conferir que o mesmo `auth.users.id` vira `establishment`.
+9. No fluxo `existing_customer`, criar a senha depois do magic link, sair da conta e validar login com email/senha.

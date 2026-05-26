@@ -183,6 +183,26 @@ function asFinalizationResponse(response: unknown) {
   return response as Record<string, unknown>;
 }
 
+function withPasswordSetupRequirement(
+  response: Record<string, unknown>,
+  passwordSetupRequired: boolean,
+) {
+  const auth = response.auth;
+  const currentAuth =
+    auth && typeof auth === "object" && !Array.isArray(auth)
+      ? auth as Record<string, unknown>
+      : {};
+
+  return {
+    ...response,
+    auth: {
+      ...currentAuth,
+      password_setup_required:
+        Boolean(currentAuth.password_setup_required) || passwordSetupRequired,
+    },
+  };
+}
+
 async function getSignupFinalization(
   supabaseAdmin: SupabaseAdminClient,
   userId: string,
@@ -508,14 +528,20 @@ Deno.serve(async (req) => {
 
     if (finalizationClaim.action === "completed") {
       await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
-      return jsonResponse(origin, finalizationClaim.response);
+      return jsonResponse(
+        origin,
+        withPasswordSetupRequirement(finalizationClaim.response, Boolean(existingCustomerIntent)),
+      );
     }
 
     if (finalizationClaim.action === "processing") {
       const completedResponse = await waitForCompletedSignupFinalization(supabaseAdmin, user.id);
 
       if (completedResponse) {
-        return jsonResponse(origin, completedResponse);
+        return jsonResponse(
+          origin,
+          withPasswordSetupRequirement(completedResponse, Boolean(existingCustomerIntent)),
+        );
       }
 
       return errorResponse(
@@ -795,6 +821,9 @@ Deno.serve(async (req) => {
 
       const responseBody = {
         success: true,
+        auth: {
+          password_setup_required: Boolean(existingCustomerIntent),
+        },
         project: {
           id: projectId,
           slug: projectSlug,

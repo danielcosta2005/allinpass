@@ -60,6 +60,7 @@ export function readExistingCustomerSignupContext() {
     const email = String(parsed?.email || '').trim().toLowerCase();
     const establishmentName = String(parsed?.establishmentName || '').trim();
     const planCode = String(parsed?.planCode || 'free_trial').trim().toLowerCase();
+    const planKey = String(parsed?.planKey || '').trim().toLowerCase();
     const createdAt = Number(parsed?.createdAt || 0);
     const now = Date.now();
     const expired = !Number.isFinite(createdAt) || createdAt <= 0 || now - createdAt > EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS;
@@ -73,6 +74,7 @@ export function readExistingCustomerSignupContext() {
       email,
       establishmentName,
       planCode: planCode || 'free_trial',
+      planKey,
       createdAt,
     };
   } catch {
@@ -85,12 +87,14 @@ export function rememberExistingCustomerSignupContext({
   email,
   establishmentName,
   planCode = 'free_trial',
+  planKey = '',
 }) {
   if (typeof window === 'undefined') return;
 
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedEstablishmentName = String(establishmentName || '').trim();
   const normalizedPlanCode = String(planCode || 'free_trial').trim().toLowerCase();
+  const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
 
   if (!normalizedEmail || !normalizedEstablishmentName) {
     clearExistingCustomerSignupContext();
@@ -101,6 +105,7 @@ export function rememberExistingCustomerSignupContext({
     email: normalizedEmail,
     establishmentName: normalizedEstablishmentName,
     planCode: normalizedPlanCode || 'free_trial',
+    planKey: normalizedPlanKey,
     createdAt: Date.now(),
   };
 
@@ -189,8 +194,9 @@ export async function sendExistingCustomerSignupLink({
   emailRedirectTo,
   establishmentName,
   planCode = 'free_trial',
+  planKey = '',
 }) {
-  rememberExistingCustomerSignupContext({ email, establishmentName, planCode });
+  rememberExistingCustomerSignupContext({ email, establishmentName, planCode, planKey });
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
@@ -209,11 +215,17 @@ export async function sendExistingCustomerSignupLink({
   return { success: true };
 }
 
-export async function precheckFreeTrialSignup({ email, establishmentName, captchaToken = '' }) {
+export async function precheckFreeTrialSignup({
+  email,
+  establishmentName,
+  planCode = 'free_trial',
+  captchaToken = '',
+}) {
   const { data, error } = await supabase.functions.invoke('signup-precheck', {
     body: {
       email,
       establishmentName,
+      planCode,
       captchaToken,
     },
   });

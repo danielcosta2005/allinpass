@@ -34,6 +34,15 @@ function normalizeText(value: unknown) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function normalizePlanCode(value: unknown) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, "");
+
+  return normalized || FREE_PLAN_CODE;
+}
+
 function getClientIp(req: Request) {
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
@@ -113,8 +122,10 @@ async function rememberExistingCustomerSignupIntent(
   supabaseAdmin: SupabaseAdminClient,
   email: string,
   establishmentName: string,
+  planCode: string,
 ) {
   const normalizedEstablishmentName = String(establishmentName ?? "").trim();
+  const normalizedPlanCode = normalizePlanCode(planCode);
   if (!email || !normalizedEstablishmentName) return;
 
   const { error } = await supabaseAdmin
@@ -123,7 +134,7 @@ async function rememberExistingCustomerSignupIntent(
       {
         email,
         establishment_name: normalizedEstablishmentName,
-        plan_code: FREE_PLAN_CODE,
+        plan_code: normalizedPlanCode,
         status: "pending",
         completed_at: null,
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -160,6 +171,7 @@ Deno.serve(async (req) => {
     const payload = await req.json().catch(() => ({}));
     const email = String(payload.email ?? "").trim().toLowerCase();
     const establishmentName = String(payload.establishmentName ?? "").trim();
+    const planCode = normalizePlanCode(payload.planCode);
     const captchaToken = String(payload.captchaToken ?? "").trim();
 
     if (!email) {
@@ -301,11 +313,12 @@ Deno.serve(async (req) => {
       ip_hash: ipHash,
       attempts,
       has_establishment_name: Boolean(normalizedEstablishmentName),
+      plan_code: planCode,
       duration_ms: Date.now() - startedAt,
     });
 
     if (accountStatus === "existing_customer") {
-      await rememberExistingCustomerSignupIntent(supabaseAdmin, email, establishmentName);
+      await rememberExistingCustomerSignupIntent(supabaseAdmin, email, establishmentName, planCode);
 
       return jsonResponse(origin, {
         can_proceed: true,

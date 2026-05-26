@@ -49,7 +49,13 @@ export default function AuthCallback() {
         return;
       }
 
-      navigate('/cadastro?finalizar=1', { replace: true });
+      const signupFinalizeParams = new URLSearchParams();
+      ['plano', 'establishmentName', 'planCode'].forEach((key) => {
+        const value = searchParams.get(key);
+        if (value) signupFinalizeParams.set(key, value);
+      });
+      signupFinalizeParams.set('finalizar', '1');
+      navigate(`/cadastro?${signupFinalizeParams.toString()}`, { replace: true });
     };
 
     const start = async () => {

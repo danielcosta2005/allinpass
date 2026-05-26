@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -42,6 +42,7 @@ import PlanCard from '@/components/landing/PlanCard';
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 let turnstileScriptPromise = null;
 const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
+const SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY = '__signup_password_setup_required';
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
@@ -73,6 +74,26 @@ function evaluatePassword(password) {
     ...strength,
     isStrong: score >= 4,
   };
+}
+
+function markSignupPasswordSetupRequired() {
+  try {
+    sessionStorage.setItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY, '1');
+  } catch (_) {}
+}
+
+function clearSignupPasswordSetupRequired() {
+  try {
+    sessionStorage.removeItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY);
+  } catch (_) {}
+}
+
+function isSignupPasswordSetupRequired() {
+  try {
+    return sessionStorage.getItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY) === '1';
+  } catch (_) {
+    return false;
+  }
 }
 
 function loadTurnstileScript() {
@@ -249,24 +270,77 @@ function normalizeSignupErrorMessage(error) {
   return error?.message || 'NÃ£o foi possÃ­vel iniciar o Free Trial.';
 }
 
+function getPasswordError(password, passwordState) {
+  if (!password) {
+    return 'Crie uma senha forte para proteger os dados da sua conta.';
+  }
+
+  if (!passwordState.isStrong) {
+    const missingRules = passwordState.checks
+      .filter((rule) => !rule.met)
+      .map((rule) => rule.label.toLowerCase());
+    return `Sua senha ainda precisa de: ${missingRules.join(', ')}.`;
+  }
+
+  return '';
+}
+
+function findPlanKeyByCode(planCode, plans = subscriptionPlans) {
+  const normalizedCode = String(planCode || '').trim().toLowerCase();
+  if (!normalizedCode) return '';
+
+  const matchedPlan = plans.find((plan) => String(plan?.code || '').trim().toLowerCase() === normalizedCode);
+  return String(matchedPlan?.key || '').trim();
+}
+
 function SignupPage() {
   const [searchParams] = useSearchParams();
-  const { signUp, refreshAuthProfile, session: authSession } = useAuth();
+  const navigate = useNavigate();
+  const { refreshAuthProfile, session: authSession } = useAuth();
   const { toast } = useToast();
   const finalizeFromRedirectRef = useRef(false);
   const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
-  const selectedPlanKey = searchParams.get('plano') || DEFAULT_PLAN_KEY;
+  const [resolvedPlanCode, setResolvedPlanCode] = useState(
+    () => String(searchParams.get('planCode') || '').trim().toLowerCase()
+  );
+  const existingCustomerSignupContext = readExistingCustomerSignupContext();
+  const contextPlanKey = String(existingCustomerSignupContext?.planKey || '').trim();
+  const contextPlanCode = String(existingCustomerSignupContext?.planCode || '').trim().toLowerCase();
+  const selectedPlanKey = useMemo(() => {
+    const explicitPlanKey = String(searchParams.get('plano') || '').trim();
+    if (explicitPlanKey) return explicitPlanKey;
+
+    const planCodeFromUrl = String(searchParams.get('planCode') || '').trim().toLowerCase();
+    const planKeyFromUrlCode = findPlanKeyByCode(planCodeFromUrl, availablePlans);
+    if (planKeyFromUrlCode) return planKeyFromUrlCode;
+
+    if (contextPlanKey) return contextPlanKey;
+
+    const planKeyFromContextCode = findPlanKeyByCode(contextPlanCode, availablePlans);
+    if (planKeyFromContextCode) return planKeyFromContextCode;
+
+    const planKeyFromResolvedCode = findPlanKeyByCode(resolvedPlanCode, availablePlans);
+    if (planKeyFromResolvedCode) return planKeyFromResolvedCode;
+
+    const planCodeFromMetadata = String(authSession?.user?.user_metadata?.plan_code || '').trim().toLowerCase();
+    const planKeyFromMetadataCode = findPlanKeyByCode(planCodeFromMetadata, availablePlans);
+    if (planKeyFromMetadataCode) return planKeyFromMetadataCode;
+
+    return DEFAULT_PLAN_KEY;
+  }, [searchParams, availablePlans, contextPlanKey, contextPlanCode, resolvedPlanCode, authSession]);
   const shouldFinalizeFromRedirect = searchParams.get('finalizar') === '1';
+  const shouldSetupPasswordFromRedirect = searchParams.get('passwordSetup') === '1';
   const selectedPlan = useMemo(
     () => findPlanByKey(selectedPlanKey, availablePlans),
     [availablePlans, selectedPlanKey]
   );
   const paidPlan = isPaidPlan(selectedPlan);
-  const totalSteps = paidPlan ? 2 : 1;
+  const totalSteps = 2;
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
   const [confirmationFlow, setConfirmationFlow] = useState('signup');
+  const [pendingNewSignup, setPendingNewSignup] = useState(null);
   const [acceptMockCheckout, setAcceptMockCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
@@ -275,6 +349,10 @@ function SignupPage() {
   const [signupLoading, setSignupLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [signupError, setSignupError] = useState('');
+  const [passwordSetupValue, setPasswordSetupValue] = useState('');
+  const [passwordSetupTouched, setPasswordSetupTouched] = useState(false);
+  const [passwordSetupLoading, setPasswordSetupLoading] = useState(false);
+  const [passwordSetupError, setPasswordSetupError] = useState('');
   const [captchaToken, setCaptchaToken] = useState('');
   const turnstileResetRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -286,14 +364,22 @@ function SignupPage() {
 
   const turnstileSiteKey = useMemo(() => getTurnstileSiteKey(import.meta.env), []);
   const passwordState = useMemo(() => evaluatePassword(formData.password), [formData.password]);
+  const passwordSetupState = useMemo(
+    () => evaluatePassword(passwordSetupValue),
+    [passwordSetupValue]
+  );
   const signupCaptchaEnabled = useMemo(
     () => shouldUseSignupCaptcha({ paidPlan, siteKey: turnstileSiteKey }),
     [paidPlan, turnstileSiteKey]
   );
 
-  const activeStep = finishedFlow ? totalSteps : step;
+  const activeStep = finishedFlow === 'create-password' || finishedFlow === 'set-password'
+    ? 2
+    : finishedFlow
+      ? totalSteps
+      : step;
 
-  const steps = paidPlan ? ['Cadastro', 'Pagamento'] : ['Cadastro'];
+  const steps = paidPlan ? ['Cadastro', 'Pagamento'] : ['Cadastro', 'Senha'];
 
   const setField = (field, value) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
@@ -323,15 +409,6 @@ function SignupPage() {
       nextErrors.emailConfirmation = 'Os e-mails não conferem. Ajuste para continuar.';
     }
 
-    if (!formData.password) {
-      nextErrors.password = 'Crie uma senha forte para proteger os dados da sua conta.';
-    } else if (!passwordState.isStrong) {
-      const missingRules = passwordState.checks
-        .filter((rule) => !rule.met)
-        .map((rule) => rule.label.toLowerCase());
-      nextErrors.password = `Sua senha ainda precisa de: ${missingRules.join(', ')}.`;
-    }
-
     return nextErrors;
   };
 
@@ -347,9 +424,8 @@ function SignupPage() {
   }, [refreshAuthProfile]);
 
   const buildFreeTrialEmailRedirectTo = useCallback((metadata = {}) => {
-    const planKey = selectedPlan?.key || 'free-trial';
     const params = new URLSearchParams({
-      plano: planKey,
+      plano: selectedPlanKey,
       finalizar: '1',
     });
     const establishmentName = String(metadata.establishmentName || '').trim();
@@ -359,7 +435,142 @@ function SignupPage() {
     if (planCode) params.set('planCode', planCode);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
-  }, [selectedPlan?.key]);
+  }, [selectedPlanKey]);
+
+  const handlePasswordSetupSubmit = async (event) => {
+    event.preventDefault();
+    setPasswordSetupTouched(true);
+    setPasswordSetupError('');
+
+    if (!authSession?.user) {
+      const message = 'Sua sessao expirou. Abra o magic link novamente para criar sua senha.';
+      setPasswordSetupError(message);
+      toast({
+        title: 'Sessao expirada',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!passwordSetupValue) {
+      setPasswordSetupError('Crie uma senha forte para acessar sua conta depois.');
+      return;
+    }
+
+    if (!passwordSetupState.isStrong) {
+      const missingRules = passwordSetupState.checks
+        .filter((rule) => !rule.met)
+        .map((rule) => rule.label.toLowerCase());
+      setPasswordSetupError(`Sua senha ainda precisa de: ${missingRules.join(', ')}.`);
+      return;
+    }
+
+    setPasswordSetupLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwordSetupValue });
+
+      if (error) throw error;
+
+      clearSignupPasswordSetupRequired();
+      setPasswordSetupValue('');
+      setPasswordSetupTouched(false);
+      setPasswordSetupError('');
+      await refreshAuthProfile();
+      toast({
+        title: 'Senha criada',
+        description: 'Agora voce pode acessar sua conta com email e senha.',
+      });
+      navigate('/org', { replace: true });
+    } catch (error) {
+      const message = error?.message || 'Nao foi possivel criar sua senha agora.';
+      setPasswordSetupError(message);
+      toast({
+        title: 'Erro ao criar senha',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPasswordSetupLoading(false);
+    }
+  };
+
+  const handleCreatePasswordSubmit = async (event) => {
+    event.preventDefault();
+    setAttemptedSubmit(true);
+    setSignupError('');
+
+    const passwordError = getPasswordError(formData.password, passwordState);
+    if (passwordError) {
+      setErrors((previous) => ({ ...previous, password: passwordError }));
+      return;
+    }
+
+    const signupContext = pendingNewSignup;
+    if (!signupContext?.email || !signupContext?.establishmentName) {
+      const message = 'Nao foi possivel recuperar os dados do cadastro. Revise o email e tente novamente.';
+      setSignupError(message);
+      toast({
+        title: 'Cadastro incompleto',
+        description: message,
+        variant: 'destructive',
+      });
+      setFinishedFlow('');
+      setStep(1);
+      return;
+    }
+
+    setSignupLoading(true);
+
+    try {
+      const emailRedirectTo = buildFreeTrialEmailRedirectTo();
+      const { data, error } = await supabase.auth.signUp({
+        email: signupContext.email,
+        password: formData.password,
+        options: {
+          data: {
+            establishment_name: signupContext.establishmentName,
+            plan_code: signupContext.planCode,
+            plan_key: selectedPlanKey,
+          },
+          emailRedirectTo,
+        },
+      });
+
+      if (error) throw error;
+
+      clearExistingCustomerSignupContext();
+      setPendingNewSignup(null);
+
+      if (!data?.session) {
+        setConfirmationFlow('signup');
+        setFinishedFlow('confirm-email');
+        toast({
+          title: 'Confirme seu e-mail',
+          description: 'Enviamos um link para finalizar seu Free Trial.',
+        });
+        return;
+      }
+
+      await provisionFreeTrial({
+        establishmentName: signupContext.establishmentName,
+        planCode: signupContext.planCode,
+        userId: data?.session?.user?.id || data?.user?.id,
+      });
+      setFinishedFlow('trial');
+    } catch (error) {
+      const message = normalizeSignupErrorMessage(error);
+      setSignupError(message);
+      toast({
+        title: 'Erro no cadastro',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSignupLoading(false);
+    }
+  };
 
   const handleStepOneSubmit = async (event) => {
     event.preventDefault();
@@ -392,9 +603,11 @@ function SignupPage() {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
       const planCode = selectedPlan?.code || 'free_trial';
+      setResolvedPlanCode(String(planCode).trim().toLowerCase());
       const precheck = await precheckFreeTrialSignup({
         email: normalizedEmail,
         establishmentName,
+        planCode,
         captchaToken: signupCaptchaEnabled ? captchaToken : '',
       });
 
@@ -405,6 +618,7 @@ function SignupPage() {
           emailRedirectTo,
           establishmentName,
           planCode,
+          planKey: selectedPlanKey,
         });
 
         setConfirmationFlow('existing-customer');
@@ -422,36 +636,21 @@ function SignupPage() {
         throw new Error(message);
       }
 
-      const emailRedirectTo = buildFreeTrialEmailRedirectTo();
-
-      const { data, error } = await signUp(normalizedEmail, formData.password, {
-        data: {
-          establishment_name: establishmentName,
-          plan_code: planCode,
-          plan_key: selectedPlan?.key || 'free-trial',
-        },
-        emailRedirectTo,
-      });
-
-      if (error) throw error;
-      clearExistingCustomerSignupContext();
-
-      if (!data?.session) {
-        setConfirmationFlow('signup');
-        setFinishedFlow('confirm-email');
-        toast({
-          title: 'Confirme seu e-mail',
-          description: 'Enviamos um link para finalizar seu Free Trial.',
-        });
-        return;
-      }
-
-      await provisionFreeTrial({
+      setPendingNewSignup({
         establishmentName,
+        email: normalizedEmail,
         planCode,
-        userId: data?.session?.user?.id || data?.user?.id,
       });
-      setFinishedFlow('trial');
+      setFormData((previous) => ({
+        ...previous,
+        email: normalizedEmail,
+        emailConfirmation: normalizedEmail,
+        password: '',
+      }));
+      setTouched((previous) => ({ ...previous, password: false }));
+      setErrors((previous) => ({ ...previous, password: '' }));
+      setAttemptedSubmit(false);
+      setFinishedFlow('create-password');
     } catch (error) {
       const message = normalizeSignupErrorMessage(error);
       setSignupError(message);
@@ -494,6 +693,7 @@ function SignupPage() {
           }),
           establishmentName: formData.establishmentName.trim(),
           planCode: selectedPlan?.code || 'free_trial',
+          planKey: selectedPlanKey,
         });
       } else {
         const { error } = await supabase.auth.resend({
@@ -603,13 +803,19 @@ function SignupPage() {
             || existingCustomerContext?.planCode
             || 'free_trial',
         );
+        setResolvedPlanCode(String(planCode).trim().toLowerCase());
 
         const result = await provisionFreeTrial({
           establishmentName,
           planCode,
           userId: user.id,
         });
+        const finalizedPlanCode = String(result?.plan?.code || planCode || '').trim().toLowerCase();
+        if (finalizedPlanCode) {
+          setResolvedPlanCode(finalizedPlanCode);
+        }
         const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
+        const passwordSetupRequired = Boolean(result?.auth?.password_setup_required);
         clearExistingCustomerSignupContext();
         setFormData((previous) => ({
           ...previous,
@@ -617,6 +823,14 @@ function SignupPage() {
           email: user.email || previous.email,
           emailConfirmation: user.email || previous.emailConfirmation,
         }));
+
+        if (passwordSetupRequired) {
+          markSignupPasswordSetupRequired();
+          setFinishedFlow('set-password');
+          return;
+        }
+
+        clearSignupPasswordSetupRequired();
         setFinishedFlow('trial');
       } catch (error) {
         const message = error?.message || 'Não foi possível finalizar o Free Trial.';
@@ -633,6 +847,19 @@ function SignupPage() {
 
     finalizePendingSignup();
   }, [authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]);
+
+  useEffect(() => {
+    const user = authSession?.user ?? null;
+    if (!user || finishedFlow === 'set-password') return;
+    if (!shouldSetupPasswordFromRedirect && !isSignupPasswordSetupRequired()) return;
+
+    setFormData((previous) => ({
+      ...previous,
+      email: user.email || previous.email,
+      emailConfirmation: user.email || previous.emailConfirmation,
+    }));
+    setFinishedFlow('set-password');
+  }, [authSession, finishedFlow, shouldSetupPasswordFromRedirect]);
 
   return (
     <>
@@ -685,8 +912,12 @@ function SignupPage() {
                 <ol className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {steps.map((stepLabel, index) => {
                     const position = index + 1;
-                    const done = activeStep > position || Boolean(finishedFlow);
-                    const current = !finishedFlow && activeStep === position;
+                    const isPasswordStep =
+                      finishedFlow === 'create-password' || finishedFlow === 'set-password';
+                    const isWaitingEmailFlow = finishedFlow === 'confirm-email';
+                    const isSuccessFlow = Boolean(finishedFlow) && !isPasswordStep && !isWaitingEmailFlow;
+                    const done = activeStep > position || isSuccessFlow;
+                    const current = (!finishedFlow || isPasswordStep) && activeStep === position;
                     return (
                       <li
                         key={stepLabel}
@@ -825,55 +1056,6 @@ function SignupPage() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <Label htmlFor="password">Senha</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        className="h-12"
-                        value={formData.password}
-                        onChange={(event) => setField('password', event.target.value)}
-                        onBlur={() => setFieldTouched('password')}
-                        placeholder="Crie uma senha forte"
-                        aria-invalid={shouldShowError('password')}
-                      />
-                      {shouldShowError('password') && (
-                        <p className="text-sm text-rose-600">{errors.password}</p>
-                      )}
-
-                      <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
-                          <p className={`text-sm font-semibold ${passwordState.textColor}`}>
-                            {passwordState.label}
-                          </p>
-                        </div>
-
-                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                          <motion.div
-                            className={`h-full ${passwordState.barColor}`}
-                            initial={false}
-                            animate={{ width: `${passwordState.progress}%` }}
-                            transition={{ duration: 0.35, ease: 'easeOut' }}
-                          />
-                        </div>
-
-                        <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-                          {passwordState.checks.map((rule) => (
-                            <li
-                              key={rule.id}
-                              className={`text-xs flex items-center gap-2 ${
-                                rule.met ? 'text-emerald-700' : 'text-slate-500'
-                              }`}
-                            >
-                              <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                              {rule.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
                     {signupCaptchaEnabled && (
                       <TurnstileWidget
                         siteKey={turnstileSiteKey}
@@ -894,7 +1076,7 @@ function SignupPage() {
                           <Loader2 className="w-4 h-4 animate-spin" />
                           Iniciando...
                         </span>
-                      ) : paidPlan ? 'Continuar para pagamento' : 'Iniciar Free Trial'}
+                      ) : paidPlan ? 'Continuar para pagamento' : 'Continuar'}
                     </Button>
                     {signupError && (
                       <p className="text-sm text-rose-600 text-center">{signupError}</p>
@@ -970,6 +1152,110 @@ function SignupPage() {
                   </motion.div>
                 )}
 
+                {finishedFlow === 'create-password' && (
+                  <motion.form
+                    key="create-password"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    onSubmit={handleCreatePasswordSubmit}
+                    className="space-y-5"
+                    noValidate
+                  >
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                      <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
+                      <h2 className="text-2xl font-bold text-emerald-950">Email liberado</h2>
+                      <p className="text-emerald-800 mt-2">
+                        Agora crie a senha que voce usara para entrar no painel do estabelecimento.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="password">Senha</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        className="h-12"
+                        value={formData.password}
+                        onChange={(event) => setField('password', event.target.value)}
+                        onBlur={() => setFieldTouched('password')}
+                        placeholder="Crie uma senha forte"
+                        autoComplete="new-password"
+                        aria-invalid={shouldShowError('password')}
+                      />
+                      {shouldShowError('password') && (
+                        <p className="text-sm text-rose-600">{errors.password}</p>
+                      )}
+
+                      <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                          <p className={`text-sm font-semibold ${passwordState.textColor}`}>
+                            {passwordState.label}
+                          </p>
+                        </div>
+
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className={`h-full ${passwordState.barColor}`}
+                            initial={false}
+                            animate={{ width: `${passwordState.progress}%` }}
+                            transition={{ duration: 0.35, ease: 'easeOut' }}
+                          />
+                        </div>
+
+                        <ul className="mt-3 grid sm:grid-cols-2 gap-2">
+                          {passwordState.checks.map((rule) => (
+                            <li
+                              key={rule.id}
+                              className={`text-xs flex items-center gap-2 ${
+                                rule.met ? 'text-emerald-700' : 'text-slate-500'
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                              {rule.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setPendingNewSignup(null);
+                          setFinishedFlow('');
+                          setStep(1);
+                          setAttemptedSubmit(false);
+                          setSignupError('');
+                          setFormData((previous) => ({ ...previous, password: '' }));
+                        }}
+                        className="h-12 sm:w-40"
+                      >
+                        Voltar
+                      </Button>
+                      <Button
+                        type="submit"
+                        className="h-12 flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                        disabled={signupLoading}
+                      >
+                        {signupLoading ? (
+                          <span className="inline-flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Criando conta...
+                          </span>
+                        ) : 'Criar conta'}
+                      </Button>
+                    </div>
+                    {signupError && (
+                      <p className="text-sm text-rose-600 text-center">{signupError}</p>
+                    )}
+                  </motion.form>
+                )}
+
                 {finishedFlow === 'trial' && (
                   <motion.div
                     key="success-trial"
@@ -995,6 +1281,93 @@ function SignupPage() {
                       </Link>
                     </div>
                   </motion.div>
+                )}
+
+                {finishedFlow === 'set-password' && (
+                  <motion.form
+                    key="set-password"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    onSubmit={handlePasswordSetupSubmit}
+                    className="space-y-5"
+                    noValidate
+                  >
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                      <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
+                      <h2 className="text-2xl font-bold text-emerald-950">Email confirmado</h2>
+                      <p className="text-emerald-800 mt-2">
+                        Agora crie a senha que voce usara para entrar no painel do estabelecimento.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Label htmlFor="password-setup">Senha</Label>
+                      <Input
+                        id="password-setup"
+                        type="password"
+                        className="h-12"
+                        autoComplete="new-password"
+                        value={passwordSetupValue}
+                        onChange={(event) => {
+                          setPasswordSetupValue(event.target.value);
+                          setPasswordSetupError('');
+                        }}
+                        onBlur={() => setPasswordSetupTouched(true)}
+                        aria-invalid={Boolean(passwordSetupError)}
+                        placeholder="Crie uma senha forte"
+                      />
+                      {passwordSetupError && (
+                        <p className="text-sm text-rose-600">{passwordSetupError}</p>
+                      )}
+
+                      <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                          <p className={`text-sm font-semibold ${passwordSetupState.textColor}`}>
+                            {passwordSetupState.label}
+                          </p>
+                        </div>
+
+                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <motion.div
+                            className={`h-full ${passwordSetupState.barColor}`}
+                            initial={false}
+                            animate={{ width: `${passwordSetupState.progress}%` }}
+                            transition={{ duration: 0.35, ease: 'easeOut' }}
+                          />
+                        </div>
+
+                        <ul className="mt-3 grid sm:grid-cols-2 gap-2">
+                          {passwordSetupState.checks.map((rule) => (
+                            <li
+                              key={rule.id}
+                              className={`text-xs flex items-center gap-2 ${
+                                rule.met ? 'text-emerald-700' : 'text-slate-500'
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                              {rule.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      disabled={passwordSetupLoading}
+                      className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                    >
+                      {passwordSetupLoading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Criando senha...
+                        </span>
+                      ) : 'Criar senha e continuar'}
+                    </Button>
+                  </motion.form>
                 )}
 
                 {finishedFlow === 'confirm-email' && (
@@ -1029,11 +1402,6 @@ function SignupPage() {
                         ) : null}
                         Reenviar e-mail
                       </Button>
-                      <Link to="/login">
-                        <Button className="bg-sky-700 hover:bg-sky-800 text-white">
-                          Ir para login
-                        </Button>
-                      </Link>
                     </div>
                   </motion.div>
                 )}
@@ -1079,3 +1447,4 @@ function SignupPage() {
 }
 
 export default SignupPage;
+

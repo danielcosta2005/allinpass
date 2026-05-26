@@ -16,8 +16,9 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("emailRedirectTo");
     expect(signupPageSource).toContain("Reenviar e-mail");
 
+    const confirmEmailStart = signupPageSource.indexOf("{finishedFlow === 'confirm-email'");
     const confirmEmailBlock = signupPageSource.slice(
-      signupPageSource.indexOf("finishedFlow === 'confirm-email'"),
+      confirmEmailStart,
       signupPageSource.indexOf("finishedFlow === 'paid'")
     );
 
@@ -38,12 +39,83 @@ describe("signup confirmation UX", () => {
 
     expect(signupPageSource).toContain("precheck.code === 'existing_customer'");
     expect(signupPageSource).toContain("sendExistingCustomerSignupLink");
+    expect(signupPageSource).toContain("precheckFreeTrialSignup({");
+    expect(signupPageSource).toContain("planCode,");
     expect(signupPageSource).toContain("buildFreeTrialEmailRedirectTo({ establishmentName, planCode })");
+    expect(signupPageSource).toContain("planKey: selectedPlanKey");
     expect(signupPageSource).toContain("searchParams.get('establishmentName')");
     expect(signupPageSource).toContain("setFinishedFlow('confirm-email')");
     expect(signupClientSource).toContain("supabase.auth.signInWithOtp");
     expect(signupClientSource).toContain("shouldCreateUser: false");
+    expect(signupClientSource).toContain("planCode = 'free_trial'");
+    expect(signupClientSource).toContain("planCode,");
     expect(signupClientSource).toContain("emailRedirectTo");
+  });
+
+  test("magic link redirect preserves the plan key from the signup URL", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+
+    expect(signupPageSource).toContain("plano: selectedPlanKey");
+    expect(signupPageSource).toContain("plan_key: selectedPlanKey");
+    expect(signupPageSource).toContain("searchParams.get('planCode')");
+    expect(signupPageSource).toContain("findPlanKeyByCode");
+    expect(signupPageSource).toContain("planCodeFromMetadata");
+    expect(signupPageSource).toContain("[selectedPlanKey]");
+    expect(signupPageSource).not.toContain("const planKey = selectedPlan?.key || 'free-trial'");
+  });
+
+  test("existing customer flow sets password only after the magic link creates an authenticated session", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const setPasswordStart = signupPageSource.indexOf("{finishedFlow === 'set-password'");
+    const setPasswordEnd = signupPageSource.indexOf("finishedFlow === 'confirm-email'", setPasswordStart);
+    const setPasswordBlock = signupPageSource.slice(
+      setPasswordStart,
+      setPasswordEnd
+    );
+    const stepperBlock = signupPageSource.slice(
+      signupPageSource.indexOf("steps.map"),
+      signupPageSource.indexOf("</ol>")
+    );
+
+    expect(signupPageSource).toContain("finishedFlow === 'set-password'");
+    expect(signupPageSource).toContain("handlePasswordSetupSubmit");
+    expect(signupPageSource).toContain("supabase.auth.updateUser({ password: passwordSetupValue })");
+    expect(signupPageSource).toContain("__signup_password_setup_required");
+    expect(signupPageSource).toContain("setFinishedFlow('set-password')");
+    expect(signupPageSource).toContain("navigate('/org', { replace: true })");
+    expect(setPasswordBlock).toContain("rounded-2xl border border-emerald-200 bg-emerald-50 p-5");
+    expect(setPasswordBlock).not.toContain("border-amber-200 bg-amber-50");
+    expect(stepperBlock).toContain("finishedFlow === 'confirm-email'");
+    expect(stepperBlock).toContain("const done =");
+    expect(stepperBlock).toContain("isSuccessFlow");
+  });
+
+  test("free trial signup asks for a password only after precheck confirms a new account can be created", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const firstStepBlock = signupPageSource.slice(
+      signupPageSource.indexOf('key="step-1"'),
+      signupPageSource.indexOf('{signupCaptchaEnabled && (')
+    );
+    const createPasswordBlock = signupPageSource.slice(
+      signupPageSource.indexOf("finishedFlow === 'create-password'"),
+      signupPageSource.indexOf("finishedFlow === 'trial'")
+    );
+
+    expect(signupPageSource).toContain("setFinishedFlow('create-password')");
+    expect(signupPageSource).toContain("handleCreatePasswordSubmit");
+    expect(firstStepBlock).not.toContain('htmlFor="password"');
+    expect(firstStepBlock).not.toContain('id="password"');
+    expect(createPasswordBlock).toContain('htmlFor="password"');
+    expect(signupPageSource).toContain("supabase.auth.signUp");
   });
 
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {
