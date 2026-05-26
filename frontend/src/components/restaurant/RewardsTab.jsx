@@ -181,7 +181,7 @@ function formatScannerRewardError(body, fallback) {
       : "Este passe nao tem pontos suficientes para esta recompensa.";
   }
 
-  return body?.message || body?.error || fallback?.message || "Nao foi possivel contabilizar a recompensa.";
+  return body?.message || body?.error || fallback?.message || "Nao foi possivel resgatar a recompensa.";
 }
 
 export default function RewardsTab({ projectId }) {
@@ -505,7 +505,7 @@ export default function RewardsTab({ projectId }) {
       setScanResult({ success: false, error: err?.message || String(err) });
       toast({
         variant: "destructive",
-        title: "Erro ao contabilizar recompensa",
+        title: "Erro ao resgatar recompensa",
         description: err?.message || String(err),
       });
     } finally {
@@ -654,7 +654,7 @@ export default function RewardsTab({ projectId }) {
       >
         <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-purple-100 bg-white p-5 shadow-2xl">
           <DialogHeader className="pr-8">
-            <DialogTitle>Contabilizar recompensa</DialogTitle>
+            <DialogTitle>Resgatar recompensa</DialogTitle>
             <DialogDescription>
               {redeemingReward?.name} - {redeemingReward?.points_required} ponto(s)
             </DialogDescription>
@@ -826,7 +826,7 @@ export default function RewardsTab({ projectId }) {
                                 className="gap-2"
                               >
                                 <ScanLine className="h-4 w-4" />
-                                Contabilizar
+                                Resgatar
                               </Button>
                             </div>
                           </td>
