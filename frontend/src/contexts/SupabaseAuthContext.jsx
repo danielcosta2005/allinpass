@@ -9,10 +9,109 @@ import React, {
 } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  clearExistingCustomerSignupContext,
+  finalizeFreeTrialSignup,
+  readExistingCustomerSignupContext,
+} from '@/lib/signup';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
 const VALID_ROLES = new Set(['superadmin', 'admin', 'establishment', 'customer']);
+const FREE_TRIAL_PLAN_CODE = 'free_trial';
+const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
+
+function normalizeSignupErrorMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  if (
+    message.includes('email rate limit exceeded')
+    || code === 'over_email_send_rate_limit'
+  ) {
+    return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
+  }
+
+  return error?.message || 'Something went wrong';
+}
+
+function isEmailNotConfirmedError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  return code === 'email_not_confirmed' || message.includes('email not confirmed');
+}
+
+function isSignupFinalizeCallbackPath() {
+  if (typeof window === 'undefined') return false;
+
+  const p = window.location.pathname || '';
+  const params = new URLSearchParams(window.location.search || '');
+  return p === '/cadastro' && params.get('finalizar') === '1';
+}
+
+function isAuthReturnUrl() {
+  if (typeof window === 'undefined') return false;
+
+  const authReturnTypes = new Set(['signup', 'magiclink', 'recovery', 'invite', 'email_change']);
+  const searchParams = new URLSearchParams(window.location.search || '');
+  const hashParams = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+  const hasAuthParams = (params) => (
+    params.has('code') ||
+    params.has('token_hash') ||
+    params.has('access_token') ||
+    params.has('refresh_token') ||
+    authReturnTypes.has(params.get('type'))
+  );
+
+  return hasAuthParams(searchParams) || hasAuthParams(hashParams);
+}
+
+function canProbeSignupIntentOnPath(pathname) {
+  if (typeof window === 'undefined') return false;
+
+  const p = String(pathname || '');
+  if (p === '/' || p === '/login' || p === '/cadastro') return true;
+
+  if (p === '/auth/callback') {
+    const params = new URLSearchParams(window.location.search || '');
+    return !params.get('projectId');
+  }
+
+  return false;
+}
+
+function getPendingFreeTrialSignup(currentUser) {
+  const metadata = currentUser?.user_metadata || {};
+  const appMetadata = currentUser?.app_metadata || {};
+  const establishmentName = String(metadata.establishment_name || '').trim();
+  const planCode = String(metadata.plan_code || FREE_TRIAL_PLAN_CODE).trim();
+
+  if (appMetadata.signup_project_id) {
+    clearExistingCustomerSignupContext();
+    return null;
+  }
+
+  if (establishmentName && planCode === FREE_TRIAL_PLAN_CODE) {
+    return { establishmentName, planCode };
+  }
+
+  const existingCustomerContext = readExistingCustomerSignupContext();
+  if (!existingCustomerContext) return null;
+
+  const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
+  if (!currentUserEmail || existingCustomerContext.email !== currentUserEmail) {
+    clearExistingCustomerSignupContext();
+    return null;
+  }
+
+  if (existingCustomerContext.planCode !== FREE_TRIAL_PLAN_CODE) return null;
+
+  return {
+    establishmentName: existingCustomerContext.establishmentName,
+    planCode: existingCustomerContext.planCode,
+  };
+}
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -20,7 +119,7 @@ export const AuthProvider = ({ children }) => {
   const [role, setRole] = useState(null);
   const [projectId, setProjectId] = useState(null);
   const [loading, setLoading] = useState(true);
-const [initialized, setInitialized] = useState(false);
+  const [initialized, setInitialized] = useState(false);
 
   // Protection against transient refresh failures.
   const REFRESH_FAIL_WINDOW_MS = 60_000;
@@ -81,6 +180,11 @@ const [initialized, setInitialized] = useState(false);
   // Avoid hijacking public claim/callback flow.
   const isClaimOrCallbackPath = useCallback(() => {
     const p = window.location.pathname || '';
+
+    if (isSignupFinalizeCallbackPath()) {
+      return true;
+    }
+
     return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/cadastro' || p === '/thanks';
   }, []);
 
@@ -198,6 +302,39 @@ const [initialized, setInitialized] = useState(false);
     return { role: currentRole, projectId: null };
   }, []);
 
+  const finalizePendingSignupSession = useCallback(async (
+    currentUser,
+    { allowBackendIntentFallback = false, suppressMissingIntentError = false } = {}
+  ) => {
+    const pendingSignup = getPendingFreeTrialSignup(currentUser) || (
+      allowBackendIntentFallback
+        ? { establishmentName: '', planCode: FREE_TRIAL_PLAN_CODE }
+        : null
+    );
+    if (!pendingSignup) return null;
+
+    try {
+      await finalizeFreeTrialSignup({
+        ...pendingSignup,
+        dedupeKey: `free-trial:${currentUser.id}`,
+      });
+      clearExistingCustomerSignupContext();
+      return getProfileAndProject(currentUser);
+    } catch (error) {
+      if (suppressMissingIntentError && error?.code === 'SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME') {
+        return null;
+      }
+
+      console.error('[auth] signup-finalize auto recovery failed', error);
+      toast({
+        title: 'Erro ao finalizar cadastro',
+        description: error?.message || 'Nao foi possivel finalizar o Free Trial automaticamente.',
+        variant: 'destructive',
+      });
+      return null;
+    }
+  }, [getProfileAndProject, toast]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -260,7 +397,19 @@ const [initialized, setInitialized] = useState(false);
       setSession(currentSession);
 
       if (currentUser) {
-        if (isClaimOrCallbackPath()) {
+        const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
+        const hasAuthReturn = isAuthReturnUrl();
+        const canProbeBackendSignupIntent =
+          (hasAuthReturn || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
+          canProbeSignupIntentOnPath(currentPath) &&
+          !currentPath.startsWith('/claim') &&
+          currentPath !== '/thanks';
+        const shouldAllowAutoFinalizeOnCallbackPath =
+          (hasPendingSignup || canProbeBackendSignupIntent) &&
+          !isSignupFinalizeCallbackPath() &&
+          (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
+
+        if (isClaimOrCallbackPath() && !shouldAllowAutoFinalizeOnCallbackPath) {
           setLoading(false);
           setInitialized(true);
           return;
@@ -279,8 +428,35 @@ const [initialized, setInitialized] = useState(false);
             sessionStorage.removeItem('__auth_refresh_fail');
           } catch (_) {}
 
-          const { role: newRole } = await getProfileAndProject(currentUser);
+          let { role: newRole, projectId: newProjectId } = await getProfileAndProject(currentUser);
           if (cancelled) return;
+          let didAutoFinalizeSignup = false;
+          const shouldProbeBackendSignupIntent =
+            canProbeBackendSignupIntent &&
+            !hasPendingSignup &&
+            newRole === 'customer' &&
+            !newProjectId;
+
+          const shouldAutoFinalizeSignup =
+            !isSignupFinalizeCallbackPath() &&
+            (hasPendingSignup || shouldProbeBackendSignupIntent) &&
+            (newRole === 'customer' || newRole === 'establishment') &&
+            !newProjectId &&
+            (event === 'SIGNED_IN' || event === 'INITIAL_SESSION');
+
+          if (shouldAutoFinalizeSignup) {
+            const finalizedState = await finalizePendingSignupSession(currentUser, {
+              allowBackendIntentFallback: shouldProbeBackendSignupIntent,
+              suppressMissingIntentError: shouldProbeBackendSignupIntent,
+            });
+            if (cancelled) return;
+
+            if (finalizedState?.role) {
+              newRole = finalizedState.role;
+              newProjectId = finalizedState.projectId;
+              didAutoFinalizeSignup = true;
+            }
+          }
 
           if (newRole === 'unauthorized') {
             const shouldRedirectToUnauthorized =
@@ -288,7 +464,7 @@ const [initialized, setInitialized] = useState(false);
             if (shouldRedirectToUnauthorized) {
               navigate('/nao-autorizado', { replace: true });
             }
-          } else if (event === 'SIGNED_IN') {
+          } else if (event === 'SIGNED_IN' || didAutoFinalizeSignup) {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
 
@@ -360,6 +536,7 @@ const [initialized, setInitialized] = useState(false);
     };
   }, [
     getProfileAndProject,
+    finalizePendingSignupSession,
     navigate,
     isClaimOrCallbackPath,
     isAuthRequiredPath,
@@ -375,7 +552,7 @@ const [initialized, setInitialized] = useState(false);
       toast({
         variant: 'destructive',
         title: 'Sign up Failed',
-        description: error.message || 'Something went wrong',
+        description: normalizeSignupErrorMessage(error),
       });
     }
 
@@ -402,7 +579,7 @@ const [initialized, setInitialized] = useState(false);
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
+    if (error && !isEmailNotConfirmedError(error)) {
       toast({
         variant: 'destructive',
         title: 'Sign in Failed',
