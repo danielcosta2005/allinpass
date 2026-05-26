@@ -224,6 +224,20 @@ export default function RewardsTab({ projectId }) {
     }
   }, []);
 
+  const createScanner = useCallback(() => {
+    if (scannerRef.current) return scannerRef.current;
+    if (!videoRef.current) return null;
+
+    const scanner = new QrScanner(
+      videoRef.current,
+      (result) => onScanRef.current?.(result),
+      { highlightScanRegion: true, highlightCodeOutline: true },
+    );
+
+    scannerRef.current = scanner;
+    return scanner;
+  }, []);
+
   async function fetchRewards() {
     if (!projectId) return;
 
@@ -426,21 +440,35 @@ export default function RewardsTab({ projectId }) {
   }, []);
 
   const startScan = useCallback(async () => {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
+    let scanner = createScanner();
+
+    if (!scanner) {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      scanner = createScanner();
+    }
+
+    if (!scanner) {
+      toast({
+        variant: "destructive",
+        title: "Scanner indisponivel",
+        description: "Nao foi possivel preparar o video do scanner. Feche e abra o resgate novamente.",
+      });
+      return;
+    }
 
     try {
       await scanner.start();
       setIsScanning(true);
       setScanResult(null);
     } catch (err) {
+      console.error(err);
       toast({
         variant: "destructive",
         title: "Erro na camera",
         description: "Nao foi possivel acessar a camera. Verifique as permissoes.",
       });
     }
-  }, [toast]);
+  }, [createScanner, toast]);
 
   const callScannerReward = useCallback(async ({ rewardId, passToken }) => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -533,24 +561,18 @@ export default function RewardsTab({ projectId }) {
   }, [onScan]);
 
   useEffect(() => {
-    if (!redeemingReward || !videoRef.current) return undefined;
-
-    const scanner = new QrScanner(
-      videoRef.current,
-      (result) => onScanRef.current?.(result),
-      { highlightScanRegion: true, highlightCodeOutline: true },
-    );
-
-    scannerRef.current = scanner;
+    if (!redeemingReward) return undefined;
+    createScanner();
 
     return () => {
+      const scanner = scannerRef.current;
       try {
-        scanner.destroy();
+        scanner?.destroy();
       } catch {}
       scannerRef.current = null;
       setIsScanning(false);
     };
-  }, [redeemingReward]);
+  }, [createScanner, redeemingReward]);
 
   function openRedeem(reward) {
     clearResetTimer();
@@ -662,7 +684,7 @@ export default function RewardsTab({ projectId }) {
 
           <div className="mx-auto w-full max-w-md">
             <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-gray-900 shadow-inner">
-              <video ref={videoRef} className="h-full w-full object-cover" />
+              <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
 
               <div
                 className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 text-center text-white transition-opacity"
