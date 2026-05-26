@@ -16,13 +16,29 @@ export default function AuthCallback() {
     let cancelled = false;
     let subscription = null;
 
+    const navigateToPasswordReset = () => {
+      if (cancelled || handledRef.current) return;
+      handledRef.current = true;
+      setStatus("Preparando redefinicao de senha...");
+      navigate('/reset-password', { replace: true });
+    };
+
     const handleSession = (session) => {
       if (cancelled || handledRef.current || !session) return;
-      handledRef.current = true;
 
       setStatus("Login bem-sucedido! Preparando seu passe...");
       const searchParams = new URLSearchParams(location.search);
+      const hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+      const authType = searchParams.get('type') || hashParams.get('type');
+      const flow = searchParams.get('flow') || hashParams.get('flow');
       const projectId = searchParams.get('projectId');
+
+      if (authType === 'recovery' || flow === 'recovery') {
+        navigateToPasswordReset();
+        return;
+      }
+
+      handledRef.current = true;
 
       if (projectId) {
         const sub = session.user?.id;
@@ -60,19 +76,24 @@ export default function AuthCallback() {
 
     const start = async () => {
       const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      handleSession(session);
-
-      const {
         data: { subscription: listener },
       } = supabase.auth.onAuthStateChange((event, nextSession) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          navigateToPasswordReset();
+          return;
+        }
+
         if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
           handleSession(nextSession);
         }
       });
 
       subscription = listener;
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      handleSession(session);
     };
 
     void start();

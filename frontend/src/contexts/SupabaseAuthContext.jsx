@@ -192,7 +192,11 @@ export const AuthProvider = ({ children }) => {
       return true;
     }
 
-    return p.startsWith('/claim') || p.startsWith('/auth/callback') || p === '/cadastro' || p === '/thanks';
+    return p.startsWith('/claim')
+      || p.startsWith('/auth/callback')
+      || p === '/cadastro'
+      || p === '/reset-password'
+      || p === '/thanks';
   }, []);
 
   // Only these routes strictly require auth.

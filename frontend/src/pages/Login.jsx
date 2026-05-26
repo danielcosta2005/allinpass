@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogIn, Wallet, Loader2 } from 'lucide-react';
+import { KeyRound, LogIn, Wallet, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,6 +26,9 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMode, setResetMode] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -52,6 +55,45 @@ const Login = () => {
 
     setNeedsEmailConfirmation(false);
     // No explicit navigation here, let AuthProvider handle it via onAuthStateChange
+  };
+
+  const handlePasswordResetRequest = async (e) => {
+    e.preventDefault();
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      toast({
+        title: 'Informe seu e-mail',
+        description: 'Preencha o e-mail para receber o link de redefinicao de senha.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setResetLoading(true);
+    setResetSent(false);
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (error) throw error;
+
+      setResetSent(true);
+      toast({
+        title: 'Link enviado',
+        description: 'Se o e-mail estiver cadastrado, voce recebera um link para criar uma nova senha.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Nao foi possivel enviar',
+        description: error?.message || 'Tente novamente em alguns minutos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   const handleResendConfirmationEmail = async () => {
@@ -133,10 +175,10 @@ const Login = () => {
               Allin Pass
             </h1>
             <p className="text-center text-gray-600 mb-8">
-              Painel Administrativo
+              {resetMode ? 'Redefinicao de senha' : 'Painel Administrativo'}
             </p>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={resetMode ? handlePasswordResetRequest : handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email">E-mail</Label>
                 <Input
@@ -150,7 +192,8 @@ const Login = () => {
                 />
               </div>
 
-              <div className="space-y-2">
+              {!resetMode && (
+                <div className="space-y-2">
                 <Label htmlFor="password">Senha</Label>
                 <Input
                   id="password"
@@ -161,15 +204,21 @@ const Login = () => {
                   required
                   className="h-12"
                 />
-              </div>
+                </div>
+              )}
 
               <Button
                 type="submit"
                 className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-semibold"
-                disabled={loading}
+                disabled={resetMode ? resetLoading : loading}
               >
-                {loading ? (
+                {(resetMode ? resetLoading : loading) ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
+                ) : resetMode ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <KeyRound className="w-5 h-5" />
+                    Enviar link de redefinicao
+                  </div>
                 ) : (
                   <div className="flex items-center justify-center gap-2">
                     <LogIn className="w-5 h-5" />
@@ -177,6 +226,22 @@ const Login = () => {
                   </div>
                 )}
               </Button>
+              {resetMode && resetSent && (
+                <p className="text-sm text-emerald-700 text-center">
+                  Confira sua caixa de entrada e abra o link para criar uma nova senha.
+                </p>
+              )}
+              <button
+                type="button"
+                className="w-full text-sm font-semibold text-purple-700 hover:text-purple-800 underline underline-offset-4"
+                onClick={() => {
+                  setResetMode((current) => !current);
+                  setResetSent(false);
+                  setNeedsEmailConfirmation(false);
+                }}
+              >
+                {resetMode ? 'Voltar para o login' : 'Esqueci minha senha'}
+              </button>
               {needsEmailConfirmation && (
                 <p className="text-sm text-rose-600 text-center">
                   {EMAIL_CONFIRMATION_REQUIRED_MESSAGE}{' '}

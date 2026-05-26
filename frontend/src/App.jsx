@@ -18,6 +18,7 @@ import PassPage from '@/pages/PassPage';
 import ClaimThanks from "@/pages/ClaimThanks";
 import LandingPage from '@/pages/LandingPage';
 import SignupPage from '@/pages/SignupPage';
+import ResetPassword from '@/pages/ResetPassword';
 
 
 // ✅ NOVOS imports
@@ -134,6 +135,7 @@ export default function App() {
         <Route path="/nao-autorizado" element={<Unauthorized />} />
         <Route path="/thanks" element={<ClaimThanks />} />
         <Route path="/cadastro" element={<SignupPage />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/app" element={<AuthRedirect />} />
