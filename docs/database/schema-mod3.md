@@ -3,6 +3,7 @@
 Este documento descreve o estado atual do modulo considerando:
 - `supabase/migrations/20260430120220_schema_mod3.sql`
 - `supabase/migrations/20260507143000_mod3_usage_installs_notifications_and_plan_changes.sql`
+- `supabase/migrations/20260527120000_signup_paid_asaas_checkout.sql`
 
 O objetivo aqui e explicar a logica do modelo de cobranca em alto nivel.
 
@@ -18,6 +19,24 @@ Recursos cobrados:
 - notificacoes enviadas (`notification_jobs` quando vira `status='sent'`)
 
 ## Papel de cada tabela (com colunas principais)
+
+## 0) Signup e checkout pago
+
+### `public.signup_checkout_sessions`
+Registra a intencao de checkout criada durante o cadastro de um plano pago, antes do provisionamento definitivo.
+
+Colunas principais:
+- vinculo: `user_id`, `plan_id`, `plan_code`
+- cliente: `email`, `establishment_name`
+- gateway: `provider`, `provider_checkout_id`, `provider_subscription_id`, `provider_customer_id`, `provider_payment_id`
+- controle: `external_reference`, `status`, `amount_cents`, `currency`
+- retorno: `checkout_url`, `success_url`, `cancel_url`, `expired_url`
+- datas: `paid_at`, `expires_at`, `finalized_at`
+
+Fluxo esperado:
+- `signup-start-checkout` cria a linha e chama o Asaas.
+- `asaas-webhook` muda `status` para `paid`, `canceled` ou `expired`.
+- `signup-finalize` so provisiona plano pago quando essa linha esta `paid`; depois marca como `finalized`.
 
 ## 1) Catalogo comercial
 
@@ -167,7 +186,7 @@ Colunas principais:
 
 ## Triggers do modulo (estado consolidado)
 
-Os triggers abaixo sao os ativos apos aplicar as 2 migrations listadas no inicio deste documento.
+Os triggers abaixo sao os ativos apos aplicar as migrations listadas no inicio deste documento.
 
 ## A) Manutencao automatica de `updated_at`
 
@@ -182,6 +201,7 @@ Triggers:
 - `trg_billing_invoices_updated_at` em `public.billing_invoices`
 - `trg_billing_credit_wallets_updated_at` em `public.billing_credit_wallets`
 - `trg_billing_notification_rules_updated_at` em `public.billing_notification_rules`
+- `trg_signup_checkout_sessions_updated_at` em `public.signup_checkout_sessions`
 
 ## B) Sincronizacao da carteira de creditos
 
@@ -277,10 +297,13 @@ Regras:
 
 ## Cenario A - Cliente faz checkout e escolhe plano
 
-1. Cria/atualiza `billing_accounts`.
-2. Salva token em `billing_payment_methods`.
-3. Cria `billing_subscriptions` com snapshot comercial do plano.
-4. Opcional: registra em `project_billing_audit_logs`.
+1. Frontend cria usuario via Supabase Auth.
+2. `signup-start-checkout` cria `signup_checkout_sessions` e checkout recorrente no Asaas.
+3. Asaas confirma pagamento pelo webhook e a sessao fica `paid`.
+4. Frontend retorna para `/cadastro` e chama `signup-finalize`.
+5. `signup-finalize` cria/atualiza `billing_accounts`.
+6. `signup-finalize` cria `billing_subscriptions` com snapshot comercial do plano.
+7. `signup-finalize` abre o primeiro `billing_cycles`.
 
 ## Cenario B - Cliente consome recursos no mes
 

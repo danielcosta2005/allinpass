@@ -395,6 +395,21 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
 
+[functions.signup-finalize]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/signup-finalize/index.ts"
+
+[functions.signup-start-checkout]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/signup-start-checkout/index.ts"
+
+[functions.asaas-webhook]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/asaas-webhook/index.ts"
+
 [functions.teste]
 enabled = true
 verify_jwt = true

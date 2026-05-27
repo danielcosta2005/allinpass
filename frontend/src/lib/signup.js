@@ -116,12 +116,13 @@ export function rememberExistingCustomerSignupContext({
   }
 }
 
-function buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode }) {
+function buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode, checkoutSessionId }) {
   if (dedupeKey) return String(dedupeKey);
 
   return [
-    'free-trial',
+    'signup-finalize',
     String(planCode || 'free_trial').trim().toLowerCase(),
+    String(checkoutSessionId || '').trim(),
     String(establishmentName || '').trim().toLowerCase(),
   ].join(':');
 }
@@ -138,12 +139,18 @@ function readCompletedFinalizeRequest(requestKey) {
   return completed.data;
 }
 
-export async function finalizeFreeTrialSignup({
+export async function finalizeSignup({
   establishmentName,
   planCode = 'free_trial',
+  checkoutSessionId = '',
   dedupeKey = '',
 }) {
-  const requestKey = buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode });
+  const requestKey = buildFinalizeDedupeKey({
+    dedupeKey,
+    establishmentName,
+    planCode,
+    checkoutSessionId,
+  });
   const completed = readCompletedFinalizeRequest(requestKey);
 
   if (completed) {
@@ -160,6 +167,7 @@ export async function finalizeFreeTrialSignup({
       body: {
         establishmentName,
         planCode,
+        checkoutSessionId,
       },
     });
 
@@ -187,6 +195,45 @@ export async function finalizeFreeTrialSignup({
   } finally {
     pendingFinalizeRequests.delete(requestKey);
   }
+}
+
+export async function finalizeFreeTrialSignup({
+  establishmentName,
+  planCode = 'free_trial',
+  dedupeKey = '',
+}) {
+  return finalizeSignup({
+    establishmentName,
+    planCode,
+    dedupeKey,
+  });
+}
+
+export async function startPaidSignupCheckout({
+  establishmentName,
+  planCode,
+}) {
+  const { data, error } = await supabase.functions.invoke('signup-start-checkout', {
+    body: {
+      establishmentName,
+      planCode,
+    },
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildSignupError(parsedError.message, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildSignupError(data.error, data.code || null);
+  }
+
+  if (!data?.checkout_url) {
+    throw buildSignupError('Nao foi possivel iniciar o checkout do Asaas.');
+  }
+
+  return data;
 }
 
 export async function sendExistingCustomerSignupLink({

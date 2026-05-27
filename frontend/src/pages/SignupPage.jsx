@@ -11,7 +11,6 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -24,10 +23,11 @@ import {
 } from '@/lib/subscriptionPlans';
 import {
   clearExistingCustomerSignupContext,
-  finalizeFreeTrialSignup,
+  finalizeSignup,
   precheckFreeTrialSignup,
   readExistingCustomerSignupContext,
   sendExistingCustomerSignupLink,
+  startPaidSignupCheckout,
 } from '@/lib/signup';
 import {
   TURNSTILE_SCRIPT_SRC,
@@ -267,7 +267,7 @@ function normalizeSignupErrorMessage(error) {
     return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
   }
 
-  return error?.message || 'Não foi possível iniciar o Free Trial.';
+  return error?.message || 'Nao foi possivel iniciar o cadastro.';
 }
 
 function getPasswordError(password, passwordState) {
@@ -335,13 +335,15 @@ function SignupPage() {
     [availablePlans, selectedPlanKey]
   );
   const paidPlan = isPaidPlan(selectedPlan);
-  const totalSteps = 2;
+  const totalSteps = paidPlan ? 3 : 2;
+  const checkoutStatusFromRedirect = String(searchParams.get('checkout') || '').trim().toLowerCase();
+  const checkoutSessionIdFromRedirect = String(searchParams.get('checkoutSessionId') || '').trim();
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
   const [confirmationFlow, setConfirmationFlow] = useState('signup');
   const [pendingNewSignup, setPendingNewSignup] = useState(null);
-  const [acceptMockCheckout, setAcceptMockCheckout] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [touched, setTouched] = useState({});
@@ -379,7 +381,7 @@ function SignupPage() {
       ? totalSteps
       : step;
 
-  const steps = paidPlan ? ['Cadastro', 'Pagamento'] : ['Cadastro', 'Senha'];
+  const steps = paidPlan ? ['Cadastro', 'Senha', 'Pagamento'] : ['Cadastro', 'Senha'];
 
   const setField = (field, value) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
@@ -412,30 +414,40 @@ function SignupPage() {
     return nextErrors;
   };
 
-  const provisionFreeTrial = useCallback(async ({ establishmentName, planCode, userId }) => {
-    const result = await finalizeFreeTrialSignup({
+  const provisionSignup = useCallback(async ({
+    establishmentName,
+    planCode,
+    userId,
+    checkoutSessionId = '',
+  }) => {
+    const result = await finalizeSignup({
       establishmentName,
       planCode: planCode || 'free_trial',
-      dedupeKey: userId ? `free-trial:${userId}` : '',
+      checkoutSessionId,
+      dedupeKey: userId
+        ? `signup-finalize:${userId}:${planCode || 'free_trial'}:${checkoutSessionId || 'free'}`
+        : '',
     });
 
     await refreshAuthProfile();
     return result;
   }, [refreshAuthProfile]);
 
-  const buildFreeTrialEmailRedirectTo = useCallback((metadata = {}) => {
+  const buildSignupEmailRedirectTo = useCallback((metadata = {}) => {
+    const planCode = String(metadata.planCode || selectedPlan?.code || 'free_trial').trim().toLowerCase();
     const params = new URLSearchParams({
       plano: selectedPlanKey,
-      finalizar: '1',
+      planCode,
     });
     const establishmentName = String(metadata.establishmentName || '').trim();
-    const planCode = String(metadata.planCode || '').trim();
+    const isPaidEmailPlan = planCode && planCode !== 'free_trial';
 
+    if (!isPaidEmailPlan) params.set('finalizar', '1');
+    if (isPaidEmailPlan) params.set('checkout', 'pending');
     if (establishmentName) params.set('establishmentName', establishmentName);
-    if (planCode) params.set('planCode', planCode);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
-  }, [selectedPlanKey]);
+  }, [selectedPlan, selectedPlanKey]);
 
   const handlePasswordSetupSubmit = async (event) => {
     event.preventDefault();
@@ -524,7 +536,11 @@ function SignupPage() {
     setSignupLoading(true);
 
     try {
-      const emailRedirectTo = buildFreeTrialEmailRedirectTo();
+      const signupPlanIsPaid = String(signupContext.planCode || '').trim().toLowerCase() !== 'free_trial';
+      const emailRedirectTo = buildSignupEmailRedirectTo({
+        establishmentName: signupContext.establishmentName,
+        planCode: signupContext.planCode,
+      });
       const { data, error } = await supabase.auth.signUp({
         email: signupContext.email,
         password: formData.password,
@@ -548,12 +564,26 @@ function SignupPage() {
         setFinishedFlow('confirm-email');
         toast({
           title: 'Confirme seu e-mail',
-          description: 'Enviamos um link para finalizar seu Free Trial.',
+          description: signupPlanIsPaid
+            ? 'Enviamos um link para continuar sua assinatura.'
+            : 'Enviamos um link para finalizar seu Free Trial.',
         });
         return;
       }
 
-      await provisionFreeTrial({
+      if (signupPlanIsPaid) {
+        await refreshAuthProfile();
+        setStep(3);
+        setFinishedFlow('');
+        setCheckoutError('');
+        toast({
+          title: 'Conta criada',
+          description: 'Agora siga para o checkout seguro do Asaas para ativar sua assinatura.',
+        });
+        return;
+      }
+
+      await provisionSignup({
         establishmentName: signupContext.establishmentName,
         planCode: signupContext.planCode,
         userId: data?.session?.user?.id || data?.user?.id,
@@ -581,13 +611,8 @@ function SignupPage() {
 
     if (Object.keys(nextErrors).length > 0) return;
 
-    if (paidPlan) {
-      setStep(2);
-      return;
-    }
-
     if (signupCaptchaEnabled && !captchaToken) {
-      const message = 'Confirme a verificação antiabuso para iniciar o Free Trial.';
+      const message = 'Confirme a verificacao antiabuso para iniciar o cadastro.';
       setSignupError(message);
       toast({
         title: 'Verificação pendente',
@@ -612,7 +637,7 @@ function SignupPage() {
       });
 
       if (precheck.code === 'existing_customer') {
-        const emailRedirectTo = buildFreeTrialEmailRedirectTo({ establishmentName, planCode });
+        const emailRedirectTo = buildSignupEmailRedirectTo({ establishmentName, planCode });
         await sendExistingCustomerSignupLink({
           email: normalizedEmail,
           emailRedirectTo,
@@ -625,7 +650,9 @@ function SignupPage() {
         setFinishedFlow('confirm-email');
         toast({
           title: 'Confira seu e-mail',
-          description: 'Enviamos um link de acesso para finalizar seu Free Trial.',
+          description: paidPlan
+            ? 'Enviamos um link de acesso para continuar sua assinatura.'
+            : 'Enviamos um link de acesso para finalizar seu Free Trial.',
         });
         return;
       }
@@ -687,7 +714,7 @@ function SignupPage() {
       if (confirmationFlow === 'existing-customer') {
         await sendExistingCustomerSignupLink({
           email: normalizedEmail,
-          emailRedirectTo: buildFreeTrialEmailRedirectTo({
+          emailRedirectTo: buildSignupEmailRedirectTo({
             establishmentName: formData.establishmentName.trim(),
             planCode: selectedPlan?.code || 'free_trial',
           }),
@@ -700,7 +727,10 @@ function SignupPage() {
           type: 'signup',
           email: normalizedEmail,
           options: {
-            emailRedirectTo: buildFreeTrialEmailRedirectTo(),
+            emailRedirectTo: buildSignupEmailRedirectTo({
+              establishmentName: formData.establishmentName.trim(),
+              planCode: selectedPlan?.code || 'free_trial',
+            }),
           },
         });
 
@@ -710,8 +740,12 @@ function SignupPage() {
       toast({
         title: 'E-mail reenviado',
         description: confirmationFlow === 'existing-customer'
-          ? 'Enviamos um novo link de acesso para finalizar o Free Trial.'
-          : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+          ? paidPlan
+            ? 'Enviamos um novo link de acesso para continuar sua assinatura.'
+            : 'Enviamos um novo link de acesso para finalizar o Free Trial.'
+          : paidPlan
+            ? 'Se a confirmacao ainda estiver pendente, enviamos um novo link para continuar sua assinatura.'
+            : 'Se a confirmacao ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
       });
     } catch (error) {
       const message = normalizeSignupErrorMessage(error);
@@ -726,14 +760,49 @@ function SignupPage() {
     }
   };
 
-  const handlePaymentContinue = () => {
-    if (!acceptMockCheckout) {
-      setCheckoutError('Confirme que deseja seguir para o checkout seguro para concluir.');
+  const handlePaymentContinue = async () => {
+    if (checkoutLoading) return;
+
+    if (!authSession?.user) {
+      setCheckoutError('Crie sua conta e confirme o e-mail antes de iniciar o checkout.');
       return;
     }
 
     setCheckoutError('');
-    setFinishedFlow('paid');
+    setCheckoutLoading(true);
+
+    try {
+      const establishmentName = String(
+        formData.establishmentName
+          || authSession.user.user_metadata?.establishment_name
+          || '',
+      ).trim();
+      const planCode = String(selectedPlan?.code || resolvedPlanCode || '').trim().toLowerCase();
+
+      if (!establishmentName) {
+        throw new Error('Nao foi possivel identificar o nome do estabelecimento.');
+      }
+
+      if (!planCode || planCode === 'free_trial') {
+        throw new Error('Selecione um plano pago para continuar.');
+      }
+
+      const checkout = await startPaidSignupCheckout({
+        establishmentName,
+        planCode,
+      });
+
+      window.location.assign(checkout.checkout_url);
+    } catch (error) {
+      const message = error?.message || 'Nao foi possivel iniciar o checkout do Asaas.';
+      setCheckoutError(message);
+      toast({
+        title: 'Erro no checkout',
+        description: message,
+        variant: 'destructive',
+      });
+      setCheckoutLoading(false);
+    }
   };
 
   const shouldShowError = (field) => Boolean(errors[field]) && (attemptedSubmit || touched[field]);
@@ -763,27 +832,93 @@ function SignupPage() {
   }, []);
 
   useEffect(() => {
+    const user = authSession?.user ?? null;
+    if (!user || shouldFinalizeFromRedirect) return;
+    if (finishedFlow === 'paid' || finishedFlow === 'set-password') return;
+    if (Boolean(user?.app_metadata?.signup_project_id)) return;
+
+    const existingCustomerContext = readExistingCustomerSignupContext();
+    const sessionEmail = String(user.email || '').trim().toLowerCase();
+    const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
+    const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
+    const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
+    const planCode = String(
+      redirectPlanCode
+        || existingCustomerContext?.planCode
+        || metadataPlanCode
+        || resolvedPlanCode
+        || '',
+    ).trim().toLowerCase();
+
+    if (!planCode || planCode === 'free_trial') return;
+
+    const shouldResumePaidSignup =
+      checkoutStatusFromRedirect === 'pending'
+      || checkoutStatusFromRedirect === 'cancel'
+      || checkoutStatusFromRedirect === 'expired'
+      || existingCustomerContext?.email === sessionEmail
+      || metadataPlanCode === planCode;
+
+    if (!shouldResumePaidSignup) return;
+
+    const establishmentName = String(
+      redirectEstablishmentName
+        || existingCustomerContext?.establishmentName
+        || user.user_metadata?.establishment_name
+        || formData.establishmentName
+        || '',
+    ).trim();
+
+    setResolvedPlanCode(planCode);
+    setFormData((previous) => ({
+      ...previous,
+      establishmentName: establishmentName || previous.establishmentName,
+      email: user.email || previous.email,
+      emailConfirmation: user.email || previous.emailConfirmation,
+    }));
+    setPendingNewSignup(null);
+    setFinishedFlow('');
+    setStep(3);
+
+    if (checkoutStatusFromRedirect === 'cancel') {
+      setCheckoutError('Checkout cancelado. Voce pode iniciar um novo checkout quando quiser.');
+    } else if (checkoutStatusFromRedirect === 'expired') {
+      setCheckoutError('Checkout expirado. Gere um novo link seguro para continuar.');
+    } else {
+      setCheckoutError('');
+    }
+  }, [
+    authSession,
+    checkoutStatusFromRedirect,
+    finishedFlow,
+    formData.establishmentName,
+    resolvedPlanCode,
+    searchParams,
+    shouldFinalizeFromRedirect,
+  ]);
+
+  useEffect(() => {
     const session = authSession;
     const user = session?.user ?? null;
     const existingCustomerContext = readExistingCustomerSignupContext();
     const sessionEmail = String(user?.email || '').trim().toLowerCase();
     const hasSignupProjectId = Boolean(user?.app_metadata?.signup_project_id);
+    const existingCustomerPlanCode = String(
+      existingCustomerContext?.planCode || 'free_trial',
+    ).trim().toLowerCase();
     const shouldFinalizeFromExistingCustomerContext =
       !shouldFinalizeFromRedirect &&
       !hasSignupProjectId &&
       Boolean(user) &&
       Boolean(existingCustomerContext) &&
-      existingCustomerContext.email === sessionEmail;
+      existingCustomerContext.email === sessionEmail &&
+      existingCustomerPlanCode === 'free_trial';
     const shouldAttemptFinalize = shouldFinalizeFromRedirect || shouldFinalizeFromExistingCustomerContext;
 
-    if (!shouldAttemptFinalize || finalizeFromRedirectRef.current) return;
+    if (!shouldAttemptFinalize || finalizeFromRedirectRef.current || !user) return;
 
     setSignupLoading(true);
     setSignupError('');
-
-    if (!user) {
-      return;
-    }
 
     finalizeFromRedirectRef.current = true;
 
@@ -805,10 +940,11 @@ function SignupPage() {
         );
         setResolvedPlanCode(String(planCode).trim().toLowerCase());
 
-        const result = await provisionFreeTrial({
+        const result = await provisionSignup({
           establishmentName,
           planCode,
           userId: user.id,
+          checkoutSessionId: checkoutSessionIdFromRedirect,
         });
         const finalizedPlanCode = String(result?.plan?.code || planCode || '').trim().toLowerCase();
         if (finalizedPlanCode) {
@@ -831,9 +967,9 @@ function SignupPage() {
         }
 
         clearSignupPasswordSetupRequired();
-        setFinishedFlow('trial');
+        setFinishedFlow(finalizedPlanCode === 'free_trial' ? 'trial' : 'paid');
       } catch (error) {
-        const message = error?.message || 'Não foi possível finalizar o Free Trial.';
+        const message = error?.message || 'Nao foi possivel finalizar o cadastro.';
         setSignupError(message);
         toast({
           title: 'Erro ao finalizar cadastro',
@@ -846,7 +982,14 @@ function SignupPage() {
     };
 
     finalizePendingSignup();
-  }, [authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]);
+  }, [
+    authSession,
+    checkoutSessionIdFromRedirect,
+    provisionSignup,
+    searchParams,
+    shouldFinalizeFromRedirect,
+    toast,
+  ]);
 
   useEffect(() => {
     const user = authSession?.user ?? null;
@@ -909,7 +1052,7 @@ function SignupPage() {
               </div>
 
               <div className="mb-8">
-                <ol className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ol className={`grid grid-cols-1 ${paidPlan ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
                   {steps.map((stepLabel, index) => {
                     const position = index + 1;
                     const isPasswordStep =
@@ -968,15 +1111,27 @@ function SignupPage() {
                       <CheckCircle2 className="w-10 h-10 text-rose-600 mb-4" />
                     )}
                     <h2 className="text-2xl font-bold text-slate-900">
-                      {signupLoading ? 'Finalizando seu Free Trial' : 'Não foi possível finalizar automaticamente'}
+                      {signupLoading
+                        ? paidPlan ? 'Finalizando sua assinatura' : 'Finalizando seu Free Trial'
+                        : 'Não foi possível finalizar automaticamente'}
                     </h2>
                     <p className="text-slate-700 mt-2">
                       {signupLoading
-                        ? 'Estamos criando seu projeto, assinatura trial e acesso ao painel.'
+                        ? paidPlan
+                          ? 'Estamos validando o pagamento no Asaas e criando seu acesso ao painel.'
+                          : 'Estamos criando seu projeto, assinatura trial e acesso ao painel.'
                         : signupError || 'Entre novamente para continuar o provisionamento.'}
                     </p>
                     {!signupLoading && (
                       <div className="flex flex-wrap gap-3 mt-5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => window.location.reload()}
+                          className="border-purple-300 text-purple-800 hover:bg-purple-100"
+                        >
+                          Tentar novamente
+                        </Button>
                         <Link to="/login">
                           <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
                             Ir para login
@@ -1076,7 +1231,7 @@ function SignupPage() {
                           <Loader2 className="w-4 h-4 animate-spin" />
                           Iniciando...
                         </span>
-                      ) : paidPlan ? 'Continuar para pagamento' : 'Continuar'}
+                      ) : paidPlan ? 'Continuar para senha' : 'Continuar'}
                     </Button>
                     {signupError && (
                       <p className="text-sm text-rose-600 text-center">{signupError}</p>
@@ -1084,9 +1239,9 @@ function SignupPage() {
                   </motion.form>
                 )}
 
-                {!finishedFlow && step === 2 && paidPlan && (
+                {!finishedFlow && step === 3 && paidPlan && (
                   <motion.div
-                    key="step-2"
+                    key="step-3"
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
@@ -1111,43 +1266,36 @@ function SignupPage() {
                     <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
                       <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                         <CreditCard className="w-4 h-4 text-purple-600" />
-                        Checkout seguro (estrutura frontend)
+                        Checkout seguro via Asaas
                       </p>
                       <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                        Aqui será conectada a integração oficial com Stripe, Mercado Pago ou equivalente.
-                        Nenhum dado de cartão é coletado manualmente nesta etapa.
+                        Vamos criar uma sessao de checkout recorrente no Asaas para este plano.
+                        Nenhum dado de cartao e coletado dentro do AllinPass.
                       </p>
                       <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
                         <Lock className="w-3.5 h-3.5" />
-                        Placeholder preparado para provider PCI-compliant.
+                        Voce sera redirecionado para o ambiente seguro do provedor.
                       </div>
                     </div>
 
-                    <div className="flex items-start gap-3">
-                      <Checkbox
-                        id="mock-checkout-confirm"
-                        checked={acceptMockCheckout}
-                        onCheckedChange={(checked) => {
-                          setAcceptMockCheckout(Boolean(checked));
-                          setCheckoutError('');
-                        }}
-                      />
-                      <div>
-                        <Label htmlFor="mock-checkout-confirm" className="text-sm leading-relaxed">
-                          Confirmo que desejo prosseguir para o checkout seguro do provedor de pagamento.
-                        </Label>
-                        {checkoutError && (
-                          <p className="text-sm text-rose-600 mt-1">{checkoutError}</p>
-                        )}
+                    {checkoutError && (
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                        {checkoutError}
                       </div>
-                    </div>
+                    )}
 
                     <Button
                       type="button"
                       onClick={handlePaymentContinue}
+                      disabled={checkoutLoading}
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
                     >
-                      Concluir assinatura (simulação)
+                      {checkoutLoading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Abrindo checkout...
+                        </span>
+                      ) : 'Ir para checkout Asaas'}
                     </Button>
                   </motion.div>
                 )}
@@ -1383,8 +1531,12 @@ function SignupPage() {
                     </h2>
                     <p className="text-sky-900 mt-2">
                       {confirmationFlow === 'existing-customer'
-                        ? `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
-                        : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!`}
+                        ? paidPlan
+                          ? `Enviamos um link de acesso para ${formData.email}. Abra o link para continuar a assinatura no checkout.`
+                          : `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
+                        : paidPlan
+                          ? `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para continuar a assinatura no checkout. Não se esqueça de olhar o lixo eletrônico!`
+                          : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!`}
                     </p>
                     <p className="text-sm text-sky-800 mt-3">
                       Se o link não chegou, você pode pedir um novo envio sem refazer o cadastro.
@@ -1416,11 +1568,11 @@ function SignupPage() {
                     <CheckCircle2 className="w-10 h-10 text-purple-600 mb-4" />
                     <h2 className="text-2xl font-bold text-purple-900">Cadastro concluído</h2>
                     <p className="text-purple-800 mt-2">
-                      Fluxo frontend finalizado com sucesso para o plano {selectedPlan.name}.
-                      A etapa de pagamento real ficará conectada ao provider na implementação backend.
+                      Pagamento confirmado e acesso criado para o plano {selectedPlan.name}.
+                      Voce ja pode acessar o painel do estabelecimento.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
-                      <Link to="/login">
+                      <Link to="/org">
                         <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
                           Acessar painel
                         </Button>

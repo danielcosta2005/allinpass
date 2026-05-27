@@ -13,6 +13,18 @@ type BillingPlan = {
   overage_notification_sent_cents: number;
 };
 
+type SignupCheckoutSessionRow = {
+  id: string;
+  status: string;
+  provider: string;
+  provider_checkout_id: string | null;
+  provider_subscription_id: string | null;
+  provider_customer_id: string | null;
+  provider_payment_id: string | null;
+  amount_cents: number;
+  paid_at: string | null;
+};
+
 type SupabaseAdminClient = ReturnType<typeof createClient>;
 
 type SignupFinalizationStatus = "processing" | "completed" | "failed";
@@ -67,8 +79,10 @@ type SignupFinalizeErrorCode =
   | "SIGNUP_FINALIZE_INVALID_SESSION"
   | "SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME"
   | "SIGNUP_FINALIZE_MISSING_USER_EMAIL"
-  | "SIGNUP_FINALIZE_UNSUPPORTED_PLAN"
   | "SIGNUP_FINALIZE_PLAN_NOT_FOUND"
+  | "SIGNUP_FINALIZE_CHECKOUT_NOT_FOUND"
+  | "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED"
+  | "SIGNUP_FINALIZE_PAYMENT_AMOUNT_MISMATCH"
   | "SIGNUP_FINALIZE_PROJECT_NOT_CREATED"
   | "SIGNUP_FINALIZE_IN_PROGRESS"
   | "SIGNUP_FINALIZE_INTERNAL_ERROR";
@@ -392,6 +406,62 @@ async function completeExistingCustomerSignupIntent(
   if (error) throw error;
 }
 
+async function getPaidCheckoutSession(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+  planId: string,
+  checkoutSessionId: string,
+): Promise<SignupCheckoutSessionRow> {
+  const { data, error } = await supabaseAdmin
+    .from("signup_checkout_sessions")
+    .select(
+      [
+        "id",
+        "status",
+        "provider",
+        "provider_checkout_id",
+        "provider_subscription_id",
+        "provider_customer_id",
+        "provider_payment_id",
+        "amount_cents",
+        "paid_at",
+      ].join(", "),
+    )
+    .eq("id", checkoutSessionId)
+    .eq("user_id", userId)
+    .eq("plan_id", planId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const checkoutSession = data as SignupCheckoutSessionRow | null;
+  if (!checkoutSession) {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_CHECKOUT_NOT_FOUND",
+      "Checkout pago nao encontrado para este usuario e plano.",
+      404,
+    );
+  }
+
+  if (checkoutSession.status !== "paid") {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED",
+      "Pagamento ainda nao confirmado pelo Asaas.",
+      402,
+    );
+  }
+
+  if (!checkoutSession.paid_at) {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED",
+      "Pagamento confirmado sem data de pagamento.",
+      409,
+    );
+  }
+
+  return checkoutSession;
+}
+
 function buildWalletDefaults(projectName: string) {
   return {
     type: "loyalty",
@@ -493,6 +563,7 @@ Deno.serve(async (req) => {
     const payloadPlanCode = String(payload.planCode ?? "").trim();
     const metadataPlanCode = String(user.user_metadata?.plan_code ?? "").trim();
     const intentPlanCode = String(existingCustomerIntent?.plan_code ?? "").trim();
+    const checkoutSessionId = String(payload.checkoutSessionId ?? "").trim();
     const establishmentName = String(
       payloadEstablishmentName
         || metadataEstablishmentName
@@ -504,7 +575,7 @@ Deno.serve(async (req) => {
         || metadataPlanCode
         || intentPlanCode
         || FREE_PLAN_CODE,
-    ).trim();
+    ).trim().toLowerCase();
 
     if (!establishmentName) {
       return errorResponse(
@@ -515,13 +586,65 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (planCode !== FREE_PLAN_CODE) {
+    const { data: planData, error: planError } = await supabaseAdmin
+      .from("billing_plans")
+      .select(
+        [
+          "id",
+          "code",
+          "name",
+          "base_price_cents",
+          "trial_days",
+          "included_pass_installs",
+          "included_notification_sends",
+          "overage_pass_install_cents",
+          "overage_notification_sent_cents",
+        ].join(", "),
+      )
+      .eq("code", planCode)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (planError) throw planError;
+    const plan = planData as BillingPlan | null;
+
+    if (!plan) {
       return errorResponse(
         origin,
-        "SIGNUP_FINALIZE_UNSUPPORTED_PLAN",
-        "Por enquanto o cadastro automatico aceita apenas o plano Free Trial.",
-        400,
+        "SIGNUP_FINALIZE_PLAN_NOT_FOUND",
+        "Plano ativo nao encontrado.",
+        404,
       );
+    }
+
+    const isFreeTrial = plan.code === FREE_PLAN_CODE;
+    let paidCheckoutSession: SignupCheckoutSessionRow | null = null;
+
+    if (!isFreeTrial) {
+      if (!checkoutSessionId) {
+        return errorResponse(
+          origin,
+          "SIGNUP_FINALIZE_CHECKOUT_NOT_FOUND",
+          "Informe a sessao de checkout paga para finalizar o cadastro.",
+          400,
+        );
+      }
+
+      paidCheckoutSession = await getPaidCheckoutSession(
+        supabaseAdmin,
+        user.id,
+        plan.id,
+        checkoutSessionId,
+      );
+
+      if (paidCheckoutSession.amount_cents !== plan.base_price_cents) {
+        return errorResponse(
+          origin,
+          "SIGNUP_FINALIZE_PAYMENT_AMOUNT_MISMATCH",
+          "Valor pago nao corresponde ao plano selecionado.",
+          409,
+        );
+      }
     }
 
     const finalizationClaim = await claimSignupFinalization(supabaseAdmin, user.id);
@@ -547,43 +670,12 @@ Deno.serve(async (req) => {
       return errorResponse(
         origin,
         "SIGNUP_FINALIZE_IN_PROGRESS",
-        "Seu Free Trial ja esta sendo finalizado. Aguarde alguns segundos e atualize a pagina.",
+        "Seu cadastro ja esta sendo finalizado. Aguarde alguns segundos e atualize a pagina.",
         409,
       );
     }
 
     claimedFinalizationUserId = user.id;
-
-    const { data: planData, error: planError } = await supabaseAdmin
-      .from("billing_plans")
-      .select(
-        [
-          "id",
-          "code",
-          "name",
-          "base_price_cents",
-          "trial_days",
-          "included_pass_installs",
-          "included_notification_sends",
-          "overage_pass_install_cents",
-          "overage_notification_sent_cents",
-        ].join(", "),
-      )
-      .eq("code", FREE_PLAN_CODE)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (planError) throw planError;
-    const plan = planData as BillingPlan | null;
-
-    if (!plan) {
-      return errorResponse(
-        origin,
-        "SIGNUP_FINALIZE_PLAN_NOT_FOUND",
-        "Plano Free Trial ativo nao encontrado.",
-        404,
-      );
-    }
 
     const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
       {
@@ -707,9 +799,14 @@ Deno.serve(async (req) => {
             document_type: "other",
             document_number: "pending",
             address: {},
-            gateway_provider: "other",
+            gateway_provider: isFreeTrial ? "other" : "asaas",
+            gateway_customer_id: paidCheckoutSession?.provider_customer_id ?? null,
             provider_status: "active",
-            metadata: { origin: "signup_finalize", plan_code: FREE_PLAN_CODE },
+            metadata: {
+              origin: "signup_finalize",
+              plan_code: plan.code,
+              checkout_session_id: paidCheckoutSession?.id ?? null,
+            },
           })
           .select("id")
           .single();
@@ -717,6 +814,16 @@ Deno.serve(async (req) => {
         if (accountError) throw accountError;
         const billingAccount = billingAccountData as unknown as BillingAccountRow;
         billingAccountId = billingAccount.id;
+      } else if (!isFreeTrial && paidCheckoutSession?.provider_customer_id) {
+        const { error: accountUpdateError } = await supabaseAdmin
+          .from("billing_accounts")
+          .update({
+            gateway_provider: "asaas",
+            gateway_customer_id: paidCheckoutSession.provider_customer_id,
+          })
+          .eq("id", billingAccountId);
+
+        if (accountUpdateError) throw accountUpdateError;
       }
 
       const { data: existingSubscriptionData, error: subscriptionLookupError } = await supabaseAdmin
@@ -732,9 +839,9 @@ Deno.serve(async (req) => {
 
       let subscriptionId = existingSubscription?.id ?? null;
       const now = new Date();
-      const trialDays = Math.max(0, Number(plan.trial_days ?? 0));
-      const status = trialDays > 0 ? "trialing" : "active";
-      const trialEndsAt = trialDays > 0 ? addDays(now, trialDays) : null;
+      const trialDays = isFreeTrial ? Math.max(0, Number(plan.trial_days ?? 0)) : 0;
+      const status = isFreeTrial && trialDays > 0 ? "trialing" : "active";
+      const trialEndsAt = isFreeTrial && trialDays > 0 ? addDays(now, trialDays) : null;
       const periodEnd = trialEndsAt ?? addMonths(now, 1);
 
       if (!subscriptionId) {
@@ -749,14 +856,23 @@ Deno.serve(async (req) => {
             trial_ends_at: trialEndsAt?.toISOString() ?? null,
             current_period_start: now.toISOString(),
             current_period_end: periodEnd.toISOString(),
-            gateway_provider: "other",
+            gateway_provider: isFreeTrial ? "other" : "asaas",
+            gateway_subscription_id:
+              paidCheckoutSession?.provider_subscription_id
+              ?? paidCheckoutSession?.provider_checkout_id
+              ?? null,
             base_price_cents: plan.base_price_cents,
             included_pass_installs: plan.included_pass_installs ?? 0,
             included_notification_sends: plan.included_notification_sends ?? 0,
             overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
             overage_notification_sent_cents: plan.overage_notification_sent_cents ?? 0,
             currency: "BRL",
-            metadata: { origin: "signup_finalize", plan_code: FREE_PLAN_CODE },
+            metadata: {
+              origin: "signup_finalize",
+              plan_code: plan.code,
+              checkout_session_id: paidCheckoutSession?.id ?? null,
+              provider_checkout_id: paidCheckoutSession?.provider_checkout_id ?? null,
+            },
           })
           .select("id")
           .single();
@@ -773,7 +889,11 @@ Deno.serve(async (req) => {
           period_start: now.toISOString(),
           period_end: periodEnd.toISOString(),
           status: "open",
-          metadata: { origin: "signup_finalize", plan_code: FREE_PLAN_CODE },
+          metadata: {
+            origin: "signup_finalize",
+            plan_code: plan.code,
+            checkout_session_id: paidCheckoutSession?.id ?? null,
+          },
         });
 
         if (cycleError) throw cycleError;
@@ -808,12 +928,12 @@ Deno.serve(async (req) => {
         app_metadata: {
           ...user.app_metadata,
           signup_project_id: projectId,
-          signup_plan_code: FREE_PLAN_CODE,
+          signup_plan_code: plan.code,
         },
         user_metadata: {
           ...user.user_metadata,
           establishment_name: establishmentName,
-          plan_code: FREE_PLAN_CODE,
+          plan_code: plan.code,
         },
       });
 
@@ -840,11 +960,33 @@ Deno.serve(async (req) => {
           name: plan.name,
           trial_days: trialDays,
         },
+        checkout: paidCheckoutSession
+          ? {
+            id: paidCheckoutSession.id,
+            provider: paidCheckoutSession.provider,
+            provider_checkout_id: paidCheckoutSession.provider_checkout_id,
+            paid_at: paidCheckoutSession.paid_at,
+          }
+          : null,
       };
 
       await completeSignupFinalization(supabaseAdmin, user.id, projectId, responseBody);
       await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
       claimedFinalizationUserId = null;
+
+      if (paidCheckoutSession) {
+        const { error: checkoutUpdateError } = await supabaseAdmin
+          .from("signup_checkout_sessions")
+          .update({
+            status: "finalized",
+            finalized_at: new Date().toISOString(),
+          })
+          .eq("id", paidCheckoutSession.id);
+
+        if (checkoutUpdateError) {
+          console.error("signup-finalize failed to mark checkout session finalized", checkoutUpdateError);
+        }
+      }
 
       return jsonResponse(origin, responseBody);
     } catch (error) {

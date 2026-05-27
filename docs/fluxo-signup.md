@@ -1,6 +1,6 @@
-# Fluxo de Signup - Free Trial
+# Fluxo de Signup
 
-Este documento resume o fluxo atual de cadastro do AllinPass para o plano `free_trial`.
+Este documento resume o fluxo atual de cadastro do AllinPass para `free_trial` e planos pagos.
 
 ## Decisao Implementada
 
@@ -19,16 +19,18 @@ Usuario -> /org
 
 A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha passa apenas pelo Supabase Auth e so e solicitada depois que `signup-precheck` confirma qual fluxo sera usado.
 
-Os fluxos pagos `signup_start_checkout` e `signup_finalize_paid` ficaram para uma segunda etapa.
+Nos planos pagos, a conta tambem nasce pelo `supabase.auth.signUp`, mas o provisionamento so acontece depois do checkout recorrente do Asaas ser criado por `signup-start-checkout` e confirmado pelo webhook `asaas-webhook`.
 
-Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, retornando para `/cadastro?...&finalizar=1` para reaproveitar o mesmo `auth.users.id`. Depois que o magic link cria a sessao autenticada, o frontend pede uma nova senha e chama `supabase.auth.updateUser({ password })`.
+Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, reaproveitando o mesmo `auth.users.id`. No free trial, o retorno pode finalizar direto. Em plano pago, o retorno leva o usuario autenticado para a etapa de checkout antes de chamar `signup-finalize`.
 
 ## Arquivos Principais
 
 - `frontend/src/pages/SignupPage.jsx`: formulario e orquestracao do fluxo.
-- `frontend/src/lib/signup.js`: helper para chamar `signup-finalize`.
+- `frontend/src/lib/signup.js`: helpers para `signup-precheck`, `signup-finalize` e `signup-start-checkout`.
 - `frontend/src/contexts/SupabaseAuthContext.jsx`: sessao, papel do usuario e `refreshAuthProfile`.
-- `supabase/functions/signup-finalize/index.ts`: provisionamento do Free Trial.
+- `supabase/functions/signup-finalize/index.ts`: provisionamento do Free Trial ou assinatura paga confirmada.
+- `supabase/functions/signup-start-checkout/index.ts`: cria a sessao de checkout recorrente no Asaas.
+- `supabase/functions/asaas-webhook/index.ts`: recebe eventos `CHECKOUT_*` do Asaas e marca o checkout como pago/cancelado/expirado.
 - `frontend/src/lib/subscriptionPlans.js`: leitura dos planos em `billing_plans`.
 
 ## Fluxo Sem Confirmacao de Email
@@ -84,17 +86,18 @@ Authorization: Bearer <access_token>
 
 Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 
-1. Buscar o plano `free_trial` ativo em `billing_plans`.
-2. Atualizar/criar `profiles` com `role = 'establishment'`.
-3. Criar ou reaproveitar um `projects`.
-4. Garantir `project_members` com `role = 'owner'`.
-5. Criar `wallet_templates` inicial para projeto novo.
-6. Criar `billing_accounts` minimo.
-7. Criar `billing_subscriptions` com `status = 'trialing'`.
-8. Criar `billing_cycles` aberto.
-9. Garantir `billing_credit_wallets`.
-10. Garantir `projects_notifications` para compatibilidade com o limite legado de notificacoes.
-11. Atualizar metadados do usuario no Supabase Auth.
+1. Buscar o plano ativo em `billing_plans`.
+2. Se o plano for pago, validar uma linha paga em `signup_checkout_sessions`.
+3. Atualizar/criar `profiles` com `role = 'establishment'`.
+4. Criar ou reaproveitar um `projects`.
+5. Garantir `project_members` com `role = 'owner'`.
+6. Criar `wallet_templates` inicial para projeto novo.
+7. Criar `billing_accounts` minimo.
+8. Criar `billing_subscriptions`: `trialing` para free trial, `active` para plano pago.
+9. Criar `billing_cycles` aberto.
+10. Garantir `billing_credit_wallets`.
+11. Garantir `projects_notifications` para compatibilidade com o limite legado de notificacoes.
+12. Atualizar metadados do usuario no Supabase Auth.
 
 ## Tabelas Envolvidas
 
@@ -103,19 +106,21 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - `projects`: projeto/estabelecimento criado no signup.
 - `project_members`: vincula usuario ao projeto como `owner`.
 - `wallet_templates`: template inicial da carteira.
-- `billing_plans`: fonte oficial do plano `free_trial`, seus limites e `trial_days`.
+- `billing_plans`: fonte oficial dos planos, precos, franquias, excedentes e `trial_days`.
 - `billing_accounts`: conta minima de faturamento do projeto.
 - `billing_subscriptions`: assinatura trial do projeto.
 - `billing_cycles`: ciclo aberto do periodo trial.
 - `billing_credit_wallets`: carteira de creditos inicial.
 - `projects_notifications`: limite legado de notificacoes usado por telas existentes.
 - `signup_existing_customer_intents`: fallback backend para finalizar cliente existente mesmo quando o magic link abre em outro dispositivo.
+- `signup_checkout_sessions`: intencao de checkout pago criada antes do provisionamento definitivo.
 
 ## Regras Importantes
 
 - O frontend nao envia preco, franquia, status ou datas de trial.
 - Esses dados sempre vem de `billing_plans`.
-- A function aceita apenas `planCode = free_trial`.
+- `free_trial` nao exige checkout nem cartao.
+- Plano pago exige `checkoutSessionId` com `status = paid` em `signup_checkout_sessions`.
 - A senha nunca passa pela Edge Function.
 - A primeira etapa do formulario nao pede senha; ela aparece somente depois do `signup-precheck`.
 - Para clientes existentes, a senha preenchida no formulario inicial nao e usada; o acesso e confirmado por magic link e a senha e criada depois com `supabase.auth.updateUser({ password })`.
@@ -137,17 +142,20 @@ Ainda nao existe uma transacao unica para todo o provisionamento. Como melhoria 
 
 ## Fluxo Pago
 
-Ainda nao implementado.
-
-Fluxo previsto:
+Fluxo implementado:
 
 ```text
-signup_start_checkout -> inicia checkout
-provedor de pagamento -> confirma pagamento
-signup_finalize_paid -> provisiona assinatura paga
+Frontend -> signup-precheck
+Frontend -> senha
+Frontend -> supabase.auth.signUp
+Frontend -> signup-start-checkout
+Asaas Checkout -> pagamento
+asaas-webhook -> marca signup_checkout_sessions.status = paid
+Frontend retorna para /cadastro?...&finalizar=1&checkoutSessionId=...
+Frontend -> signup-finalize
 ```
 
-Por enquanto, o cadastro automatico atende apenas o `free_trial`.
+O `signup-finalize` e unico para free trial e pago. A diferenca e que, para plano pago, ele so provisiona se o checkout tiver sido confirmado pelo webhook do Asaas.
 
 ## Checklist Rapido
 
@@ -162,3 +170,19 @@ Para validar o fluxo:
 7. Conferir acesso a `/org`.
 8. Repetir com email de `customer` existente e conferir que o mesmo `auth.users.id` vira `establishment`.
 9. No fluxo `existing_customer`, criar a senha depois do magic link, sair da conta e validar login com email/senha.
+10. Criar cadastro pago, confirmar criacao de `signup_checkout_sessions`, simular/receber `CHECKOUT_PAID` e validar assinatura `active`.
+
+# Resumo do fluxo pago:
+Usuário escolhe plano pago
+Frontend chama signup-start-checkout
+signup-start-checkout cria signup_checkout_sessions
+signup-start-checkout cria checkout no Asaas
+Asaas retorna checkout_url
+Usuário paga no Asaas
+Asaas chama asaas-webhook
+asaas-webhook marca signup_checkout_sessions.status = paid
+Frontend volta para /cadastro
+Frontend chama signup-finalize
+signup-finalize valida checkout paid
+signup-finalize cria billing_account, billing_subscription e billing_cycle
+signup-finalize marca checkout como finalized
