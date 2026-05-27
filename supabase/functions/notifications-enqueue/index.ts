@@ -1,5 +1,5 @@
 /// <reference types="https://deno.land/x/deno/cli/types/dts/index.d.ts" />
-
+// branch
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -152,14 +152,14 @@ serve(async (req) => {
       .select("role")
       .eq("project_id", projectId)
       .eq("user_id", userId)
-      .in("role", ["owner", "staff"])
+      .eq("role", "owner")
       .maybeSingle();
 
     if (memErr) throw memErr;
     if (!membership) {
       return jsonResponse(
         403,
-        { error: "Forbidden (não é staff/owner do projeto)" },
+        { error: "Forbidden (apenas owner pode enviar notificacoes)" },
         origin
       );
     }
