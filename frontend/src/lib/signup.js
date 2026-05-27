@@ -22,7 +22,7 @@ async function readFunctionError(error) {
   }
 
   return {
-    message: error?.message || 'Nao foi possivel finalizar o cadastro.',
+    message: error?.message || 'Não foi possível finalizar o cadastro.',
     code: error?.code || null,
   };
 }

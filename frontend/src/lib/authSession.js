@@ -5,7 +5,7 @@ export const AUTH_SESSION_ERROR_CODE = 'AUTH_SESSION_INVALID';
 
 const SESSION_REFRESH_MARGIN_SECONDS = 30;
 const AUTH_INVALID_EVENT_THROTTLE_MS = 1500;
-const DEFAULT_SESSION_EXPIRED_MESSAGE = 'Sua sessao expirou. Faca login novamente.';
+const DEFAULT_SESSION_EXPIRED_MESSAGE = 'Sua sessão expirou. Faça login novamente.';
 
 let lastInvalidSessionEventAt = 0;
 

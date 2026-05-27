@@ -9,7 +9,7 @@ export default function AuthCallback() {
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
-  const [status, setStatus] = useState("Processando autenticacao...");
+  const [status, setStatus] = useState("Processando autenticação...");
   const handledRef = useRef(false);
 
   useEffect(() => {
@@ -19,7 +19,7 @@ export default function AuthCallback() {
     const navigateToPasswordReset = () => {
       if (cancelled || handledRef.current) return;
       handledRef.current = true;
-      setStatus("Preparando redefinicao de senha...");
+      setStatus("Preparando redefinição de senha...");
       navigate('/reset-password', { replace: true });
     };
 
@@ -52,7 +52,7 @@ export default function AuthCallback() {
         if (!sub) {
           toast({
             title: "Erro",
-            description: "Nao foi possivel identificar o usuario autenticado.",
+            description: "Não foi possível identificar o usuário autenticado.",
             variant: "destructive",
           });
           navigate('/', { replace: true });

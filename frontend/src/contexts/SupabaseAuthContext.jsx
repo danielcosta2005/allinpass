@@ -211,7 +211,7 @@ export const AuthProvider = ({ children }) => {
    * - Always clear local state/storage and navigate
    */
   const forceLogout = useCallback(
-    async (reason = 'Sua sessao expirou. Faca login novamente.') => {
+    async (reason = 'Sua sessão expirou. Faça login novamente.') => {
       if (logoutInFlightRef.current) return;
       logoutInFlightRef.current = true;
 
@@ -259,7 +259,7 @@ export const AuthProvider = ({ children }) => {
           navigate('/login', { replace: true });
         }
 
-        if (reason === 'Voce saiu da conta.') {
+        if (reason === 'Você saiu da conta.') {
           toast({ title: 'Logout realizado', description: reason });
         }
       } finally {
@@ -349,7 +349,7 @@ export const AuthProvider = ({ children }) => {
       console.error('[auth] signup-finalize auto recovery failed', error);
       toast({
         title: 'Erro ao finalizar cadastro',
-        description: error?.message || 'Nao foi possivel finalizar o Free Trial automaticamente.',
+        description: error?.message || 'Não foi possível finalizar o Free Trial automaticamente.',
         variant: 'destructive',
       });
       return null;
@@ -383,8 +383,8 @@ export const AuthProvider = ({ children }) => {
 
         if (offline && nextInfo.count < REFRESH_FAIL_MAX) {
           toast({
-            title: 'Sem conexao',
-            description: 'Reconecte a internet para continuar logado.',
+            title: 'Sem conexão',
+            description: 'Reconecte-se à internet para continuar logado.',
             variant: 'destructive',
           });
           setLoading(false);
@@ -396,13 +396,13 @@ export const AuthProvider = ({ children }) => {
           try {
             sessionStorage.removeItem('__auth_refresh_fail');
           } catch (_) {}
-          await forceLogout('Sua sessao expirou. Faca login novamente.');
+          await forceLogout('Sua sessão expirou. Faça login novamente.');
           return;
         }
 
         toast({
-          title: 'Problema ao manter a sessao',
-          description: 'Tentando reconectar... se persistir, voce sera redirecionado para login.',
+          title: 'Problema ao manter a sessão',
+          description: 'Tentando reconectar... se persistir, você será redirecionado para login.',
           variant: 'destructive',
         });
 
@@ -628,7 +628,7 @@ export const AuthProvider = ({ children }) => {
   }, [toast]);
 
   const signOutUser = useCallback(async () => {
-    await forceLogout('Voce saiu da conta.');
+    await forceLogout('Você saiu da conta.');
   }, [forceLogout]);
 
   const value = useMemo(() => ({

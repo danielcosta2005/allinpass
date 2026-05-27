@@ -8,8 +8,8 @@ const PLAN_PRESENTATION_BY_CODE = {
   free_trial: {
     key: 'free-trial',
     type: 'trial',
-    highlight: '7 dias gratis',
-    cta: 'Começar Gratis',
+    highlight: '7 dias grátis',
+    cta: 'Começar Grátis',
   },
   starter: {
     key: 'starter',
@@ -100,7 +100,7 @@ const buildPlanFeatures = ({
   }
 
   if (overageNotificationSentCents > 0) {
-    features.push(`Excedente: R$ ${formatCentsToBRL(overageNotificationSentCents)} por notificacao enviada`);
+    features.push(`Excedente: R$ ${formatCentsToBRL(overageNotificationSentCents)} por notificação enviada`);
   }
 
   return features;
@@ -112,12 +112,12 @@ const subscriptionPlanSeeds = [
     code: 'free_trial',
     type: 'trial',
     name: 'Free Trial',
-    highlight: '7 dias gratis',
+    highlight: '7 dias grátis',
     description: 'Teste todos os recursos do AllinPass por 7 dias.',
     trialDays: 7,
     price: 0,
-    priceLabel: 'Gratis',
-    cta: 'Comecar Gratis',
+    priceLabel: 'Grátis',
+    cta: 'Começar Grátis',
     limits: {
       passInstalls: 75,
       notifications: 250,
@@ -133,7 +133,7 @@ const subscriptionPlanSeeds = [
     code: 'starter',
     type: 'paid',
     name: 'Starter',
-    description: 'Para quem esta comecando a fidelizar.',
+    description: 'Para quem está começando a fidelizar.',
     price: 197.7,
     cta: 'Assinar Starter',
     limits: {
@@ -171,7 +171,7 @@ const subscriptionPlanSeeds = [
     code: 'premium',
     type: 'paid',
     name: 'Premium',
-    description: 'Para operacoes de alto volume.',
+    description: 'Para operações de alto volume.',
     price: 397.7,
     cta: 'Assinar Premium',
     limits: {

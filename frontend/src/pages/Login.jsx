@@ -10,7 +10,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 
-const EMAIL_CONFIRMATION_REQUIRED_MESSAGE = 'Confirmação de email necessária.';
+const EMAIL_CONFIRMATION_REQUIRED_MESSAGE = 'Confirmação de e-mail necessária.';
 
 function isEmailNotConfirmedError(error) {
   const message = String(error?.message || '').toLowerCase();
@@ -64,7 +64,7 @@ const Login = () => {
     if (!normalizedEmail) {
       toast({
         title: 'Informe seu e-mail',
-        description: 'Preencha o e-mail para receber o link de redefinicao de senha.',
+        description: 'Preencha o e-mail para receber o link de redefinição de senha.',
         variant: 'destructive',
       });
       return;
@@ -83,11 +83,11 @@ const Login = () => {
       setResetSent(true);
       toast({
         title: 'Link enviado',
-        description: 'Se o e-mail estiver cadastrado, voce recebera um link para criar uma nova senha.',
+        description: 'Se o e-mail estiver cadastrado, você receberá um link para criar uma nova senha.',
       });
     } catch (error) {
       toast({
-        title: 'Nao foi possivel enviar',
+        title: 'Não foi possível enviar',
         description: error?.message || 'Tente novamente em alguns minutos.',
         variant: 'destructive',
       });
@@ -175,7 +175,7 @@ const Login = () => {
               Allin Pass
             </h1>
             <p className="text-center text-gray-600 mb-8">
-              {resetMode ? 'Redefinicao de senha' : 'Painel Administrativo'}
+              {resetMode ? 'Redefinição de senha' : 'Painel Administrativo'}
             </p>
 
             <form onSubmit={resetMode ? handlePasswordResetRequest : handleSubmit} className="space-y-6">
@@ -217,7 +217,7 @@ const Login = () => {
                 ) : resetMode ? (
                   <div className="flex items-center justify-center gap-2">
                     <KeyRound className="w-5 h-5" />
-                    Enviar link de redefinicao
+                    Enviar link de redefinição
                   </div>
                 ) : (
                   <div className="flex items-center justify-center gap-2">
@@ -245,7 +245,7 @@ const Login = () => {
               {needsEmailConfirmation && (
                 <p className="text-sm text-rose-600 text-center">
                   {EMAIL_CONFIRMATION_REQUIRED_MESSAGE}{' '}
-                  Não recebeu nosso email?{' '}
+                  Não recebeu nosso e-mail?{' '}
                   <button
                     type="button"
                     className="font-semibold underline underline-offset-2 hover:text-rose-700 disabled:opacity-60"

@@ -267,7 +267,7 @@ function normalizeSignupErrorMessage(error) {
     return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
   }
 
-  return error?.message || 'NÃ£o foi possÃ­vel iniciar o Free Trial.';
+  return error?.message || 'Não foi possível iniciar o Free Trial.';
 }
 
 function getPasswordError(password, passwordState) {
@@ -443,10 +443,10 @@ function SignupPage() {
     setPasswordSetupError('');
 
     if (!authSession?.user) {
-      const message = 'Sua sessao expirou. Abra o magic link novamente para criar sua senha.';
+      const message = 'Sua sessão expirou. Abra o magic link novamente para criar sua senha.';
       setPasswordSetupError(message);
       toast({
-        title: 'Sessao expirada',
+        title: 'Sessão expirada',
         description: message,
         variant: 'destructive',
       });
@@ -480,11 +480,11 @@ function SignupPage() {
       await refreshAuthProfile();
       toast({
         title: 'Senha criada',
-        description: 'Agora voce pode acessar sua conta com email e senha.',
+        description: 'Agora você pode acessar sua conta com e-mail e senha.',
       });
       navigate('/org', { replace: true });
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel criar sua senha agora.';
+      const message = error?.message || 'Não foi possível criar sua senha agora.';
       setPasswordSetupError(message);
       toast({
         title: 'Erro ao criar senha',
@@ -509,7 +509,7 @@ function SignupPage() {
 
     const signupContext = pendingNewSignup;
     if (!signupContext?.email || !signupContext?.establishmentName) {
-      const message = 'Nao foi possivel recuperar os dados do cadastro. Revise o email e tente novamente.';
+      const message = 'Não foi possível recuperar os dados do cadastro. Revise o e-mail e tente novamente.';
       setSignupError(message);
       toast({
         title: 'Cadastro incompleto',
@@ -624,7 +624,7 @@ function SignupPage() {
         setConfirmationFlow('existing-customer');
         setFinishedFlow('confirm-email');
         toast({
-          title: 'Confira seu email',
+          title: 'Confira seu e-mail',
           description: 'Enviamos um link de acesso para finalizar seu Free Trial.',
         });
         return;
@@ -1030,7 +1030,7 @@ function SignupPage() {
                           value={formData.email}
                           onChange={(event) => setField('email', event.target.value)}
                           onBlur={() => setFieldTouched('email')}
-                          placeholder="voce@empresa.com"
+                          placeholder="contato@empresa.com"
                           aria-invalid={shouldShowError('email')}
                         />
                         {shouldShowError('email') && (
@@ -1165,9 +1165,9 @@ function SignupPage() {
                   >
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                       <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
-                      <h2 className="text-2xl font-bold text-emerald-950">Email liberado</h2>
+                      <h2 className="text-2xl font-bold text-emerald-950">E-mail liberado</h2>
                       <p className="text-emerald-800 mt-2">
-                        Agora crie a senha que voce usara para entrar no painel do estabelecimento.
+                        Agora crie a senha que você usará para entrar no painel do estabelecimento.
                       </p>
                     </div>
 
@@ -1190,7 +1190,7 @@ function SignupPage() {
 
                       <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
                           <p className={`text-sm font-semibold ${passwordState.textColor}`}>
                             {passwordState.label}
                           </p>
@@ -1296,9 +1296,9 @@ function SignupPage() {
                   >
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
                       <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
-                      <h2 className="text-2xl font-bold text-emerald-950">Email confirmado</h2>
+                      <h2 className="text-2xl font-bold text-emerald-950">E-mail confirmado</h2>
                       <p className="text-emerald-800 mt-2">
-                        Agora crie a senha que voce usara para entrar no painel do estabelecimento.
+                        Agora crie a senha que você usará para entrar no painel do estabelecimento.
                       </p>
                     </div>
 
@@ -1324,7 +1324,7 @@ function SignupPage() {
 
                       <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
                         <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
                           <p className={`text-sm font-semibold ${passwordSetupState.textColor}`}>
                             {passwordSetupState.label}
                           </p>
@@ -1384,10 +1384,10 @@ function SignupPage() {
                     <p className="text-sky-900 mt-2">
                       {confirmationFlow === 'existing-customer'
                         ? `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
-                        : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Nao se esqueca de olhar o lixo eletronico!`}
+                        : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!`}
                     </p>
                     <p className="text-sm text-sky-800 mt-3">
-                      Se o link nao chegou, voce pode pedir um novo envio sem refazer o cadastro.
+                      Se o link não chegou, você pode pedir um novo envio sem refazer o cadastro.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Button

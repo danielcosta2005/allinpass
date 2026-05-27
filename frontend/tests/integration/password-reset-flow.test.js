@@ -11,9 +11,9 @@ describe("password reset flow", () => {
     );
 
     expect(loginSource).toContain("resetPasswordForEmail");
-    expect(loginSource).toContain("redirectTo: `${window.location.origin}/auth/callback?flow=recovery`");
+    expect(loginSource).toContain("redirectTo: `${window.location.origin}/reset-password`");
     expect(loginSource).toContain("Esqueci minha senha");
-    expect(loginSource).toContain("Enviar link de redefinicao");
+    expect(loginSource).toContain("Enviar link de redefinição");
   });
 
   test("reset password route lets the authenticated recovery session update the password", () => {
@@ -38,7 +38,7 @@ describe("password reset flow", () => {
     expect(appSource).toContain('path="/reset-password"');
     expect(resetPasswordSource).toContain("supabase.auth.updateUser({ password })");
     expect(resetPasswordSource).toContain("navigate('/app', { replace: true })");
-    expect(resetPasswordSource).toContain("Link expirado ou invalido");
+    expect(resetPasswordSource).toContain("Link expirado ou inválido");
     expect(authContextSource).toContain("p === '/reset-password'");
     expect(authCallbackSource).toContain("authType === 'recovery'");
     expect(authCallbackSource).toContain("flow === 'recovery'");

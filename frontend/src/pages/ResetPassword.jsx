@@ -12,10 +12,10 @@ import { supabase } from '@/lib/supabaseClient';
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
-  { id: 'upper', label: 'Uma letra maiuscula', test: (value) => /[A-Z]/.test(value) },
-  { id: 'lower', label: 'Uma letra minuscula', test: (value) => /[a-z]/.test(value) },
-  { id: 'number', label: 'Um numero', test: (value) => /\d/.test(value) },
-  { id: 'symbol', label: 'Um simbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
+  { id: 'upper', label: 'Uma letra maiúscula', test: (value) => /[A-Z]/.test(value) },
+  { id: 'lower', label: 'Uma letra minúscula', test: (value) => /[a-z]/.test(value) },
+  { id: 'number', label: 'Um número', test: (value) => /\d/.test(value) },
+  { id: 'symbol', label: 'Um símbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
 function evaluatePassword(password) {
@@ -30,7 +30,7 @@ function evaluatePassword(password) {
     score <= 1
       ? { label: 'Muito fraca', textColor: 'text-rose-600', barColor: 'bg-rose-500' }
       : score <= 3
-        ? { label: 'Em evolucao', textColor: 'text-amber-600', barColor: 'bg-amber-500' }
+        ? { label: 'Em evolução', textColor: 'text-amber-600', barColor: 'bg-amber-500' }
         : { label: 'Forte', textColor: 'text-emerald-600', barColor: 'bg-emerald-500' };
 
   return {
@@ -83,11 +83,11 @@ export default function ResetPassword() {
 
       toast({
         title: 'Senha atualizada',
-        description: 'Sua nova senha ja esta ativa.',
+        description: 'Sua nova senha já está ativa.',
       });
       navigate('/app', { replace: true });
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel atualizar sua senha agora.';
+      const message = error?.message || 'Não foi possível atualizar sua senha agora.';
       setErrorMessage(message);
       toast({
         title: 'Erro ao atualizar senha',
@@ -139,9 +139,9 @@ export default function ResetPassword() {
             {!session?.user ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center">
                 <KeyRound className="w-9 h-9 text-amber-600 mx-auto mb-3" />
-                <p className="font-semibold text-amber-950">Link expirado ou invalido</p>
+                <p className="font-semibold text-amber-950">Link expirado ou inválido</p>
                 <p className="text-sm text-amber-800 mt-2">
-                  Solicite um novo link de redefinicao na tela de login.
+                  Solicite um novo link de redefinição na tela de login.
                 </p>
                 <Link to="/login" className="mt-5 inline-flex">
                   <Button className="bg-amber-700 hover:bg-amber-800 text-white">
@@ -174,7 +174,7 @@ export default function ResetPassword() {
 
                 <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-slate-700">Forca da senha</p>
+                    <p className="text-sm font-semibold text-slate-700">Força da senha</p>
                     <p className={`text-sm font-semibold ${passwordState.textColor}`}>
                       {passwordState.label}
                     </p>
