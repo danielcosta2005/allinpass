@@ -102,7 +102,7 @@ describe("Edge Function scanner-reward", () => {
     }
   });
 
-  test("debita pontos, registra resgate e retorna notification_id ou aviso", async () => {
+  test("debita pontos, registra resgate e nao cria notificacao", async () => {
     const { project, owner } = context;
     const userPass = await createClaimedUserPass({ pass, owner, points: 12 });
     const reward = await createReward({
@@ -139,7 +139,9 @@ describe("Edge Function scanner-reward", () => {
 
     const { data: redemption, error: redemptionError } = await client
       .from("reward_redemptions")
-      .select("id, reward_id, user_pass_id, points_spent, points_before, points_after")
+      .select(
+        "id, reward_id, user_pass_id, points_spent, points_before, points_after, notification_id, notification_warning",
+      )
       .eq("id", response.body.redemption_id)
       .maybeSingle();
 
@@ -147,6 +149,8 @@ describe("Edge Function scanner-reward", () => {
     expect(redemption?.reward_id).toBe(reward.id);
     expect(redemption?.user_pass_id).toBe(userPass.id);
     expect(redemption?.points_spent).toBe(5);
+    expect(redemption?.notification_id).toBeNull();
+    expect(redemption?.notification_warning).toBeNull();
   });
 
   test("bloqueia resgate com pontos insuficientes sem debitar", async () => {

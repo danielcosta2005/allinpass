@@ -7,7 +7,6 @@ import {
   History,
   Loader2,
   Plus,
-  Power,
   ScanLine,
   Video,
   VideoOff,
@@ -15,8 +14,21 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
@@ -52,8 +64,24 @@ function normalizeScanResult(result) {
   return result?.data || result?.rawValue || result?.text || "";
 }
 
-function statusLabel(status) {
-  return status === "active" ? "Ativa" : "Inativa";
+function Toggle({ checked, onChange, disabled }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      aria-pressed={checked}
+      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors disabled:opacity-60 ${
+        checked ? "bg-indigo-500" : "bg-gray-300"
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+          checked ? "translate-x-6" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
 }
 
 function formatDateTime(iso) {
@@ -153,7 +181,7 @@ function formatScannerRewardError(body, fallback) {
       : "Este passe nao tem pontos suficientes para esta recompensa.";
   }
 
-  return body?.message || body?.error || fallback?.message || "Nao foi possivel contabilizar a recompensa.";
+  return body?.message || body?.error || fallback?.message || "Nao foi possivel resgatar a recompensa.";
 }
 
 export default function RewardsTab({ projectId }) {
@@ -194,6 +222,20 @@ export default function RewardsTab({ projectId }) {
       window.clearTimeout(resetTimerRef.current);
       resetTimerRef.current = null;
     }
+  }, []);
+
+  const createScanner = useCallback(() => {
+    if (scannerRef.current) return scannerRef.current;
+    if (!videoRef.current) return null;
+
+    const scanner = new QrScanner(
+      videoRef.current,
+      (result) => onScanRef.current?.(result),
+      { highlightScanRegion: true, highlightCodeOutline: true },
+    );
+
+    scannerRef.current = scanner;
+    return scanner;
   }, []);
 
   async function fetchRewards() {
@@ -398,21 +440,35 @@ export default function RewardsTab({ projectId }) {
   }, []);
 
   const startScan = useCallback(async () => {
-    const scanner = scannerRef.current;
-    if (!scanner) return;
+    let scanner = createScanner();
+
+    if (!scanner) {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      scanner = createScanner();
+    }
+
+    if (!scanner) {
+      toast({
+        variant: "destructive",
+        title: "Scanner indisponivel",
+        description: "Nao foi possivel preparar o video do scanner. Feche e abra o resgate novamente.",
+      });
+      return;
+    }
 
     try {
       await scanner.start();
       setIsScanning(true);
       setScanResult(null);
     } catch (err) {
+      console.error(err);
       toast({
         variant: "destructive",
         title: "Erro na camera",
         description: "Nao foi possivel acessar a camera. Verifique as permissoes.",
       });
     }
-  }, [toast]);
+  }, [createScanner, toast]);
 
   const callScannerReward = useCallback(async ({ rewardId, passToken }) => {
     const { data: sessionData } = await supabase.auth.getSession();
@@ -477,7 +533,7 @@ export default function RewardsTab({ projectId }) {
       setScanResult({ success: false, error: err?.message || String(err) });
       toast({
         variant: "destructive",
-        title: "Erro ao contabilizar recompensa",
+        title: "Erro ao resgatar recompensa",
         description: err?.message || String(err),
       });
     } finally {
@@ -505,24 +561,18 @@ export default function RewardsTab({ projectId }) {
   }, [onScan]);
 
   useEffect(() => {
-    if (!redeemingReward || !videoRef.current) return undefined;
-
-    const scanner = new QrScanner(
-      videoRef.current,
-      (result) => onScanRef.current?.(result),
-      { highlightScanRegion: true, highlightCodeOutline: true },
-    );
-
-    scannerRef.current = scanner;
+    if (!redeemingReward) return undefined;
+    createScanner();
 
     return () => {
+      const scanner = scannerRef.current;
       try {
-        scanner.destroy();
+        scanner?.destroy();
       } catch {}
       scannerRef.current = null;
       setIsScanning(false);
     };
-  }, [redeemingReward]);
+  }, [createScanner, redeemingReward]);
 
   function openRedeem(reward) {
     clearResetTimer();
@@ -618,27 +668,23 @@ export default function RewardsTab({ projectId }) {
         </motion.div>
       )}
 
-      {redeemingReward && (
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Contabilizar recompensa</h3>
-              <p className="mt-1 text-sm text-gray-600">
-                {redeemingReward.name} - {redeemingReward.points_required} ponto(s)
-              </p>
-            </div>
-            <Button variant="outline" onClick={closeRedeem} disabled={isProcessingScan}>
-              Fechar
-            </Button>
-          </div>
+      <Dialog
+        open={Boolean(redeemingReward)}
+        onOpenChange={(open) => {
+          if (!open) closeRedeem();
+        }}
+      >
+        <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-purple-100 bg-white p-5 shadow-2xl">
+          <DialogHeader className="pr-8">
+            <DialogTitle>Resgatar recompensa</DialogTitle>
+            <DialogDescription>
+              {redeemingReward?.name} - {redeemingReward?.points_required} ponto(s)
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(280px,420px)_1fr]">
+          <div className="mx-auto w-full max-w-md">
             <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-gray-900 shadow-inner">
-              <video ref={videoRef} className="h-full w-full object-cover" />
+              <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
 
               <div
                 className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 p-4 text-center text-white transition-opacity"
@@ -676,19 +722,21 @@ export default function RewardsTab({ projectId }) {
               </div>
             </div>
 
-            <div>
+            <div className="mt-6">
               <Button
                 onClick={toggleScan}
                 disabled={isProcessingScan}
-                className={`w-full gap-2 py-6 ${isScanning ? "bg-red-600 hover:bg-red-700" : "bg-gradient-to-r from-purple-600 to-indigo-600"}`}
+                className={`w-full gap-2 py-6 text-lg transition-all duration-300 ${
+                  isScanning ? "bg-red-600 hover:bg-red-700" : "bg-gradient-to-r from-purple-600 to-indigo-600"
+                }`}
               >
                 {isScanning ? <VideoOff className="h-5 w-5" /> : <Video className="h-5 w-5" />}
                 {isScanning ? "Parar scanner" : "Iniciar scanner"}
               </Button>
             </div>
           </div>
-        </motion.div>
-      )}
+        </DialogContent>
+      </Dialog>
 
       <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="space-y-4">
         <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
@@ -726,7 +774,7 @@ export default function RewardsTab({ projectId }) {
                     <th className="px-4 py-3">Pontos</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">
-                      <div className="ml-auto w-[280px] text-center">Ações</div>
+                      <div className="ml-auto w-[220px] text-center">Ações</div>
                     </th>
                   </tr>
                 </thead>
@@ -747,42 +795,52 @@ export default function RewardsTab({ projectId }) {
                             {reward.points_required} ponto(s)
                           </td>
                           <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                                isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
-                              }`}
-                            >
-                              {statusLabel(reward.status)}
-                            </span>
+                            <div className="flex items-center gap-3">
+                              <Toggle
+                                checked={isActive}
+                                disabled={updatingRewardId === reward.id}
+                                onChange={() => toggleRewardStatus(reward)}
+                              />
+                              <span className="text-xs font-medium text-gray-600">
+                                {isActive ? "On" : "Off"}
+                              </span>
+                              {updatingRewardId === reward.id && (
+                                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                              )}
+                            </div>
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex justify-end gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => toggleRewardRedemptions(reward.id)}
-                                disabled={isLoadingRedemptions}
-                                title="Visualizar resgates"
-                              >
-                                {isLoadingRedemptions ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Eye className={`h-4 w-4 ${isExpanded ? "text-indigo-600" : ""}`} />
-                                )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => toggleRewardStatus(reward)}
-                                disabled={updatingRewardId === reward.id}
-                                title={isActive ? "Desativar recompensa" : "Ativar recompensa"}
-                              >
-                                {updatingRewardId === reward.id ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Power className="h-4 w-4" />
-                                )}
-                              </Button>
+                              <TooltipProvider delayDuration={75} skipDelayDuration={0}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => toggleRewardRedemptions(reward.id)}
+                                      disabled={isLoadingRedemptions}
+                                      aria-label="Visualizar resgates"
+                                    >
+                                      {isLoadingRedemptions ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Eye className={`h-4 w-4 ${isExpanded ? "text-indigo-600" : ""}`} />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent
+                                    side="top"
+                                    align="end"
+                                    sideOffset={10}
+                                    className="w-56 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl"
+                                  >
+                                    <p className="text-sm font-semibold">Visualizar resgates</p>
+                                    <p className="mt-1 text-xs text-slate-600">
+                                      Veja o historico desta recompensa.
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                               <Button
                                 size="sm"
                                 onClick={() => openRedeem(reward)}
@@ -790,7 +848,7 @@ export default function RewardsTab({ projectId }) {
                                 className="gap-2"
                               >
                                 <ScanLine className="h-4 w-4" />
-                                Contabilizar
+                                Resgatar
                               </Button>
                             </div>
                           </td>
