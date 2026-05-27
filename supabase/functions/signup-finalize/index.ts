@@ -13,7 +13,52 @@ type BillingPlan = {
   overage_notification_sent_cents: number;
 };
 
+type SupabaseAdminClient = ReturnType<typeof createClient>;
+
+type SignupFinalizationStatus = "processing" | "completed" | "failed";
+
+type SignupFinalizationRow = {
+  status: SignupFinalizationStatus;
+  response: Record<string, unknown> | null;
+  updated_at: string | null;
+  attempts: number | null;
+};
+
+type SignupFinalizationClaim =
+  | { action: "proceed" }
+  | { action: "completed"; response: Record<string, unknown> }
+  | { action: "processing" };
+
+type ExistingCustomerSignupIntentRow = {
+  establishment_name: string;
+  plan_code: string;
+};
+
+type ProjectMemberRow = {
+  project_id: string;
+  role: string;
+};
+
+type ProjectRow = {
+  id: string;
+  slug: string | null;
+};
+
+type BillingAccountRow = {
+  id: string;
+};
+
+type BillingSubscriptionRow = {
+  id: string;
+  status: string;
+  trial_ends_at: string | null;
+  current_period_end: string | null;
+};
+
 const FREE_PLAN_CODE = "free_trial";
+const FINALIZATION_STALE_AFTER_MS = 2 * 60 * 1000;
+const FINALIZATION_WAIT_ATTEMPTS = 20;
+const FINALIZATION_WAIT_DELAY_MS = 350;
 
 type SignupFinalizeErrorCode =
   | "SIGNUP_FINALIZE_METHOD_NOT_ALLOWED"
@@ -25,6 +70,7 @@ type SignupFinalizeErrorCode =
   | "SIGNUP_FINALIZE_UNSUPPORTED_PLAN"
   | "SIGNUP_FINALIZE_PLAN_NOT_FOUND"
   | "SIGNUP_FINALIZE_PROJECT_NOT_CREATED"
+  | "SIGNUP_FINALIZE_IN_PROGRESS"
   | "SIGNUP_FINALIZE_INTERNAL_ERROR";
 
 class SignupFinalizeError extends Error {
@@ -104,6 +150,228 @@ function addMonths(date: Date, months: number) {
   return next;
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorCode(error: unknown) {
+  if (error instanceof SignupFinalizeError) return error.code;
+  if (typeof error === "object" && error && "code" in error) {
+    return String((error as { code?: unknown }).code || "SIGNUP_FINALIZE_INTERNAL_ERROR");
+  }
+  return "SIGNUP_FINALIZE_INTERNAL_ERROR";
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message?: unknown }).message || "Erro interno ao finalizar cadastro.");
+  }
+  return "Erro interno ao finalizar cadastro.";
+}
+
+function isUniqueViolation(error: unknown) {
+  return getErrorCode(error) === "23505";
+}
+
+function buildFinalizationIdempotencyKey(userId: string) {
+  return `signup-finalize:${userId}`;
+}
+
+function asFinalizationResponse(response: unknown) {
+  if (!response || typeof response !== "object" || Array.isArray(response)) return null;
+  return response as Record<string, unknown>;
+}
+
+async function getSignupFinalization(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+): Promise<SignupFinalizationRow | null> {
+  const { data, error } = await supabaseAdmin
+    .from("signup_finalizations")
+    .select("status, response, updated_at, attempts")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as SignupFinalizationRow | null) ?? null;
+}
+
+async function reclaimSignupFinalization(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+  row: SignupFinalizationRow,
+): Promise<boolean> {
+  const now = new Date();
+  const updatePayload = {
+    idempotency_key: buildFinalizationIdempotencyKey(userId),
+    status: "processing",
+    response: null,
+    error_code: null,
+    error_message: null,
+    attempts: Math.max(1, Number(row.attempts ?? 1) + 1),
+    started_at: now.toISOString(),
+    updated_at: now.toISOString(),
+    completed_at: null,
+  };
+
+  let query = supabaseAdmin
+    .from("signup_finalizations")
+    .update(updatePayload)
+    .eq("user_id", userId);
+
+  if (row.status === "failed") {
+    query = query.eq("status", "failed");
+  } else {
+    const staleBefore = new Date(now.getTime() - FINALIZATION_STALE_AFTER_MS).toISOString();
+    query = query.eq("status", "processing").lte("updated_at", staleBefore);
+  }
+
+  const { data, error } = await query.select("status").maybeSingle();
+  if (error) throw error;
+
+  return Boolean(data);
+}
+
+async function claimSignupFinalization(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+): Promise<SignupFinalizationClaim> {
+  const now = new Date().toISOString();
+  const { error: insertError } = await supabaseAdmin
+    .from("signup_finalizations")
+    .insert({
+      user_id: userId,
+      idempotency_key: buildFinalizationIdempotencyKey(userId),
+      status: "processing",
+      attempts: 1,
+      started_at: now,
+      updated_at: now,
+    })
+    .select("status")
+    .single();
+
+  if (!insertError) return { action: "proceed" };
+  if (!isUniqueViolation(insertError)) throw insertError;
+
+  const row = await getSignupFinalization(supabaseAdmin, userId);
+  const completedResponse = asFinalizationResponse(row?.response);
+
+  if (row?.status === "completed" && completedResponse) {
+    return { action: "completed", response: completedResponse };
+  }
+
+  if (row?.status === "failed" || row?.status === "processing") {
+    const reclaimed = await reclaimSignupFinalization(supabaseAdmin, userId, row);
+    if (reclaimed) return { action: "proceed" };
+  }
+
+  return { action: "processing" };
+}
+
+async function waitForCompletedSignupFinalization(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+) {
+  for (let attempt = 0; attempt < FINALIZATION_WAIT_ATTEMPTS; attempt += 1) {
+    await delay(FINALIZATION_WAIT_DELAY_MS);
+    const row = await getSignupFinalization(supabaseAdmin, userId);
+    const completedResponse = asFinalizationResponse(row?.response);
+
+    if (row?.status === "completed" && completedResponse) {
+      return completedResponse;
+    }
+
+    if (row?.status === "failed") {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function completeSignupFinalization(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+  projectId: string,
+  response: Record<string, unknown>,
+) {
+  const now = new Date().toISOString();
+  const { error } = await supabaseAdmin
+    .from("signup_finalizations")
+    .update({
+      status: "completed",
+      project_id: projectId,
+      response,
+      error_code: null,
+      error_message: null,
+      updated_at: now,
+      completed_at: now,
+    })
+    .eq("user_id", userId);
+
+  if (error) throw error;
+}
+
+async function markSignupFinalizationFailed(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+  error: unknown,
+) {
+  const { error: updateError } = await supabaseAdmin
+    .from("signup_finalizations")
+    .update({
+      status: "failed",
+      error_code: getErrorCode(error),
+      error_message: getErrorMessage(error).slice(0, 500),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .eq("status", "processing");
+
+  if (updateError) {
+    console.error("signup-finalize failed to persist failure state", updateError);
+  }
+}
+
+async function getExistingCustomerSignupIntent(
+  supabaseAdmin: SupabaseAdminClient,
+  email: string,
+): Promise<ExistingCustomerSignupIntentRow | null> {
+  if (!email) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("signup_existing_customer_intents")
+    .select("establishment_name, plan_code")
+    .eq("email", email)
+    .eq("status", "pending")
+    .gt("expires_at", new Date().toISOString())
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as ExistingCustomerSignupIntentRow | null) ?? null;
+}
+
+async function completeExistingCustomerSignupIntent(
+  supabaseAdmin: SupabaseAdminClient,
+  email: string,
+  userId: string,
+) {
+  if (!email) return;
+
+  const { error } = await supabaseAdmin
+    .from("signup_existing_customer_intents")
+    .update({
+      status: "completed",
+      user_id: userId,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("email", email)
+    .eq("status", "pending");
+
+  if (error) throw error;
+}
+
 function buildWalletDefaults(projectName: string) {
   return {
     type: "loyalty",
@@ -132,6 +400,8 @@ function buildWalletDefaults(projectName: string) {
 
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
+  let supabaseAdmin: SupabaseAdminClient | null = null;
+  let claimedFinalizationUserId: string | null = null;
 
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(origin) });
@@ -180,27 +450,47 @@ Deno.serve(async (req) => {
       );
     }
 
-    const payload = await req.json().catch(() => ({}));
-    const establishmentName = String(
-      payload.establishmentName ?? user.user_metadata?.establishment_name ?? "",
-    ).trim();
-    const planCode = String(payload.planCode ?? user.user_metadata?.plan_code ?? FREE_PLAN_CODE).trim();
     const email = String(user.email ?? "").trim().toLowerCase();
-
-    if (!establishmentName) {
-      return errorResponse(
-        origin,
-        "SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME",
-        "Informe o nome do estabelecimento.",
-        400,
-      );
-    }
 
     if (!email) {
       return errorResponse(
         origin,
         "SIGNUP_FINALIZE_MISSING_USER_EMAIL",
         "Usuario autenticado sem email.",
+        400,
+      );
+    }
+
+    supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const payload = await req.json().catch(() => ({}));
+    const existingCustomerIntent = await getExistingCustomerSignupIntent(supabaseAdmin, email);
+    const payloadEstablishmentName = String(payload.establishmentName ?? "").trim();
+    const metadataEstablishmentName = String(user.user_metadata?.establishment_name ?? "").trim();
+    const intentEstablishmentName = String(existingCustomerIntent?.establishment_name ?? "").trim();
+    const payloadPlanCode = String(payload.planCode ?? "").trim();
+    const metadataPlanCode = String(user.user_metadata?.plan_code ?? "").trim();
+    const intentPlanCode = String(existingCustomerIntent?.plan_code ?? "").trim();
+    const establishmentName = String(
+      payloadEstablishmentName
+        || metadataEstablishmentName
+        || intentEstablishmentName
+        || "",
+    ).trim();
+    const planCode = String(
+      payloadPlanCode
+        || metadataPlanCode
+        || intentPlanCode
+        || FREE_PLAN_CODE,
+    ).trim();
+
+    if (!establishmentName) {
+      return errorResponse(
+        origin,
+        "SIGNUP_FINALIZE_MISSING_ESTABLISHMENT_NAME",
+        "Informe o nome do estabelecimento.",
         400,
       );
     }
@@ -214,9 +504,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const finalizationClaim = await claimSignupFinalization(supabaseAdmin, user.id);
+
+    if (finalizationClaim.action === "completed") {
+      await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
+      return jsonResponse(origin, finalizationClaim.response);
+    }
+
+    if (finalizationClaim.action === "processing") {
+      const completedResponse = await waitForCompletedSignupFinalization(supabaseAdmin, user.id);
+
+      if (completedResponse) {
+        return jsonResponse(origin, completedResponse);
+      }
+
+      return errorResponse(
+        origin,
+        "SIGNUP_FINALIZE_IN_PROGRESS",
+        "Seu Free Trial ja esta sendo finalizado. Aguarde alguns segundos e atualize a pagina.",
+        409,
+      );
+    }
+
+    claimedFinalizationUserId = user.id;
 
     const { data: planData, error: planError } = await supabaseAdmin
       .from("billing_plans")
@@ -261,7 +571,7 @@ Deno.serve(async (req) => {
 
     if (profileError) throw profileError;
 
-    const { data: existingMember, error: memberLookupError } = await supabaseAdmin
+    const { data: existingMemberData, error: memberLookupError } = await supabaseAdmin
       .from("project_members")
       .select("project_id, role")
       .eq("user_id", user.id)
@@ -271,6 +581,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (memberLookupError) throw memberLookupError;
+    const existingMember = existingMemberData as unknown as ProjectMemberRow | null;
 
     let projectId = existingMember?.project_id ?? null;
     let projectSlug: string | null = null;
@@ -281,7 +592,7 @@ Deno.serve(async (req) => {
 
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const slug = `${baseSlug}-${randomSuffix(6)}`.slice(0, 64);
-        const { data: project, error: projectError } = await supabaseAdmin
+        const { data: projectData, error: projectError } = await supabaseAdmin
           .from("projects")
           .insert({
             name: establishmentName,
@@ -292,6 +603,7 @@ Deno.serve(async (req) => {
           })
           .select("id, slug")
           .single();
+        const project = projectData as unknown as ProjectRow | null;
 
         if (!projectError && project) {
           projectId = project.id;
@@ -315,11 +627,12 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const { data: project } = await supabaseAdmin
+      const { data: projectData } = await supabaseAdmin
         .from("projects")
         .select("slug")
         .eq("id", projectId)
         .maybeSingle();
+      const project = projectData as unknown as Pick<ProjectRow, "slug"> | null;
 
       projectSlug = project?.slug ?? projectSlug;
 
@@ -347,18 +660,19 @@ Deno.serve(async (req) => {
         if (templateError) throw templateError;
       }
 
-      const { data: existingAccount, error: accountLookupError } = await supabaseAdmin
+      const { data: existingAccountData, error: accountLookupError } = await supabaseAdmin
         .from("billing_accounts")
         .select("id")
         .eq("project_id", projectId)
         .maybeSingle();
 
       if (accountLookupError) throw accountLookupError;
+      const existingAccount = existingAccountData as unknown as BillingAccountRow | null;
 
       let billingAccountId = existingAccount?.id ?? null;
 
       if (!billingAccountId) {
-        const { data: billingAccount, error: accountError } = await supabaseAdmin
+        const { data: billingAccountData, error: accountError } = await supabaseAdmin
           .from("billing_accounts")
           .insert({
             project_id: projectId,
@@ -375,10 +689,11 @@ Deno.serve(async (req) => {
           .single();
 
         if (accountError) throw accountError;
+        const billingAccount = billingAccountData as unknown as BillingAccountRow;
         billingAccountId = billingAccount.id;
       }
 
-      const { data: existingSubscription, error: subscriptionLookupError } = await supabaseAdmin
+      const { data: existingSubscriptionData, error: subscriptionLookupError } = await supabaseAdmin
         .from("billing_subscriptions")
         .select("id, status, trial_ends_at, current_period_end")
         .eq("project_id", projectId)
@@ -387,6 +702,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (subscriptionLookupError) throw subscriptionLookupError;
+      const existingSubscription = existingSubscriptionData as unknown as BillingSubscriptionRow | null;
 
       let subscriptionId = existingSubscription?.id ?? null;
       const now = new Date();
@@ -396,7 +712,7 @@ Deno.serve(async (req) => {
       const periodEnd = trialEndsAt ?? addMonths(now, 1);
 
       if (!subscriptionId) {
-        const { data: subscription, error: subscriptionError } = await supabaseAdmin
+        const { data: subscriptionData, error: subscriptionError } = await supabaseAdmin
           .from("billing_subscriptions")
           .insert({
             project_id: projectId,
@@ -420,6 +736,7 @@ Deno.serve(async (req) => {
           .single();
 
         if (subscriptionError) throw subscriptionError;
+        const subscription = subscriptionData as unknown as BillingSubscriptionRow;
         subscriptionId = subscription.id;
 
         const { error: cycleError } = await supabaseAdmin.from("billing_cycles").insert({
@@ -476,7 +793,7 @@ Deno.serve(async (req) => {
 
       if (userUpdateError) throw userUpdateError;
 
-      return jsonResponse(origin, {
+      const responseBody = {
         success: true,
         project: {
           id: projectId,
@@ -494,7 +811,13 @@ Deno.serve(async (req) => {
           name: plan.name,
           trial_days: trialDays,
         },
-      });
+      };
+
+      await completeSignupFinalization(supabaseAdmin, user.id, projectId, responseBody);
+      await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
+      claimedFinalizationUserId = null;
+
+      return jsonResponse(origin, responseBody);
     } catch (error) {
       if (createdProject && projectId) {
         await supabaseAdmin.from("projects").delete().eq("id", projectId);
@@ -502,6 +825,10 @@ Deno.serve(async (req) => {
       throw error;
     }
   } catch (error) {
+    if (supabaseAdmin && claimedFinalizationUserId) {
+      await markSignupFinalizationFailed(supabaseAdmin, claimedFinalizationUserId, error);
+    }
+
     console.error("signup-finalize error", error);
 
     if (error instanceof SignupFinalizeError) {

@@ -4,7 +4,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 function corsHeaders(origin?: string) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Headers":
+      "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
   };
 }
@@ -34,8 +35,7 @@ function extractToken(qrData: unknown): string | null {
   try {
     const u = new URL(raw);
     const sp = u.searchParams;
-    const byQuery =
-      sp.get("token") ||
+    const byQuery = sp.get("token") ||
       sp.get("t") ||
       sp.get("s") ||
       sp.get("pass_token") ||
@@ -53,7 +53,8 @@ function extractToken(qrData: unknown): string | null {
 
 function isUuid(v: unknown): v is string {
   if (typeof v !== "string") return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    .test(v);
 }
 
 type RedeemResult = {
@@ -71,11 +72,67 @@ type RedeemResult = {
   [key: string]: unknown;
 };
 
+type WalletPushResult = {
+  function_name: "apple-push" | "google-push";
+  status?: number;
+  ok: boolean;
+  body?: unknown;
+  warning?: string;
+};
+
 function statusForRedeemError(error: string | undefined) {
   if (error === "not_found" || error === "reward_not_found") return 404;
-  if (error === "wrong_project" || error === "wrong_reward_project" || error === "reward_inactive") return 403;
+  if (
+    error === "wrong_project" || error === "wrong_reward_project" ||
+    error === "reward_inactive"
+  ) return 403;
   if (error === "insufficient_points") return 409;
   return 400;
+}
+
+async function invokeWalletPush(params: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  functionName: "apple-push" | "google-push";
+  passToken: string;
+}): Promise<WalletPushResult> {
+  const { supabaseUrl, serviceRoleKey, functionName, passToken } = params;
+
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        pass_token: passToken,
+        suppress_points_notification: true,
+      }),
+    });
+
+    const body = await res.json().catch(() => ({}));
+    console.log(`[scanner-reward] ${functionName}:`, res.status, body);
+
+    return {
+      function_name: functionName,
+      status: res.status,
+      ok: res.ok,
+      body,
+      ...(res.ok
+        ? {}
+        : { warning: `${functionName} retornou HTTP ${res.status}` }),
+    };
+  } catch (err) {
+    const warning = err instanceof Error ? err.message : String(err);
+    console.log(`[scanner-reward] ${functionName} failed (ignored):`, warning);
+
+    return {
+      function_name: functionName,
+      ok: false,
+      warning,
+    };
+  }
 }
 
 serve(async (req) => {
@@ -96,14 +153,22 @@ serve(async (req) => {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !SERVICE_ROLE_KEY) {
     return jsonResponse(
       500,
-      { error: "missing_env", message: "SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY obrigatorios." },
+      {
+        error: "missing_env",
+        message:
+          "SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY obrigatorios.",
+      },
       origin,
     );
   }
 
-  const authHeader = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  const authHeader = req.headers.get("authorization") ||
+    req.headers.get("Authorization") || "";
   if (!authHeader) {
-    return jsonResponse(401, { error: "missing_auth", message: "Missing authorization header" }, origin);
+    return jsonResponse(401, {
+      error: "missing_auth",
+      message: "Missing authorization header",
+    }, origin);
   }
 
   const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -118,7 +183,10 @@ serve(async (req) => {
   try {
     const { data: userData, error: userErr } = await userClient.auth.getUser();
     if (userErr || !userData?.user) {
-      return jsonResponse(401, { error: "unauthorized", message: "Sessao invalida do staff." }, origin);
+      return jsonResponse(401, {
+        error: "unauthorized",
+        message: "Sessao invalida do staff.",
+      }, origin);
     }
 
     const body = await req.json().catch(() => ({}));
@@ -129,7 +197,10 @@ serve(async (req) => {
     if (!isUuid(projectId) || !isUuid(rewardId) || !token) {
       return jsonResponse(
         400,
-        { error: "bad_request", message: "projectId, rewardId e qrData sao obrigatorios." },
+        {
+          error: "bad_request",
+          message: "projectId, rewardId e qrData sao obrigatorios.",
+        },
         origin,
       );
     }
@@ -144,17 +215,26 @@ serve(async (req) => {
 
     if (membershipErr) throw membershipErr;
     if (!membership) {
-      return jsonResponse(403, { error: "forbidden", message: "Voce nao e staff deste projeto." }, origin);
+      return jsonResponse(403, {
+        error: "forbidden",
+        message: "Voce nao e staff deste projeto.",
+      }, origin);
     }
 
-    const { data: redeemData, error: redeemErr } = await admin.rpc("redeem_reward_points", {
-      p_project_id: projectId,
-      p_reward_id: rewardId,
-      p_pass_token: token,
-    });
+    const { data: redeemData, error: redeemErr } = await admin.rpc(
+      "redeem_reward_points",
+      {
+        p_project_id: projectId,
+        p_reward_id: rewardId,
+        p_pass_token: token,
+      },
+    );
 
     if (redeemErr) {
-      return jsonResponse(500, { error: "redeem_failed", message: redeemErr.message }, origin);
+      return jsonResponse(500, {
+        error: "redeem_failed",
+        message: redeemErr.message,
+      }, origin);
     }
 
     const result = (redeemData || {}) as RedeemResult;
@@ -162,11 +242,35 @@ serve(async (req) => {
       return jsonResponse(statusForRedeemError(result.error), result, origin);
     }
 
-    return jsonResponse(200, result, origin);
+    const walletUpdates = await Promise.all([
+      invokeWalletPush({
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SERVICE_ROLE_KEY,
+        functionName: "apple-push",
+        passToken: token,
+      }),
+      invokeWalletPush({
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SERVICE_ROLE_KEY,
+        functionName: "google-push",
+        passToken: token,
+      }),
+    ]);
+
+    return jsonResponse(200, {
+      ...result,
+      wallet_updates: walletUpdates,
+      wallet_update_warning: walletUpdates.some((update) => !update.ok)
+        ? "Resgate contabilizado, mas uma atualizacao de carteira falhou."
+        : null,
+    }, origin);
   } catch (err) {
     return jsonResponse(
       500,
-      { error: "unhandled", message: err instanceof Error ? err.message : String(err) },
+      {
+        error: "unhandled",
+        message: err instanceof Error ? err.message : String(err),
+      },
       origin,
     );
   }

@@ -119,7 +119,7 @@ const RestaurantDashboard = () => {
               className="text-center bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-md shadow-lg"
             >
               <p className="font-bold">Atenção</p>
-              <p>Seu usuário não está associado a nenhum projeto. Fale com o superadministrador.</p>
+              <p>Seu usuário não está associado a nenhum projeto, fale com um administrador </p>
             </motion.div>
           ) : (
             <motion.div

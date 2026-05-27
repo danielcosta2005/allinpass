@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -22,20 +22,33 @@ import {
   isPaidPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
-import { finalizeFreeTrialSignup } from '@/lib/signup';
+import {
+  clearExistingCustomerSignupContext,
+  finalizeFreeTrialSignup,
+  precheckFreeTrialSignup,
+  readExistingCustomerSignupContext,
+  sendExistingCustomerSignupLink,
+} from '@/lib/signup';
+import {
+  TURNSTILE_SCRIPT_SRC,
+  getTurnstileSiteKey,
+  shouldUseSignupCaptcha,
+} from '@/lib/turnstileConfig';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import PlanCard from '@/components/landing/PlanCard';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+let turnstileScriptPromise = null;
+const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
-  { id: 'upper', label: 'Uma letra maiuscula', test: (value) => /[A-Z]/.test(value) },
-  { id: 'lower', label: 'Uma letra minuscula', test: (value) => /[a-z]/.test(value) },
-  { id: 'number', label: 'Um numero', test: (value) => /\d/.test(value) },
-  { id: 'symbol', label: 'Um simbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
+  { id: 'upper', label: 'Uma letra maiúscula', test: (value) => /[A-Z]/.test(value) },
+  { id: 'lower', label: 'Uma letra minúscula', test: (value) => /[a-z]/.test(value) },
+  { id: 'number', label: 'Um número', test: (value) => /\d/.test(value) },
+  { id: 'symbol', label: 'Um símbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
 function evaluatePassword(password) {
@@ -62,9 +75,183 @@ function evaluatePassword(password) {
   };
 }
 
+function loadTurnstileScript() {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Turnstile indisponível fora do navegador.'));
+  }
+
+  if (window.turnstile) {
+    return Promise.resolve(window.turnstile);
+  }
+
+  if (turnstileScriptPromise) {
+    return turnstileScriptPromise;
+  }
+
+  turnstileScriptPromise = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[src="${TURNSTILE_SCRIPT_SRC}"]`);
+
+    const handleLoad = () => {
+      if (window.turnstile) {
+        resolve(window.turnstile);
+        return;
+      }
+
+      turnstileScriptPromise = null;
+      reject(new Error('Turnstile carregou sem expor a API.'));
+    };
+
+    const handleError = () => {
+      turnstileScriptPromise = null;
+      reject(new Error('Não foi possível carregar o Turnstile.'));
+    };
+
+    if (existingScript) {
+      existingScript.addEventListener('load', handleLoad, { once: true });
+      existingScript.addEventListener('error', handleError, { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = TURNSTILE_SCRIPT_SRC;
+    script.async = true;
+    script.defer = true;
+    script.addEventListener('load', handleLoad, { once: true });
+    script.addEventListener('error', handleError, { once: true });
+    document.head.appendChild(script);
+  });
+
+  return turnstileScriptPromise;
+}
+
+function TurnstileWidget({ siteKey, onTokenChange, onResetReady }) {
+  const containerRef = useRef(null);
+  const widgetIdRef = useRef(null);
+  const onTokenChangeRef = useRef(onTokenChange);
+  const onResetReadyRef = useRef(onResetReady);
+  const [status, setStatus] = useState('loading');
+
+  useEffect(() => {
+    onTokenChangeRef.current = onTokenChange;
+  }, [onTokenChange]);
+
+  useEffect(() => {
+    onResetReadyRef.current = onResetReady;
+  }, [onResetReady]);
+
+  useEffect(() => {
+    if (!siteKey) return undefined;
+
+    let cancelled = false;
+    setStatus('loading');
+    onTokenChangeRef.current('');
+
+    loadTurnstileScript()
+      .then((turnstile) => {
+        if (cancelled || !containerRef.current) return;
+
+        try {
+          if (widgetIdRef.current && typeof turnstile.remove === 'function') {
+            turnstile.remove(widgetIdRef.current);
+          }
+
+          setStatus('pending');
+          widgetIdRef.current = turnstile.render(containerRef.current, {
+            sitekey: siteKey,
+            action: 'signup_precheck',
+            theme: 'light',
+            callback: (token) => {
+              setStatus('verified');
+              onTokenChangeRef.current(String(token ?? '').trim());
+            },
+            'expired-callback': () => {
+              setStatus('expired');
+              onTokenChangeRef.current('');
+            },
+            'timeout-callback': () => {
+              setStatus('expired');
+              onTokenChangeRef.current('');
+            },
+            'error-callback': () => {
+              setStatus('error');
+              onTokenChangeRef.current('');
+            },
+          });
+
+          onResetReadyRef.current(() => {
+            if (!window.turnstile || !widgetIdRef.current) return;
+            window.turnstile.reset(widgetIdRef.current);
+            setStatus('pending');
+            onTokenChangeRef.current('');
+          });
+        } catch (error) {
+          console.error('Turnstile render error', error);
+          setStatus('error');
+          onTokenChangeRef.current('');
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Turnstile load error', error);
+        setStatus('error');
+        onTokenChangeRef.current('');
+      });
+
+    return () => {
+      cancelled = true;
+      onResetReadyRef.current(null);
+
+      if (window.turnstile && widgetIdRef.current && typeof window.turnstile.remove === 'function') {
+        window.turnstile.remove(widgetIdRef.current);
+      }
+
+      widgetIdRef.current = null;
+    };
+  }, [siteKey]);
+
+  const statusMessage = {
+    loading: 'Carregando verificação antiabuso...',
+    pending: 'Confirme a verificação para continuar.',
+    verified: 'Verificação concluída.',
+    expired: 'A verificação expirou. Confirme novamente para continuar.',
+    error: 'Não foi possível carregar a verificação. Recarregue a página e tente novamente.',
+  }[status];
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+      <div ref={containerRef} className="min-h-[70px] flex items-center justify-center" />
+      <p
+        className={`text-xs text-center ${
+          status === 'error' || status === 'expired'
+            ? 'text-rose-600'
+            : status === 'verified'
+              ? 'text-emerald-700'
+              : 'text-slate-500'
+        }`}
+      >
+        {statusMessage}
+      </p>
+    </div>
+  );
+}
+
+function normalizeSignupErrorMessage(error) {
+  const message = String(error?.message || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+
+  if (
+    message.includes('email rate limit exceeded')
+    || code === 'over_email_send_rate_limit'
+  ) {
+    return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
+  }
+
+  return error?.message || 'NÃ£o foi possÃ­vel iniciar o Free Trial.';
+}
+
 function SignupPage() {
   const [searchParams] = useSearchParams();
-  const { signUp, refreshAuthProfile } = useAuth();
+  const { signUp, refreshAuthProfile, session: authSession } = useAuth();
   const { toast } = useToast();
   const finalizeFromRedirectRef = useRef(false);
   const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
@@ -79,13 +266,17 @@ function SignupPage() {
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
+  const [confirmationFlow, setConfirmationFlow] = useState('signup');
   const [acceptMockCheckout, setAcceptMockCheckout] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
   const [signupLoading, setSignupLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
   const [signupError, setSignupError] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileResetRef = useRef(null);
   const [formData, setFormData] = useState({
     establishmentName: '',
     email: '',
@@ -93,7 +284,12 @@ function SignupPage() {
     password: '',
   });
 
+  const turnstileSiteKey = useMemo(() => getTurnstileSiteKey(import.meta.env), []);
   const passwordState = useMemo(() => evaluatePassword(formData.password), [formData.password]);
+  const signupCaptchaEnabled = useMemo(
+    () => shouldUseSignupCaptcha({ paidPlan, siteKey: turnstileSiteKey }),
+    [paidPlan, turnstileSiteKey]
+  );
 
   const activeStep = finishedFlow ? totalSteps : step;
 
@@ -124,7 +320,7 @@ function SignupPage() {
     if (!formData.emailConfirmation.trim()) {
       nextErrors.emailConfirmation = 'Confirme o e-mail para evitar erros de acesso.';
     } else if (formData.emailConfirmation !== formData.email) {
-      nextErrors.emailConfirmation = 'Os e-mails nao conferem. Ajuste para continuar.';
+      nextErrors.emailConfirmation = 'Os e-mails não conferem. Ajuste para continuar.';
     }
 
     if (!formData.password) {
@@ -139,15 +335,31 @@ function SignupPage() {
     return nextErrors;
   };
 
-  const provisionFreeTrial = async ({ establishmentName, planCode }) => {
+  const provisionFreeTrial = useCallback(async ({ establishmentName, planCode, userId }) => {
     const result = await finalizeFreeTrialSignup({
       establishmentName,
       planCode: planCode || 'free_trial',
+      dedupeKey: userId ? `free-trial:${userId}` : '',
     });
 
     await refreshAuthProfile();
     return result;
-  };
+  }, [refreshAuthProfile]);
+
+  const buildFreeTrialEmailRedirectTo = useCallback((metadata = {}) => {
+    const planKey = selectedPlan?.key || 'free-trial';
+    const params = new URLSearchParams({
+      plano: planKey,
+      finalizar: '1',
+    });
+    const establishmentName = String(metadata.establishmentName || '').trim();
+    const planCode = String(metadata.planCode || '').trim();
+
+    if (establishmentName) params.set('establishmentName', establishmentName);
+    if (planCode) params.set('planCode', planCode);
+
+    return `${window.location.origin}/cadastro?${params.toString()}`;
+  }, [selectedPlan?.key]);
 
   const handleStepOneSubmit = async (event) => {
     event.preventDefault();
@@ -163,15 +375,54 @@ function SignupPage() {
       return;
     }
 
+    if (signupCaptchaEnabled && !captchaToken) {
+      const message = 'Confirme a verificação antiabuso para iniciar o Free Trial.';
+      setSignupError(message);
+      toast({
+        title: 'Verificação pendente',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSignupLoading(true);
 
     try {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
       const planCode = selectedPlan?.code || 'free_trial';
-      const emailRedirectTo = `${window.location.origin}/cadastro?plano=${encodeURIComponent(
-        selectedPlan?.key || 'free-trial',
-      )}&finalizar=1`;
+      const precheck = await precheckFreeTrialSignup({
+        email: normalizedEmail,
+        establishmentName,
+        captchaToken: signupCaptchaEnabled ? captchaToken : '',
+      });
+
+      if (precheck.code === 'existing_customer') {
+        const emailRedirectTo = buildFreeTrialEmailRedirectTo({ establishmentName, planCode });
+        await sendExistingCustomerSignupLink({
+          email: normalizedEmail,
+          emailRedirectTo,
+          establishmentName,
+          planCode,
+        });
+
+        setConfirmationFlow('existing-customer');
+        setFinishedFlow('confirm-email');
+        toast({
+          title: 'Confira seu email',
+          description: 'Enviamos um link de acesso para finalizar seu Free Trial.',
+        });
+        return;
+      }
+
+      if (!precheck.canProceed) {
+        const message = precheck.message
+          || 'Não foi possível iniciar o cadastro agora. Se você já possui conta, faça login ou tente novamente.';
+        throw new Error(message);
+      }
+
+      const emailRedirectTo = buildFreeTrialEmailRedirectTo();
 
       const { data, error } = await signUp(normalizedEmail, formData.password, {
         data: {
@@ -183,28 +434,95 @@ function SignupPage() {
       });
 
       if (error) throw error;
+      clearExistingCustomerSignupContext();
 
       if (!data?.session) {
+        setConfirmationFlow('signup');
         setFinishedFlow('confirm-email');
         toast({
-          title: 'Confirme seu email',
+          title: 'Confirme seu e-mail',
           description: 'Enviamos um link para finalizar seu Free Trial.',
         });
         return;
       }
 
-      await provisionFreeTrial({ establishmentName, planCode });
+      await provisionFreeTrial({
+        establishmentName,
+        planCode,
+        userId: data?.session?.user?.id || data?.user?.id,
+      });
       setFinishedFlow('trial');
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar o Free Trial.';
+      const message = normalizeSignupErrorMessage(error);
       setSignupError(message);
       toast({
         title: 'Erro no cadastro',
         description: message,
         variant: 'destructive',
       });
+      turnstileResetRef.current?.();
     } finally {
       setSignupLoading(false);
+    }
+  };
+
+  const handleResendConfirmationEmail = async () => {
+    if (resendLoading) return;
+
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
+      const message = 'Informe um e-mail válido para reenviar a confirmação.';
+      setSignupError(message);
+      toast({
+        title: 'E-mail inválido',
+        description: message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSignupError('');
+    setResendLoading(true);
+
+    try {
+      if (confirmationFlow === 'existing-customer') {
+        await sendExistingCustomerSignupLink({
+          email: normalizedEmail,
+          emailRedirectTo: buildFreeTrialEmailRedirectTo({
+            establishmentName: formData.establishmentName.trim(),
+            planCode: selectedPlan?.code || 'free_trial',
+          }),
+          establishmentName: formData.establishmentName.trim(),
+          planCode: selectedPlan?.code || 'free_trial',
+        });
+      } else {
+        const { error } = await supabase.auth.resend({
+          type: 'signup',
+          email: normalizedEmail,
+          options: {
+            emailRedirectTo: buildFreeTrialEmailRedirectTo(),
+          },
+        });
+
+        if (error) throw error;
+      }
+
+      toast({
+        title: 'E-mail reenviado',
+        description: confirmationFlow === 'existing-customer'
+          ? 'Enviamos um novo link de acesso para finalizar o Free Trial.'
+          : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+      });
+    } catch (error) {
+      const message = normalizeSignupErrorMessage(error);
+      setSignupError(message);
+      toast({
+        title: 'Não foi possível reenviar',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -219,6 +537,13 @@ function SignupPage() {
   };
 
   const shouldShowError = (field) => Boolean(errors[field]) && (attemptedSubmit || touched[field]);
+
+  useEffect(() => {
+    if (!signupCaptchaEnabled) {
+      setCaptchaToken('');
+      turnstileResetRef.current = null;
+    }
+  }, [signupCaptchaEnabled]);
 
   useEffect(() => {
     let mounted = true;
@@ -238,43 +563,63 @@ function SignupPage() {
   }, []);
 
   useEffect(() => {
-    if (!shouldFinalizeFromRedirect || finalizeFromRedirectRef.current) return;
+    const session = authSession;
+    const user = session?.user ?? null;
+    const existingCustomerContext = readExistingCustomerSignupContext();
+    const sessionEmail = String(user?.email || '').trim().toLowerCase();
+    const hasSignupProjectId = Boolean(user?.app_metadata?.signup_project_id);
+    const shouldFinalizeFromExistingCustomerContext =
+      !shouldFinalizeFromRedirect &&
+      !hasSignupProjectId &&
+      Boolean(user) &&
+      Boolean(existingCustomerContext) &&
+      existingCustomerContext.email === sessionEmail;
+    const shouldAttemptFinalize = shouldFinalizeFromRedirect || shouldFinalizeFromExistingCustomerContext;
 
-    finalizeFromRedirectRef.current = true;
+    if (!shouldAttemptFinalize || finalizeFromRedirectRef.current) return;
+
     setSignupLoading(true);
     setSignupError('');
 
+    if (!user) {
+      return;
+    }
+
+    finalizeFromRedirectRef.current = true;
+
     const finalizePendingSignup = async () => {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) throw error;
-        if (!session?.user) {
-          throw new Error('Sua sessao de cadastro nao foi encontrada. Faca login para continuar.');
-        }
-
+        const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
+        const redirectPlanCode = String(searchParams.get('planCode') || '').trim();
         const establishmentName = String(
-          session.user.user_metadata?.establishment_name || '',
+          user.user_metadata?.establishment_name
+            || redirectEstablishmentName
+            || existingCustomerContext?.establishmentName
+            || '',
         ).trim();
-        const planCode = String(session.user.user_metadata?.plan_code || 'free_trial');
+        const planCode = String(
+          user.user_metadata?.plan_code
+            || redirectPlanCode
+            || existingCustomerContext?.planCode
+            || 'free_trial',
+        );
 
-        if (!establishmentName) {
-          throw new Error('Nao encontramos o nome do estabelecimento neste cadastro.');
-        }
-
-        await provisionFreeTrial({ establishmentName, planCode });
+        const result = await provisionFreeTrial({
+          establishmentName,
+          planCode,
+          userId: user.id,
+        });
+        const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
+        clearExistingCustomerSignupContext();
         setFormData((previous) => ({
           ...previous,
-          establishmentName,
-          email: session.user.email || previous.email,
-          emailConfirmation: session.user.email || previous.emailConfirmation,
+          establishmentName: finalizedEstablishmentName,
+          email: user.email || previous.email,
+          emailConfirmation: user.email || previous.emailConfirmation,
         }));
         setFinishedFlow('trial');
       } catch (error) {
-        const message = error?.message || 'Nao foi possivel finalizar o Free Trial.';
+        const message = error?.message || 'Não foi possível finalizar o Free Trial.';
         setSignupError(message);
         toast({
           title: 'Erro ao finalizar cadastro',
@@ -287,7 +632,7 @@ function SignupPage() {
     };
 
     finalizePendingSignup();
-  }, [shouldFinalizeFromRedirect, toast]);
+  }, [authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]);
 
   return (
     <>
@@ -295,7 +640,7 @@ function SignupPage() {
         <title>Cadastro - Allin Pass</title>
         <meta
           name="description"
-          content="Crie sua conta Allin Pass e avance no fluxo de contratacao do plano escolhido."
+          content="Crie sua conta Allin Pass e avance no fluxo de contratação do plano escolhido."
         />
       </Helmet>
 
@@ -392,7 +737,7 @@ function SignupPage() {
                       <CheckCircle2 className="w-10 h-10 text-rose-600 mb-4" />
                     )}
                     <h2 className="text-2xl font-bold text-slate-900">
-                      {signupLoading ? 'Finalizando seu Free Trial' : 'Nao foi possivel finalizar automaticamente'}
+                      {signupLoading ? 'Finalizando seu Free Trial' : 'Não foi possível finalizar automaticamente'}
                     </h2>
                     <p className="text-slate-700 mt-2">
                       {signupLoading
@@ -446,7 +791,7 @@ function SignupPage() {
 
                     <div className="grid sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
+                        <Label htmlFor="email">E-mail</Label>
                         <Input
                           id="email"
                           type="email"
@@ -471,7 +816,7 @@ function SignupPage() {
                           value={formData.emailConfirmation}
                           onChange={(event) => setField('emailConfirmation', event.target.value)}
                           onBlur={() => setFieldTouched('emailConfirmation')}
-                          placeholder="repita seu email"
+                          placeholder="repita seu e-mail"
                           aria-invalid={shouldShowError('emailConfirmation')}
                         />
                         {shouldShowError('emailConfirmation') && (
@@ -529,10 +874,20 @@ function SignupPage() {
                       </div>
                     </div>
 
+                    {signupCaptchaEnabled && (
+                      <TurnstileWidget
+                        siteKey={turnstileSiteKey}
+                        onTokenChange={setCaptchaToken}
+                        onResetReady={(resetWidget) => {
+                          turnstileResetRef.current = resetWidget;
+                        }}
+                      />
+                    )}
+
                     <Button
                       type="submit"
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                      disabled={signupLoading}
+                      disabled={signupLoading || (signupCaptchaEnabled && !captchaToken)}
                     >
                       {signupLoading ? (
                         <span className="inline-flex items-center gap-2">
@@ -610,7 +965,7 @@ function SignupPage() {
                       onClick={handlePaymentContinue}
                       className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
                     >
-                      Concluir assinatura (simulacao)
+                      Concluir assinatura (simulação)
                     </Button>
                   </motion.div>
                 )}
@@ -650,20 +1005,33 @@ function SignupPage() {
                     className="rounded-2xl border border-sky-200 bg-sky-50 p-6"
                   >
                     <CheckCircle2 className="w-10 h-10 text-sky-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-sky-950">Confirme seu email</h2>
+                    <h2 className="text-2xl font-bold text-sky-950">
+                      {confirmationFlow === 'existing-customer' ? 'Confira seu e-mail' : 'Confirme seu e-mail'}
+                    </h2>
                     <p className="text-sky-900 mt-2">
-                      Criamos sua conta no Supabase Auth. Abra o link enviado para {formData.email} para
-                      finalizar o Free Trial e provisionar seu painel.
+                      {confirmationFlow === 'existing-customer'
+                        ? `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
+                        : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Nao se esqueca de olhar o lixo eletronico!`}
+                    </p>
+                    <p className="text-sm text-sky-800 mt-3">
+                      Se o link nao chegou, voce pode pedir um novo envio sem refazer o cadastro.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleResendConfirmationEmail}
+                        disabled={resendLoading}
+                        className="border-sky-300 text-sky-900 hover:bg-sky-100"
+                      >
+                        {resendLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        Reenviar e-mail
+                      </Button>
                       <Link to="/login">
                         <Button className="bg-sky-700 hover:bg-sky-800 text-white">
                           Ir para login
-                        </Button>
-                      </Link>
-                      <Link to="/#planos">
-                        <Button variant="outline" className="border-sky-300 text-sky-900 hover:bg-sky-100">
-                          Voltar aos planos
                         </Button>
                       </Link>
                     </div>
@@ -678,7 +1046,7 @@ function SignupPage() {
                     className="rounded-2xl border border-purple-200 bg-purple-50 p-6"
                   >
                     <CheckCircle2 className="w-10 h-10 text-purple-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-purple-900">Cadastro concluido</h2>
+                    <h2 className="text-2xl font-bold text-purple-900">Cadastro concluído</h2>
                     <p className="text-purple-800 mt-2">
                       Fluxo frontend finalizado com sucesso para o plano {selectedPlan.name}.
                       A etapa de pagamento real ficará conectada ao provider na implementação backend.

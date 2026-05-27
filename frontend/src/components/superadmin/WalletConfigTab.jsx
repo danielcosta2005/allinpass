@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
@@ -10,17 +11,18 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Loader2,
   ChevronLeft,
+  ChevronRight,
   Apple,
   Smartphone,
   Upload,
   Link as LinkIcon,
   Save,
   Settings,
-  QrCode,
   Download,
   Info,
   MapPin,
   PlusCircle,
+  Edit3,
 } from 'lucide-react';
 import { QRCode } from 'react-qrcode-logo';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
@@ -82,7 +84,6 @@ const INITIAL_FORM_STATE = {
   qr_url: '',
 };
 
-const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const LEGACY_GLOBAL_TITLE_VALUES = new Set([
   'cartao fidelidade global',
 ]);
@@ -218,35 +219,6 @@ function formatExpPreview(v) {
     return `${dd}/${mm}`;
   } catch {
     return 'XX/XX';
-  }
-}
-
-function getAllowedQrHosts() {
-  const rawHosts = import.meta.env.VITE_QR_ALLOWED_HOSTS || '';
-  return new Set(
-    rawHosts
-      .split(',')
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean),
-  );
-}
-
-function isSafeQrUrl(rawUrl) {
-  if (!rawUrl || typeof rawUrl !== 'string') return false;
-  try {
-    const parsed = new URL(rawUrl);
-    const hostname = parsed.hostname.toLowerCase();
-    const isHttps = parsed.protocol === 'https:';
-    const isLocalHttp = parsed.protocol === 'http:' && LOCAL_DEV_HOSTS.has(hostname);
-    if (!isHttps && !isLocalHttp) return false;
-
-    const allowedHosts = getAllowedQrHosts();
-    if (allowedHosts.size > 0) return allowedHosts.has(hostname);
-
-    if (typeof window === 'undefined') return isHttps || isLocalHttp;
-    return parsed.origin === window.location.origin || LOCAL_DEV_HOSTS.has(hostname);
-  } catch {
-    return false;
   }
 }
 
@@ -445,7 +417,7 @@ const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
   );
 };
 
-const PassPreview = ({ formState, qrPreviewUrl }) => {
+const PassPreview = ({ formState, qrPreviewUrl, sticky = true, className = '', cardClassName = '', cardOverlay = null }) => {
   const [platform, setPlatform] = useState('apple');
   const { title = 'Título do Passe', colors = {}, images = {}, dataFields = [], sampleValues = {}, exp_date } = formState;
   const { background = '#6c5ce7', text = '#ffffff', label = '#ffffff' } = colors;
@@ -458,44 +430,47 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
   const qrValue = qrPreviewUrl || formState.qr_url || 'https://example.com';
 
   return (
-    <div className="sticky top-24">
-      <div style={{ backgroundColor: background }} className="w-full max-w-sm mx-auto rounded-2xl flex flex-col text-white shadow-2xl overflow-hidden">
-        <div className="p-4 flex flex-col flex-1 min-h-[420px]">
-          <header className="flex justify-between items-center mb-4">
-            <div className="flex items-center gap-3">
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt="logo"
-                  className={platform === 'apple' ? 'max-h-10 max-w-10 object-contain' : 'w-10 h-10 rounded-full object-cover'}
-                />
-              ) : <div className="w-10 h-10 rounded-full bg-white/20" />}
-              <h3 style={{ color: text }} className="font-bold text-lg">{title}</h3>
-            </div>
-            <p style={{ color: label }} className="text-xs uppercase font-semibold">{expText}</p>
-          </header>
+    <div className={`${sticky ? 'sticky top-24' : ''} ${className}`.trim()}>
+      <div className="relative group w-full max-w-sm mx-auto">
+        <div style={{ backgroundColor: background }} className={`w-full rounded-2xl flex flex-col text-white shadow-2xl overflow-hidden ${cardClassName}`.trim()}>
+          <div className="p-4 flex flex-col flex-1 min-h-[420px]">
+            <header className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-3">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="logo"
+                    className={platform === 'apple' ? 'max-h-10 max-w-10 object-contain' : 'w-10 h-10 rounded-full object-cover'}
+                  />
+                ) : <div className="w-10 h-10 rounded-full bg-white/20" />}
+                <h3 style={{ color: text }} className="font-bold text-lg">{title}</h3>
+              </div>
+              <p style={{ color: label }} className="text-xs uppercase font-semibold">{expText}</p>
+            </header>
 
-          {platform === 'apple' && (
-            appleStrip
-              ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="w-full aspect-[375/144] object-cover" /></div>
-              : <div className="-mx-4 mb-4"><div className="w-full aspect-[375/144] bg-white/15" /></div>
+            {platform === 'apple' && (
+              appleStrip
+                ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="w-full aspect-[375/144] object-cover" /></div>
+                : <div className="-mx-4 mb-4"><div className="w-full aspect-[375/144] bg-white/15" /></div>
+            )}
+
+            <main className="flex-grow flex flex-col items-start justify-center text-left">
+              <p style={{ color: label }} className="text-sm uppercase tracking-wider">Pontos</p>
+              <p style={{ color: text }} className="text-4xl leading-none">{pointsValue}</p>
+            </main>
+
+            <footer className="mt-6 flex items-center justify-center">
+              <div className={platform === 'google' ? 'bg-white p-5 rounded-2xl' : 'bg-white p-2 rounded-md'}>
+                <QRCode value={qrValue} size={platform === 'google' ? 150 : 96} quietZone={0} bgColor="transparent" />
+              </div>
+            </footer>
+          </div>
+
+          {platform === 'google' && (
+            googleHero ? <img src={googleHero} alt="Google Hero" className="w-full aspect-[3/1] object-cover" /> : <div className="w-full aspect-[3/1] bg-white/15" />
           )}
-
-          <main className="flex-grow flex flex-col items-start justify-center text-left">
-            <p style={{ color: label }} className="text-sm uppercase tracking-wider">Pontos</p>
-            <p style={{ color: text }} className="text-4xl leading-none">{pointsValue}</p>
-          </main>
-
-          <footer className="mt-6 flex items-center justify-center">
-            <div className={platform === 'google' ? 'bg-white p-5 rounded-2xl' : 'bg-white p-2 rounded-md'}>
-              <QRCode value={qrValue} size={platform === 'google' ? 150 : 96} quietZone={0} bgColor="transparent" />
-            </div>
-          </footer>
         </div>
-
-        {platform === 'google' && (
-          googleHero ? <img src={googleHero} alt="Google Hero" className="w-full aspect-[3/1] object-cover" /> : <div className="w-full aspect-[3/1] bg-white/15" />
-        )}
+        {cardOverlay}
       </div>
 
       <div className="mt-4 flex items-center justify-center gap-2">
@@ -510,16 +485,35 @@ const PassPreview = ({ formState, qrPreviewUrl }) => {
   );
 };
 
-const PassesList = ({ passes, loading, onAction, selectedPassId, onSelectPass }) => {
+const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass, onCreateNewPass }) => {
   const { toast } = useToast();
-  const [expandedPassId, setExpandedPassId] = useState(null);
-  const qrContainerRefs = useRef({});
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [direction, setDirection] = useState(0);
+  const qrContainerRef = useRef(null);
+
+  useEffect(() => {
+    setActiveIndex((current) => {
+      if (passes.length === 0) return 0;
+      return Math.min(current, passes.length - 1);
+    });
+  }, [passes.length]);
+
+  const activePass = passes[activeIndex] || null;
+  const activePassFormState = activePass ? passToFormState(activePass, templateDefaults) : null;
+  const hasQrUrl = Boolean(activePass?.qr_url);
+
+  const goToPass = (nextIndex, nextDirection = nextIndex > activeIndex ? 1 : -1) => {
+    if (passes.length <= 1) return;
+    const normalizedIndex = (nextIndex + passes.length) % passes.length;
+    setDirection(nextDirection);
+    setActiveIndex(normalizedIndex);
+  };
 
   const handleDownloadQr = (pass) => {
-    const container = qrContainerRefs.current[pass.id];
+    const container = qrContainerRef.current;
     const canvas = container?.querySelector('canvas');
     if (!canvas) {
-      toast({ title: 'QR code indisponível', variant: 'destructive' });
+      toast({ title: 'QR code indisponivel', variant: 'destructive' });
       return;
     }
 
@@ -533,61 +527,236 @@ const PassesList = ({ passes, loading, onAction, selectedPassId, onSelectPass })
   };
 
   return (
-    <div className="rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 dark:bg-gray-900/50">
-          <tr>
-            <th className="p-3 text-left font-semibold">Título</th>
-            <th className="p-3 text-left font-semibold">Tipo</th>
-            <th className="p-3 text-left font-semibold">Status</th>
-            <th className="p-3 text-left font-semibold">Criado em</th>
-            <th className="p-3 text-center font-semibold">Ações</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading && <tr><td colSpan="5" className="text-center p-8"><Loader2 className="mx-auto h-6 w-6 animate-spin text-gray-400" /></td></tr>}
-          {!loading && passes.length === 0 && <tr><td colSpan="5" className="text-center p-8 text-gray-500">Nenhum passe emitido para este projeto.</td></tr>}
-          {!loading && passes.map((pass) => {
-            const isExpanded = expandedPassId === pass.id;
-            const isSelected = selectedPassId === pass.id;
-            const canUseQr = Boolean(pass.qr_url) && isSafeQrUrl(pass.qr_url);
-            return (
-              <React.Fragment key={pass.id}>
-                <tr
-                  onClick={() => onSelectPass?.(pass)}
-                  className={`border-t dark:border-gray-800 transition-colors ${isSelected ? 'bg-indigo-50/80 dark:bg-indigo-900/30' : 'hover:bg-gray-50/50 dark:hover:bg-gray-800/50'} ${onSelectPass ? 'cursor-pointer' : ''}`}
-                >
-                  <td className="p-3 font-medium">{pass.title}</td>
-                  <td className="p-3">{pass.type}</td>
-                  <td className="p-3"><span className="bg-green-100 text-green-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded-full dark:bg-green-900 dark:text-green-300">{pass.status || 'Ativo'}</span></td>
-                  <td className="p-3 whitespace-nowrap">{formatPassCreatedAt(pass.created_at)}</td>
-                  <td className="p-3">
-                    <div className="flex justify-center gap-1">
-                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onAction('copy', pass.qr_url); }} disabled={!canUseQr}><LinkIcon className="w-4 h-4" /></Button>
-                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setExpandedPassId((curr) => (curr === pass.id ? null : pass.id)); }} disabled={!canUseQr}><QrCode className="w-4 h-4" /></Button>
-                    </div>
-                  </td>
-                </tr>
-                {isExpanded && (
-                  <tr className="border-t dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/30">
-                    <td colSpan="5" className="p-4">
-                      <div className="flex justify-center">
-                        <div ref={(node) => { if (node) qrContainerRefs.current[pass.id] = node; else delete qrContainerRefs.current[pass.id]; }} className="flex flex-col items-center gap-3">
-                          <div className="bg-white p-3 rounded-md border"><QRCode value={pass.qr_url} size={140} quietZone={0} bgColor="transparent" /></div>
-                          <Button variant="outline" size="sm" onClick={() => handleDownloadQr(pass)}><Download className="w-4 h-4 mr-2" />Baixar QR Code</Button>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
+    <section className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Meus passes</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {passes.length > 0 ? `${activeIndex + 1} de ${passes.length} passes emitidos` : 'Nenhum passe emitido para este projeto.'}
+          </p>
+        </div>
+        <Button onClick={onCreateNewPass} className="gap-2">
+          <PlusCircle className="h-4 w-4" />
+          Novo passe
+        </Button>
+      </div>
+
+      {loading && (
+        <div className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed">
+          <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
+        </div>
+      )}
+
+      {!loading && passes.length === 0 && (
+        <div className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center">
+          <p className="text-sm text-slate-500">Crie o primeiro passe para ele aparecer neste inventario.</p>
+          <Button onClick={onCreateNewPass} className="mt-4 gap-2">
+            <PlusCircle className="h-4 w-4" />
+            Novo passe
+          </Button>
+        </div>
+      )}
+
+      {!loading && activePass && activePassFormState && (
+        <div className="relative flex min-h-[620px] items-center justify-center px-12">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full"
+            onClick={() => goToPass(activeIndex - 1, -1)}
+            disabled={passes.length <= 1}
+            aria-label="Passe anterior"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </Button>
+
+          <AnimatePresence mode="wait" custom={direction}>
+            <motion.div
+              key={activePass.id}
+              layoutId="wallet-pass-preview"
+              custom={direction}
+              initial={{ opacity: 0, x: direction >= 0 ? 80 : -80, scale: 0.98 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: direction >= 0 ? -80 : 80, scale: 0.98 }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+              className="w-full max-w-xl"
+            >
+              <PassPreview
+                formState={activePassFormState}
+                qrPreviewUrl={activePass.qr_url}
+                sticky={false}
+                cardClassName="transition duration-200 group-hover:grayscale group-hover:brightness-75"
+                cardOverlay={(
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition duration-200 group-hover:opacity-100">
+                    <Button
+                      type="button"
+                      className="pointer-events-auto gap-2 bg-slate-900 text-white hover:bg-slate-800"
+                      onClick={() => onEditPass(activePass)}
+                    >
+                      <Edit3 className="h-4 w-4" />
+                      Editar
+                    </Button>
+                  </div>
                 )}
-              </React.Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+              />
+
+              <div className="mt-5 flex flex-col items-center gap-3 text-center">
+                <div>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Passe sem titulo'}</p>
+                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
+                      {activePass.status || 'Ativo'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-500">
+                    Criado em {formatPassCreatedAt(activePass.created_at)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => onAction('copy', activePass.qr_url)} disabled={!hasQrUrl}>
+                    <LinkIcon className="mr-2 h-4 w-4" />
+                    Copiar link
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => handleDownloadQr(activePass)} disabled={!hasQrUrl}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Baixar QR
+                  </Button>
+                </div>
+              </div>
+
+              {hasQrUrl && (
+                <div ref={qrContainerRef} className="absolute -left-[9999px] top-0">
+                  <QRCode value={activePass.qr_url} size={140} quietZone={0} bgColor="transparent" />
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full"
+            onClick={() => goToPass(activeIndex + 1, 1)}
+            disabled={passes.length <= 1}
+            aria-label="Proximo passe"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </Button>
+        </div>
+      )}
+
+      {!loading && passes.length > 1 && (
+        <div className="flex justify-center gap-2">
+          {passes.map((pass, index) => (
+            <button
+              key={pass.id}
+              type="button"
+              onClick={() => goToPass(index)}
+              className={`h-2.5 rounded-full transition-all ${index === activeIndex ? 'w-8 bg-purple-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'}`}
+              aria-label={`Ir para passe ${index + 1}`}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 };
+
+const PassEditorPanel = ({
+  isEditingPass,
+  formState,
+  activeLocationIds,
+  isProcessing,
+  fileInputRef,
+  onFormChange,
+  onUploadClick,
+  onFileChange,
+  onOpenLocations,
+  onSave,
+  onGenerateLink,
+}) => (
+  <div className="space-y-8">
+    <div className="space-y-4 p-4 border rounded-lg">
+      <h2 className="font-semibold text-lg flex items-center gap-2">
+        <Settings className="w-5 h-5 text-purple-500" />
+        {isEditingPass ? 'Editar passe' : 'Novo passe'}
+      </h2>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <div>
+            <Label>Tipo</Label>
+            <Select value={formState.type} onValueChange={(v) => onFormChange('type', v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="loyalty">Loyalty</SelectItem>
+                <SelectItem value="offer">Offer</SelectItem>
+                <SelectItem value="event">Event</SelectItem>
+                <SelectItem value="generic">Generic</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Titulo</Label>
+            <Input value={formState.title} maxLength={16} onChange={(e) => onFormChange('title', e.target.value)} placeholder="Ex: Cartao" />
+            {String(formState.title || '').length >= 16 && (
+              <p className="mt-1 text-xs text-amber-600">Limite de caracteres atingido.</p>
+            )}
+          </div>
+
+          <div>
+            <Label>Descricao</Label>
+            <Textarea value={formState.description} onChange={(e) => onFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um cafe." />
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => onFormChange('colors.background', e.target.value)} />
+            <ColorInput label="Rotulo" value={formState.colors.label} onChange={(e) => onFormChange('colors.label', e.target.value)} />
+            <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => onFormChange('colors.text', e.target.value)} />
+          </div>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <UploadButtonWithInfo uploadKey="appleLogo" onUpload={onUploadClick} />
+              <UploadButtonWithInfo uploadKey="googleLogo" onUpload={onUploadClick} />
+              <UploadButtonWithInfo uploadKey="appleStrip" onUpload={onUploadClick} />
+              <UploadButtonWithInfo uploadKey="googleHero" onUpload={onUploadClick} />
+            </div>
+            <div className="md:max-w-[calc(50%-0.375rem)]">
+              <UploadButtonWithInfo uploadKey="icon" onUpload={onUploadClick} />
+            </div>
+          </div>
+
+          <Button type="button" variant="outline" className="w-full justify-start" onClick={onOpenLocations}>
+            <MapPin className="mr-2 h-4 w-4" />
+            Adicionar localizacao ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
+          </Button>
+
+          <input type="file" ref={fileInputRef} onChange={onFileChange} className="hidden" accept=".png,image/png" />
+        </div>
+      </div>
+    </div>
+
+    <div className="flex flex-wrap justify-center items-center gap-4 py-6">
+      <Button size="lg" onClick={onSave} disabled={isProcessing} variant="outline">
+        {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+        {isProcessing ? 'Salvando...' : 'Salvar alteracoes'}
+      </Button>
+
+      {!isEditingPass && (
+        <Button size="lg" onClick={onGenerateLink} disabled={isProcessing}>
+          {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
+          {isProcessing ? 'Gerando...' : 'Gerar Link Unico'}
+        </Button>
+      )}
+    </div>
+  </div>
+);
 
 const WalletConfigTab = ({ projectId, onBack }) => {
   const { toast } = useToast();
@@ -601,13 +770,16 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const [templateDefaults, setTemplateDefaults] = useState(mergeWithInitial());
   const [formState, setFormState] = useState(mergeWithInitial());
   const [selectedPass, setSelectedPass] = useState(null);
+  const [walletView, setWalletView] = useState('inventory');
   const [selectedPassLocationIds, setSelectedPassLocationIds] = useState([]);
   const [draftLocationIds, setDraftLocationIds] = useState([]);
   const [passLocationsByPassId, setPassLocationsByPassId] = useState({});
   const [uploadingKey, setUploadingKey] = useState(null);
   const fileInputRef = useRef(null);
 
-  const isEditingPass = Boolean(selectedPass?.id);
+  const isEditingPass = walletView === 'edit' && Boolean(selectedPass?.id);
+  const isCreatingPass = walletView === 'new';
+  const isEditorOpen = isEditingPass || isCreatingPass;
   const activeLocationIds = isEditingPass ? selectedPassLocationIds : draftLocationIds;
 
   const updateLocationSelection = useCallback((ids) => {
@@ -687,6 +859,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   useEffect(() => {
     if (!projectId) return;
     setSelectedPass(null);
+    setWalletView('inventory');
     setSelectedPassLocationIds([]);
     setDraftLocationIds([]);
     setGenerationResult(null);
@@ -786,6 +959,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
     setSelectedPass(resolvedPass);
     setFormState(passToFormState(resolvedPass, templateDefaults));
+    setWalletView('edit');
 
     const cached = passLocationsByPassId[resolvedPass.id];
     if (Array.isArray(cached)) {
@@ -805,6 +979,19 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
   const handleCreateNewPass = () => {
     setSelectedPass(null);
+    setWalletView('new');
+    setSelectedPassLocationIds([]);
+    setDraftLocationIds([]);
+    setGenerationResult(null);
+    setFormState(mergeWithInitial(templateDefaults));
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleBackToPasses = () => {
+    setSelectedPass(null);
+    setWalletView('inventory');
     setSelectedPassLocationIds([]);
     setDraftLocationIds([]);
     setGenerationResult(null);
@@ -924,156 +1111,128 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     await handleSaveTemplate();
   };
 
-  const handlePassesListAction = (action, url) => {
+  const handlePassesListAction = async (action, url) => {
     if (!url) {
       toast({ title: 'Link indisponível', variant: 'destructive' });
       return;
     }
     if (action === 'copy') {
-      navigator.clipboard.writeText(url);
-      toast({ title: 'Link copiado.' });
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          const textArea = document.createElement('textarea');
+          textArea.value = url;
+          textArea.setAttribute('readonly', '');
+          textArea.style.position = 'fixed';
+          textArea.style.opacity = '0';
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          textArea.remove();
+        }
+        toast({ title: 'Link copiado.' });
+      } catch (error) {
+        toast({ title: 'Erro ao copiar link', description: error.message, variant: 'destructive' });
+      }
       return;
     }
     window.open(url, '_blank');
   };
 
+  if (!isEditorOpen) {
+    return (
+      <div className="p-4 md:p-6 lg:p-8">
+        <div className="mb-6 flex justify-start">
+          <Button
+            onClick={onBack}
+            className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+          >
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Voltar aos Projetos
+          </Button>
+        </div>
+
+        <PassInventory
+          passes={passes}
+          loading={loadingPasses}
+          templateDefaults={templateDefaults}
+          onAction={handlePassesListAction}
+          onEditPass={handleSelectPass}
+          onCreateNewPass={handleCreateNewPass}
+        />
+
+        <GenerationResultModal isOpen={isModalOpen} setIsOpen={setIsModalOpen} result={generationResult} />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-6 lg:p-8">
-      <div className="flex items-center justify-between mb-6">
-        <div className="w-full">
-          {isEditingPass ? (
-            <div className="space-y-3">
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-                <p className="text-sm font-medium">
-                  Editando passe criado em {formatPassCreatedAt(selectedPass?.created_at)}.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 w-full">
-                <Button size="sm" variant="outline" onClick={handleCreateNewPass} disabled={isProcessing}>
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Criar novo passe
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={onBack}
-                  className="ml-auto bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
-                >
-                  <ChevronLeft className="mr-1 h-4 w-4" />
-                  Voltar aos Projetos
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between">
-              <h1 className="text-3xl font-bold">Configuração da Wallet</h1>
-              <Button
-                onClick={onBack}
-                className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
-              >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-                Voltar aos Projetos
-              </Button>
-            </div>
-          )}
+      <div className="mb-6 space-y-3">
+        {isEditingPass && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+            <p className="text-sm font-medium">
+              Editando passe criado em {formatPassCreatedAt(selectedPass?.created_at)}.
+            </p>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{isEditingPass ? 'Editar passe' : 'Novo passe'}</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {isEditingPass ? 'Ajuste o passe selecionado e salve as mudancas.' : 'Monte um novo passe usando o template do projeto.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleBackToPasses} disabled={isProcessing}>
+              <ChevronLeft className="mr-2 h-4 w-4" />
+              Voltar para meus passes
+            </Button>
+            <Button
+              onClick={onBack}
+              className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Voltar aos Projetos
+            </Button>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          <div className="space-y-4 p-4 border rounded-lg">
-            <h2 className="font-semibold text-lg flex items-center gap-2">
-              <Settings className="w-5 h-5 text-purple-500" />
-              {isEditingPass ? 'Design do Passe Selecionado' : 'Design do Passe (Template)'}
-            </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        <motion.div
+          key={`${walletView}-editor`}
+          initial={{ opacity: 0, x: -64 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.35, ease: 'easeOut' }}
+          className="lg:col-span-2"
+        >
+          <PassEditorPanel
+            isEditingPass={isEditingPass}
+            formState={formState}
+            activeLocationIds={activeLocationIds}
+            isProcessing={isProcessing}
+            fileInputRef={fileInputRef}
+            onFormChange={handleFormChange}
+            onUploadClick={handleUploadClick}
+            onFileChange={handleFileChange}
+            onOpenLocations={() => setIsLocationsModalOpen(true)}
+            onSave={handleSave}
+            onGenerateLink={handleGenerateLink}
+          />
+        </motion.div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <Label>Tipo</Label>
-                  <Select value={formState.type} onValueChange={(v) => handleFormChange('type', v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="loyalty">Loyalty</SelectItem>
-                      <SelectItem value="offer">Offer</SelectItem>
-                      <SelectItem value="event">Event</SelectItem>
-                      <SelectItem value="generic">Generic</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label>Título</Label>
-                  <Input value={formState.title} maxLength={16} onChange={(e) => handleFormChange('title', e.target.value)} placeholder="Ex: Cartão" />
-                  {String(formState.title || '').length >= 16 && (
-                    <p className="mt-1 text-xs text-amber-600">Limite de caracteres atingido.</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label>Descrição</Label>
-                  <Textarea value={formState.description} onChange={(e) => handleFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um café." />
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2">
-                  <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => handleFormChange('colors.background', e.target.value)} />
-                  <ColorInput label="Rótulo" value={formState.colors.label} onChange={(e) => handleFormChange('colors.label', e.target.value)} />
-                  <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => handleFormChange('colors.text', e.target.value)} />
-                </div>
-
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <UploadButtonWithInfo uploadKey="appleLogo" onUpload={handleUploadClick} />
-                  <UploadButtonWithInfo uploadKey="googleLogo" onUpload={handleUploadClick} />
-                  <UploadButtonWithInfo uploadKey="appleStrip" onUpload={handleUploadClick} />
-                  <UploadButtonWithInfo uploadKey="googleHero" onUpload={handleUploadClick} />
-                  </div>
-                  <div className="md:max-w-[calc(50%-0.375rem)]">
-                    <UploadButtonWithInfo uploadKey="icon" onUpload={handleUploadClick} />
-                  </div>
-                </div>
-
-                <Button type="button" variant="outline" className="w-full justify-start" onClick={() => setIsLocationsModalOpen(true)}>
-                  <MapPin className="mr-2 h-4 w-4" />
-                  Adicionar localização ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
-                </Button>
-
-                <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".png,image/png" />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap justify-center items-center gap-4 py-6">
-            <Button size="lg" onClick={handleSave} disabled={isProcessing} variant="outline">
-              {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-              {isProcessing ? 'Salvando...' : 'Salvar alterações'}
-            </Button>
-
-            {!isEditingPass && (
-              <Button size="lg" onClick={handleGenerateLink} disabled={isProcessing}>
-                {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
-                {isProcessing ? 'Gerando...' : 'Gerar Link Único'}
-              </Button>
-            )}
-
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="font-semibold text-lg">Passes Emitidos para este Projeto</h2>
-            <PassesList
-              passes={passes}
-              loading={loadingPasses}
-              onAction={handlePassesListAction}
-              selectedPassId={selectedPass?.id || null}
-              onSelectPass={handleSelectPass}
-            />
-          </div>
-        </div>
-
-        <div className="lg:col-span-1">
+        <motion.div
+          layoutId="wallet-pass-preview"
+          initial={{ opacity: 0, x: -140 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.42, ease: 'easeOut' }}
+          className="lg:col-span-1"
+        >
           <PassPreview formState={formState} qrPreviewUrl={generationResult?.qr_url || formState.qr_url} />
-        </div>
+        </motion.div>
       </div>
 
       <Dialog open={isLocationsModalOpen} onOpenChange={setIsLocationsModalOpen}>
@@ -1093,6 +1252,5 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     </div>
   );
 };
-
 export default WalletConfigTab;
 
