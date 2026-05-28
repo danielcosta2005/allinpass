@@ -62,7 +62,7 @@ const features = [
     icon: Wallet,
     title: 'Apple Wallet & Google Wallet',
     description:
-      'Seus passes de fidelidade direto na carteira digital do cliente — sem necessidade de baixar aplicativo.',
+      'Seus cartões direto na carteira digital do cliente — sem necessidade de baixar aplicativo.',
   },
   {
     icon: Bell,
@@ -92,7 +92,7 @@ const features = [
     icon: Sparkles,
     title: 'Personalização total',
     description:
-      'Customize cores, logo, campos e regras dos seus passes para refletir 100% da sua marca.',
+      'Customize cores, logo, campos e regras dos seus cartões para refletir 100% da sua marca.',
   },
 ];
 
@@ -101,7 +101,7 @@ const steps = [
     number: '01',
     title: 'Crie seu programa',
     description:
-      'Configure seu passe digital em minutos: cores, logo, campos e regras de recompensa.',
+      'Configure seu cartão digital em minutos: cores, logo, campos e regras de recompensa.',
   },
   {
     number: '02',
@@ -120,11 +120,11 @@ const steps = [
 const faqs = [
   {
     q: 'O que é a Allin Pass?',
-    a: 'A Allin Pass é uma plataforma de fidelidade digital que permite ao seu negócio criar passes que ficam direto na Apple Wallet e Google Wallet dos seus clientes — sem precisar de aplicativo próprio.',
+    a: 'A Allin Pass é uma plataforma de fidelidade digital que permite ao seu negócio criar cartões que ficam direto na Apple Wallet e Google Wallet dos seus clientes, sem precisar de aplicativo próprio.',
   },
   {
     q: 'Funciona em iPhone e Android?',
-    a: 'Sim! Os passes são compatíveis com Apple Wallet (iPhone) e Google Wallet (Android), cobrindo praticamente 100% dos seus clientes.',
+    a: 'Sim! Os cartões são compatíveis com Apple Wallet (iPhone) e Google Wallet (Android), cobrindo praticamente 100% dos seus clientes.',
   },
   {
     q: 'Preciso de cartão de crédito para começar?',
@@ -361,8 +361,8 @@ const Hero = () => {
             </motion.h1>
 
             <motion.p variants={fadeUp} className="mt-6 text-lg text-gray-600 max-w-xl">
-              Crie passes de fidelidade que ficam na Apple Wallet e Google Wallet do seu cliente.
-              Envie notificações, acompanhe visitas e transforme clientes em fãs — sem precisar de aplicativo.
+              Crie cartões digitais que ficam na Apple Wallet e Google Wallet do seu cliente.
+              Envie notificações, acompanhe visitas e transforme clientes em fãs — Sem precisar de aplicativo!
             </motion.p>
 
             <motion.div variants={fadeUp} className="mt-8 flex flex-wrap gap-3">
@@ -1017,7 +1017,7 @@ const LandingPage = () => {
         <title>Allin Pass — Programa de fidelidade direto na carteira do seu cliente</title>
         <meta
           name="description"
-          content="Crie passes de fidelidade na Apple Wallet e Google Wallet, envie notificações e fidelize clientes com a Allin Pass."
+          content="Crie cartões de fidelidade na Apple Wallet e Google Wallet, envie notificações e fidelize clientes com a Allin Pass."
         />
       </Helmet>
 
