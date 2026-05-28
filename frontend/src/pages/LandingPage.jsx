@@ -27,6 +27,7 @@ import {
   Users,
   LogIn,
   LayoutDashboard,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -36,6 +37,11 @@ import {
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
+
+const SUPPORT_MESSAGE = 'Olá, preciso de suporte no Allin Pass.';
+const SUPPORT_WHATSAPP_URL =
+  import.meta.env.VITE_RESTAURANT_SUPPORT_WHATSAPP_URL ||
+  `https://wa.me/?text=${encodeURIComponent(SUPPORT_MESSAGE)}`;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -145,6 +151,25 @@ const Logo = () => (
       <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
         Allin Pass
       </span>
+    </div>
+  </div>
+);
+
+const FloatingContactButton = () => (
+  <div className="group fixed bottom-5 right-5 z-40 flex items-center">
+    <a
+      href={SUPPORT_WHATSAPP_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Abrir chat de suporte no WhatsApp"
+      onClick={() => trackStandard('Contact', { source: 'landing_floating_whatsapp' })}
+      className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/30 transition hover:from-purple-700 hover:to-indigo-700 hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-purple-300"
+    >
+      <MessageCircle className="h-7 w-7" />
+    </a>
+
+    <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-3 w-max rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-slate-900 shadow-xl opacity-0 transition duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
+      <p className="text-sm font-semibold">Fale conosco</p>
     </div>
   </div>
 );
@@ -1011,6 +1036,7 @@ const LandingPage = () => {
           onOpenPrivacy={() => setPrivacyOpen(true)}
           onResetCookies={handleResetCookies}
         />
+        <FloatingContactButton />
         <ConsentBanner onLearnMore={() => setPrivacyOpen(true)} />
         <PrivacyPolicyModal open={privacyOpen} onOpenChange={setPrivacyOpen} />
       </div>
