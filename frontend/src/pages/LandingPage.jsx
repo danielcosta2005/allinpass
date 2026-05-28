@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  initPixelIfConsented,
+  resetConsent,
+  trackCustom,
+  trackStandard,
+} from '@/lib/metaPixel';
+import ConsentBanner from '@/components/landing/ConsentBanner';
+import PrivacyPolicyModal from '@/components/landing/PrivacyPolicyModal';
+import { useToast } from '@/components/ui/use-toast';
 import {
   Wallet,
   Smartphone,
@@ -167,6 +176,7 @@ const Header = () => {
               <a
                 key={l.href}
                 href={l.href}
+                onClick={() => trackCustom('LP_NavClick', { section: l.href.replace('#', ''), location: 'header_desktop' })}
                 className="text-sm font-medium text-gray-600 hover:text-purple-600 transition-colors relative group"
               >
                 {l.label}
@@ -177,7 +187,7 @@ const Header = () => {
 
           <div className="hidden md:flex items-center gap-3">
             {user ? (
-              <Link to="/app">
+              <Link to="/app" onClick={() => trackCustom('LP_DashboardAccess', { source: 'header' })}>
                 <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20">
                   <LayoutDashboard className="w-4 h-4 mr-2" />
                   Acessar painel
@@ -185,12 +195,12 @@ const Header = () => {
               </Link>
             ) : (
               <>
-                <Link to="/login">
+                <Link to="/login" onClick={() => trackCustom('LP_LoginClick', { source: 'header' })}>
                   <Button variant="ghost" className="text-gray-700 hover:text-purple-600 hover:bg-purple-50">
                     Entrar
                   </Button>
                 </Link>
-                <a href="#planos">
+                <a href="#planos" onClick={() => trackStandard('Lead', { source: 'header' })}>
                   <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-lg shadow-purple-500/20">
                     Começar agora
                   </Button>
@@ -227,7 +237,10 @@ const Header = () => {
                   <a
                     key={l.href}
                     href={l.href}
-                    onClick={() => setMobileOpen(false)}
+                    onClick={() => {
+                      trackCustom('LP_NavClick', { section: l.href.replace('#', ''), location: 'header_mobile' });
+                      setMobileOpen(false);
+                    }}
                     className="block px-2 py-2 text-sm font-medium text-gray-700 hover:text-purple-600 hover:bg-purple-50 rounded-lg"
                   >
                     {l.label}
@@ -235,7 +248,13 @@ const Header = () => {
                 ))}
                 <div className="pt-2 flex flex-col gap-2">
                   {user ? (
-                    <Link to="/app" onClick={() => setMobileOpen(false)}>
+                    <Link
+                      to="/app"
+                      onClick={() => {
+                        trackCustom('LP_DashboardAccess', { source: 'header_mobile' });
+                        setMobileOpen(false);
+                      }}
+                    >
                       <Button className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
                         <LayoutDashboard className="w-4 h-4 mr-2" />
                         Acessar painel
@@ -243,13 +262,25 @@ const Header = () => {
                     </Link>
                   ) : (
                     <>
-                      <Link to="/login" onClick={() => setMobileOpen(false)}>
+                      <Link
+                        to="/login"
+                        onClick={() => {
+                          trackCustom('LP_LoginClick', { source: 'header_mobile' });
+                          setMobileOpen(false);
+                        }}
+                      >
                         <Button variant="outline" className="w-full">
                           <LogIn className="w-4 h-4 mr-2" />
                           Entrar
                         </Button>
                       </Link>
-                      <a href="#planos" onClick={() => setMobileOpen(false)}>
+                      <a
+                        href="#planos"
+                        onClick={() => {
+                          trackStandard('Lead', { source: 'header_mobile' });
+                          setMobileOpen(false);
+                        }}
+                      >
                         <Button className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
                           Começar agora
                         </Button>
@@ -311,21 +342,24 @@ const Hero = () => {
 
             <motion.div variants={fadeUp} className="mt-8 flex flex-wrap gap-3">
               {user ? (
-                <Link to="/app">
+                <Link to="/app" onClick={() => trackCustom('LP_DashboardAccess', { source: 'hero' })}>
                   <Button size="lg" className="h-12 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-xl shadow-purple-500/25">
                     <LayoutDashboard className="w-5 h-5 mr-2" />
                     Acessar painel
                   </Button>
                 </Link>
               ) : (
-                <a href="#planos">
+                <a href="#planos" onClick={() => trackStandard('Lead', { source: 'hero' })}>
                   <Button size="lg" className="h-12 px-6 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-xl shadow-purple-500/25 group">
                     Começar agora
                     <ArrowRight className="w-5 h-5 ml-2 transition-transform group-hover:translate-x-1" />
                   </Button>
                 </a>
               )}
-              <a href="#como-funciona">
+              <a
+                href="#como-funciona"
+                onClick={() => trackCustom('LP_NavClick', { section: 'como-funciona', location: 'hero' })}
+              >
                 <Button size="lg" variant="outline" className="h-12 px-6 border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-700">
                   Ver como funciona
                 </Button>
@@ -626,7 +660,24 @@ const Pricing = ({ plans }) => {
               custom={i}
               whileHover={{ y: -8, transition: { duration: 0.2 } }}
             >
-              <PlanCard plan={p} ctaTo={buildSignupPath(p.key)} />
+              <PlanCard
+                plan={p}
+                ctaTo={buildSignupPath(p.key)}
+                onCtaClick={() => {
+                  trackStandard('InitiateCheckout', {
+                    value: Number(p.price) || 0,
+                    currency: 'BRL',
+                    content_name: p.name,
+                    content_ids: [p.code],
+                  });
+                  trackCustom('LP_PlanCardCTA', {
+                    plan_key: p.key,
+                    plan_code: p.code,
+                    plan_name: p.name,
+                    plan_price: Number(p.price) || 0,
+                  });
+                }}
+              />
             </motion.div>
           ))}
         </motion.div>
@@ -639,7 +690,11 @@ const Pricing = ({ plans }) => {
           className="text-center text-sm text-gray-500 mt-10"
         >
           Precisa de algo customizado?{' '}
-          <a href="#" className="text-purple-600 hover:text-purple-700 font-medium underline-offset-4 hover:underline">
+          <a
+            href="#"
+            onClick={() => trackStandard('Contact', { source: 'pricing_custom_plan' })}
+            className="text-purple-600 hover:text-purple-700 font-medium underline-offset-4 hover:underline"
+          >
             Fale com a gente
           </a>
         </motion.p>
@@ -688,7 +743,12 @@ const FAQ = () => {
                 }`}
               >
                 <button
-                  onClick={() => setOpen(isOpen ? -1 : i)}
+                  onClick={() => {
+                    if (!isOpen) {
+                      trackCustom('LP_FAQOpen', { question: f.q, position: i + 1 });
+                    }
+                    setOpen(isOpen ? -1 : i);
+                  }}
                   className="w-full px-6 py-5 flex items-center justify-between text-left"
                   aria-expanded={isOpen}
                 >
@@ -755,7 +815,7 @@ const FinalCTA = () => {
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             {user ? (
-              <Link to="/app">
+              <Link to="/app" onClick={() => trackCustom('LP_DashboardAccess', { source: 'final_cta' })}>
                 <Button size="lg" className="h-12 px-7 bg-white text-purple-700 hover:bg-purple-50 font-semibold">
                   <LayoutDashboard className="w-5 h-5 mr-2" />
                   Acessar painel
@@ -763,13 +823,13 @@ const FinalCTA = () => {
               </Link>
             ) : (
               <>
-                <a href="#planos">
+                <a href="#planos" onClick={() => trackStandard('Lead', { source: 'final_cta' })}>
                   <Button size="lg" className="h-12 px-7 bg-white text-purple-700 hover:bg-purple-50 font-semibold group">
                     Começar agora
                     <ArrowRight className="w-5 h-5 ml-2 transition-transform group-hover:translate-x-1" />
                   </Button>
                 </a>
-                <Link to="/login">
+                <Link to="/login" onClick={() => trackCustom('LP_LoginClick', { source: 'final_cta' })}>
                   <Button size="lg" variant="outline" className="h-12 px-7 bg-transparent border-white/40 text-white hover:bg-white/10 hover:text-white">
                     Entrar
                   </Button>
@@ -783,7 +843,7 @@ const FinalCTA = () => {
   );
 };
 
-const Footer = () => {
+const Footer = ({ onOpenPrivacy, onResetCookies }) => {
   return (
     <footer className="border-t border-gray-100 bg-white">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -819,9 +879,22 @@ const Footer = () => {
           <p className="text-sm text-gray-500">
             © {new Date().getFullYear()} Allin Pass. Todos os direitos reservados.
           </p>
-          <div className="flex items-center gap-6 text-sm text-gray-500">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-gray-500">
             <a href="#" className="hover:text-purple-600 transition-colors">Termos</a>
-            <a href="#" className="hover:text-purple-600 transition-colors">Privacidade</a>
+            <button
+              type="button"
+              onClick={onOpenPrivacy}
+              className="hover:text-purple-600 transition-colors"
+            >
+              Privacidade
+            </button>
+            <button
+              type="button"
+              onClick={onResetCookies}
+              className="hover:text-purple-600 transition-colors"
+            >
+              Cookies
+            </button>
             <a href="#" className="hover:text-purple-600 transition-colors">Contato</a>
           </div>
         </div>
@@ -832,6 +905,22 @@ const Footer = () => {
 
 const LandingPage = () => {
   const [plans, setPlans] = useState(subscriptionPlans);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const viewContentFiredRef = useRef(false);
+  const scrollMilestonesRef = useRef(new Set());
+  const { toast } = useToast();
+
+  useEffect(() => {
+    initPixelIfConsented();
+  }, []);
+
+  const handleResetCookies = () => {
+    resetConsent();
+    toast({
+      title: 'Preferências de cookies redefinidas',
+      description: 'Faça uma nova escolha no banner que apareceu no rodapé.',
+    });
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -848,6 +937,53 @@ const LandingPage = () => {
     return () => {
       mounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const target = document.getElementById('planos');
+    if (!target || typeof IntersectionObserver === 'undefined') return undefined;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && !viewContentFiredRef.current) {
+            viewContentFiredRef.current = true;
+            trackStandard('ViewContent', {
+              content_name: 'pricing_section',
+              content_category: 'landing_page',
+            });
+            observer.disconnect();
+          }
+        });
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const milestones = [50, 90];
+
+    const computeDepth = () => {
+      const doc = document.documentElement;
+      const scrollable = Math.max(doc.scrollHeight - doc.clientHeight, 1);
+      return Math.min(100, Math.round((window.scrollY / scrollable) * 100));
+    };
+
+    const handleScroll = () => {
+      const depth = computeDepth();
+      milestones.forEach((mark) => {
+        if (depth >= mark && !scrollMilestonesRef.current.has(mark)) {
+          scrollMilestonesRef.current.add(mark);
+          trackCustom('LP_ScrollDepth', { depth: mark });
+        }
+      });
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
   return (
@@ -871,7 +1007,12 @@ const LandingPage = () => {
           <FAQ />
           <FinalCTA />
         </main>
-        <Footer />
+        <Footer
+          onOpenPrivacy={() => setPrivacyOpen(true)}
+          onResetCookies={handleResetCookies}
+        />
+        <ConsentBanner onLearnMore={() => setPrivacyOpen(true)} />
+        <PrivacyPolicyModal open={privacyOpen} onOpenChange={setPrivacyOpen} />
       </div>
     </>
   );

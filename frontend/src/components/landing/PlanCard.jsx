@@ -4,7 +4,7 @@ import { Check, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatCurrencyBRL } from '@/lib/subscriptionPlans';
 
-function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
+function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick }) {
   return (
     <div
       className={`relative rounded-3xl p-8 transition-all duration-300 ${
@@ -99,7 +99,7 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '' }) {
       </ul>
 
       {showCta && ctaTo ? (
-        <Link to={ctaTo} className="block">
+        <Link to={ctaTo} className="block" onClick={onCtaClick}>
           <Button
             className={`w-full h-12 font-semibold ${
               plan.highlighted
