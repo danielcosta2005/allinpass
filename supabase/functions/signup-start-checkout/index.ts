@@ -83,7 +83,61 @@ function getAsaasCheckoutBaseUrl() {
 }
 
 function getAppBaseUrl(origin: string | null) {
-  return String(Deno.env.get("APP_BASE_URL") ?? origin ?? "").trim().replace(/\/+$/, "");
+  return String(
+    Deno.env.get("ASAAS_CALLBACK_BASE_URL") ??
+      Deno.env.get("APP_BASE_URL") ??
+      origin ??
+      "",
+  ).trim().replace(/\/+$/, "");
+}
+
+function isPrivateIpv4(hostname: string) {
+  const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!match) return false;
+
+  const octets = match.slice(1).map(Number);
+  if (octets.some((octet) => octet < 0 || octet > 255)) return false;
+
+  const [first, second] = octets;
+  return first === 10 ||
+    first === 127 ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 169 && second === 254) ||
+    (first === 0 && second === 0);
+}
+
+function assertPublicHttpsAppBaseUrl(appBaseUrl: string) {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(appBaseUrl);
+  } catch {
+    throw new SignupCheckoutError(
+      "SIGNUP_CHECKOUT_INVALID_APP_BASE_URL",
+      "Configure ASAAS_CALLBACK_BASE_URL ou APP_BASE_URL com uma URL publica HTTPS valida.",
+      500,
+    );
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  const isLocalHost = hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost") ||
+    hostname.endsWith(".local");
+
+  if (
+    parsed.protocol !== "https:" ||
+    isLocalHost ||
+    isPrivateIpv4(hostname)
+  ) {
+    throw new SignupCheckoutError(
+      "SIGNUP_CHECKOUT_INVALID_APP_BASE_URL",
+      "O Asaas nao aceita callbacks em localhost ou URL privada. Configure ASAAS_CALLBACK_BASE_URL ou APP_BASE_URL com uma URL publica HTTPS, como um dominio de staging ou tunnel HTTPS.",
+      500,
+    );
+  }
 }
 
 function addMinutes(date: Date, minutes: number) {
@@ -264,10 +318,11 @@ Deno.serve(async (req) => {
     if (!appBaseUrl) {
       throw new SignupCheckoutError(
         "SIGNUP_CHECKOUT_MISSING_APP_BASE_URL",
-        "APP_BASE_URL ausente e Origin indisponivel.",
+        "ASAAS_CALLBACK_BASE_URL ou APP_BASE_URL ausente.",
         500,
       );
     }
+    assertPublicHttpsAppBaseUrl(appBaseUrl);
 
     const expiresAt = addMinutes(new Date(), DEFAULT_CHECKOUT_EXPIRATION_MINUTES);
     const { data: sessionData, error: sessionError } = await supabaseAdmin

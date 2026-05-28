@@ -139,6 +139,53 @@ function slugify(input: string) {
   return base.length ? base : "projeto";
 }
 
+function normalizePlanCode(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+function resolvePlanCode({
+  payloadPlanCode,
+  metadataPlanCode,
+  metadataPlanKey,
+  intentPlanCode,
+}: {
+  payloadPlanCode: unknown;
+  metadataPlanCode: unknown;
+  metadataPlanKey: unknown;
+  intentPlanCode: unknown;
+}) {
+  const payloadCode = normalizePlanCode(payloadPlanCode);
+  const intentCode = normalizePlanCode(intentPlanCode);
+  const metadataCode = normalizePlanCode(metadataPlanCode);
+  const metadataKeyCode = normalizePlanCode(metadataPlanKey);
+  const paidSignal = [intentCode, metadataCode, metadataKeyCode].find((code) =>
+    code && code !== FREE_PLAN_CODE
+  );
+
+  if (payloadCode) {
+    return payloadCode === FREE_PLAN_CODE && paidSignal
+      ? paidSignal
+      : payloadCode;
+  }
+  if (intentCode) return intentCode;
+
+  // If old user_metadata says free_trial but plan_key says a paid plan,
+  // prefer the paid signal so we fail closed and require checkout.
+  if (
+    metadataCode === FREE_PLAN_CODE &&
+    metadataKeyCode &&
+    metadataKeyCode !== FREE_PLAN_CODE
+  ) {
+    return metadataKeyCode;
+  }
+
+  return metadataCode || metadataKeyCode || FREE_PLAN_CODE;
+}
+
 function randomSuffix(length = 6) {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let output = "";
@@ -560,9 +607,10 @@ Deno.serve(async (req) => {
     const payloadEstablishmentName = String(payload.establishmentName ?? "").trim();
     const metadataEstablishmentName = String(user.user_metadata?.establishment_name ?? "").trim();
     const intentEstablishmentName = String(existingCustomerIntent?.establishment_name ?? "").trim();
-    const payloadPlanCode = String(payload.planCode ?? "").trim();
-    const metadataPlanCode = String(user.user_metadata?.plan_code ?? "").trim();
-    const intentPlanCode = String(existingCustomerIntent?.plan_code ?? "").trim();
+    const payloadPlanCode = payload.planCode;
+    const metadataPlanCode = user.user_metadata?.plan_code;
+    const metadataPlanKey = user.user_metadata?.plan_key;
+    const intentPlanCode = existingCustomerIntent?.plan_code;
     const checkoutSessionId = String(payload.checkoutSessionId ?? "").trim();
     const establishmentName = String(
       payloadEstablishmentName
@@ -570,12 +618,12 @@ Deno.serve(async (req) => {
         || intentEstablishmentName
         || "",
     ).trim();
-    const planCode = String(
-      payloadPlanCode
-        || metadataPlanCode
-        || intentPlanCode
-        || FREE_PLAN_CODE,
-    ).trim().toLowerCase();
+    const planCode = resolvePlanCode({
+      payloadPlanCode,
+      metadataPlanCode,
+      metadataPlanKey,
+      intentPlanCode,
+    });
 
     if (!establishmentName) {
       return errorResponse(

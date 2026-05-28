@@ -583,7 +583,7 @@ Esta function nao usa query params.
 |---|---:|---|
 | `Authorization` | Sim | Deve estar no formato `Bearer <access_token>`. Usado para validar a sessao do usuario. |
 | `Content-Type` | Recomendado | Esperado como `application/json`. |
-| `Origin` | Condicional | Usado como fallback para montar `APP_BASE_URL` quando a env nao estiver definida. |
+| `Origin` | Nao confiavel | Pode existir em chamadas do frontend, mas nao deve ser usado em checkout local porque `localhost` e rejeitado pelo Asaas. |
 | `apikey` | Nao diretamente | Permitido no CORS para compatibilidade com `supabase.functions.invoke`. |
 | `x-client-info` | Nao | Permitido no CORS para compatibilidade com o client Supabase. |
 
@@ -620,7 +620,8 @@ Em erro, retorna:
 | 400 | `SIGNUP_CHECKOUT_MISSING_ESTABLISHMENT_NAME` | Nome do estabelecimento ausente no body e nos metadados. | Revisar formulario e `user_metadata`. |
 | 400 | `SIGNUP_CHECKOUT_UNSUPPORTED_PLAN` | `planCode` ausente ou igual a `free_trial`. | Usar esta function apenas para planos pagos. |
 | 404 | `SIGNUP_CHECKOUT_PLAN_NOT_FOUND` | Plano pago ativo/mensal nao encontrado ou preco zerado. | Validar seed de `billing_plans`. |
-| 500 | `SIGNUP_CHECKOUT_MISSING_APP_BASE_URL` | `APP_BASE_URL` ausente e request sem `Origin`. | Configurar `APP_BASE_URL`. |
+| 500 | `SIGNUP_CHECKOUT_MISSING_APP_BASE_URL` | `ASAAS_CALLBACK_BASE_URL`/`APP_BASE_URL` ausente. | Configurar uma URL publica HTTPS. |
+| 500 | `SIGNUP_CHECKOUT_INVALID_APP_BASE_URL` | Callback em `localhost`, IP privado, HTTP ou URL invalida. | Usar dominio publico HTTPS, tunnel HTTPS ou ambiente de staging. |
 | 502 | `SIGNUP_CHECKOUT_ASAAS_ERROR` | Asaas retornou erro ao criar checkout. | Conferir payload, chave Asaas, ambiente e resposta salva em `metadata`. |
 | 502 | `SIGNUP_CHECKOUT_ASAAS_MISSING_ID` | Asaas respondeu sem ID de checkout. | Verificar mudanca de contrato/API do Asaas. |
 | 500 | `SIGNUP_CHECKOUT_INTERNAL_ERROR` | Erro inesperado em Supabase, Asaas ou update local. | Ver logs da function e `signup_checkout_sessions`. |
@@ -664,7 +665,8 @@ Payload enviado ao Asaas inclui:
 | `ASAAS_API_BASE_URL` | Nao | Override explicito da base da API Asaas. |
 | `ASAAS_CHECKOUT_BASE_URL` | Nao | Override explicito da base do link de checkout quando resposta nao trouxer `link`. |
 | `ASAAS_ENV` | Nao | Define `sandbox` ou `production` quando os overrides nao existem. Default: `sandbox`. |
-| `APP_BASE_URL` | Recomendado | Base publica usada para montar callbacks de retorno. Se ausente, usa `Origin`. |
+| `ASAAS_CALLBACK_BASE_URL` | Recomendado | Base publica HTTPS usada especificamente para callbacks do Asaas. Tem prioridade sobre `APP_BASE_URL`. |
+| `APP_BASE_URL` | Recomendado | Base publica HTTPS usada para montar callbacks de retorno quando `ASAAS_CALLBACK_BASE_URL` nao existe. |
 
 ### Seguranca e autorizacao
 
@@ -674,6 +676,7 @@ Esta function utiliza `service_role_key`, portanto pode bypassar RLS. As proteco
 - usa `user.id` do token como dono de `signup_checkout_sessions`;
 - nao aceita `user_id`, `plan_id`, preco ou status vindos do frontend;
 - busca o plano no banco e rejeita `free_trial`;
+- rejeita callbacks que nao sejam URL publica HTTPS;
 - grava apenas providers permitidos pela migration (`asaas`);
 - reutiliza somente checkout do mesmo `user_id` e `plan_id`;
 - nao coleta nem processa dados de cartao no AllinPass; o cartao fica no ambiente do Asaas.
@@ -701,7 +704,7 @@ signup-start-checkout error
 
 Para investigar falhas:
 
-- conferir envs `ASAAS_API_KEY`, `ASAAS_ENV`, `APP_BASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`;
+- conferir envs `ASAAS_API_KEY`, `ASAAS_ENV`, `ASAAS_CALLBACK_BASE_URL`/`APP_BASE_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`;
 - consultar `signup_checkout_sessions` por `user_id`, `plan_code`, `status`, `provider_checkout_id`, `checkout_url`, `expires_at`;
 - verificar `metadata.asaas_request` e `metadata.asaas_response` quando `status = failed`;
 - confirmar se `billing_plans.code` esta ativo, mensal e com `base_price_cents > 0`;
@@ -718,7 +721,8 @@ Nao logar `ASAAS_API_KEY`, JWT completo, `service_role_key`, documentos pessoais
 - `POST` com `planCode = free_trial` retorna `400`.
 - `POST` sem `establishmentName` e sem metadata retorna `400`.
 - Plano pago inexistente/inativo retorna `404`.
-- Env `APP_BASE_URL` ausente com request sem `Origin` retorna `500`.
+- Env `ASAAS_CALLBACK_BASE_URL`/`APP_BASE_URL` ausente retorna `500`.
+- Callback com `http://localhost`, IP privado ou sem HTTPS retorna `500` antes de chamar o Asaas.
 - Erro do Asaas marca `signup_checkout_sessions.status = failed`.
 - Sucesso cria `signup_checkout_sessions.status = created` e retorna `checkout_url`.
 - Segunda chamada para mesmo usuario/plano antes de expirar retorna `reused = true`.

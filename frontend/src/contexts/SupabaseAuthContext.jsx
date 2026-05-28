@@ -57,6 +57,34 @@ function isSignupFinalizeCallbackPath() {
   return p === '/cadastro' && params.get('finalizar') === '1';
 }
 
+function normalizePlanCode(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function getSignupPlanCodeFromCurrentUrl() {
+  if (typeof window === 'undefined') return '';
+
+  const params = new URLSearchParams(window.location.search || '');
+  return normalizePlanCode(params.get('planCode')) || normalizePlanCode(params.get('plano'));
+}
+
+function isPaidSignupReturnUrl() {
+  if (typeof window === 'undefined') return false;
+
+  const p = window.location.pathname || '';
+  if (p !== '/cadastro') return false;
+
+  const params = new URLSearchParams(window.location.search || '');
+  const planCode = getSignupPlanCodeFromCurrentUrl();
+
+  if (params.has('checkout')) return true;
+  return Boolean(planCode && planCode !== FREE_TRIAL_PLAN_CODE);
+}
+
 function isAuthReturnUrl() {
   if (typeof window === 'undefined') return false;
 
@@ -92,14 +120,19 @@ function getPendingFreeTrialSignup(currentUser) {
   const metadata = currentUser?.user_metadata || {};
   const appMetadata = currentUser?.app_metadata || {};
   const establishmentName = String(metadata.establishment_name || '').trim();
-  const planCode = String(metadata.plan_code || FREE_TRIAL_PLAN_CODE).trim();
+  const planCode = normalizePlanCode(metadata.plan_code || FREE_TRIAL_PLAN_CODE);
+  const planKey = normalizePlanCode(metadata.plan_key || '');
 
   if (appMetadata.signup_project_id) {
     clearExistingCustomerSignupContext();
     return null;
   }
 
-  if (establishmentName && planCode === FREE_TRIAL_PLAN_CODE) {
+  if (
+    establishmentName &&
+    planCode === FREE_TRIAL_PLAN_CODE &&
+    (!planKey || planKey === FREE_TRIAL_PLAN_CODE)
+  ) {
     return { establishmentName, planCode };
   }
 
@@ -420,11 +453,13 @@ export const AuthProvider = ({ children }) => {
       if (currentUser) {
         const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
         const hasAuthReturn = isAuthReturnUrl();
+        const paidSignupReturn = isPaidSignupReturnUrl();
         const canProbeBackendSignupIntent =
           (hasAuthReturn || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           canProbeSignupIntentOnPath(currentPath) &&
           !currentPath.startsWith('/claim') &&
-          currentPath !== '/thanks';
+          currentPath !== '/thanks' &&
+          !paidSignupReturn;
         const shouldAllowAutoFinalizeOnCallbackPath =
           (hasPendingSignup || canProbeBackendSignupIntent) &&
           !isSignupFinalizeCallbackPath() &&
@@ -461,6 +496,7 @@ export const AuthProvider = ({ children }) => {
 
           const shouldAutoFinalizeSignup =
             !isSignupFinalizeCallbackPath() &&
+            !paidSignupReturn &&
             (hasPendingSignup || shouldProbeBackendSignupIntent) &&
             (newRole === 'customer' || newRole === 'establishment') &&
             !newProjectId &&

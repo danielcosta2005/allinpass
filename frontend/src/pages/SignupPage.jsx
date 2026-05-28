@@ -338,6 +338,8 @@ function SignupPage() {
   const totalSteps = paidPlan ? 3 : 2;
   const checkoutStatusFromRedirect = String(searchParams.get('checkout') || '').trim().toLowerCase();
   const checkoutSessionIdFromRedirect = String(searchParams.get('checkoutSessionId') || '').trim();
+  const shouldBlockFormForFinalize = shouldFinalizeFromRedirect
+    && (!paidPlan || checkoutStatusFromRedirect === 'success');
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
@@ -925,20 +927,45 @@ function SignupPage() {
     const finalizePendingSignup = async () => {
       try {
         const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
-        const redirectPlanCode = String(searchParams.get('planCode') || '').trim();
+        const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
+        const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
+        const contextPlanCode = String(existingCustomerContext?.planCode || '').trim().toLowerCase();
         const establishmentName = String(
-          user.user_metadata?.establishment_name
-            || redirectEstablishmentName
+          redirectEstablishmentName
+            || user.user_metadata?.establishment_name
             || existingCustomerContext?.establishmentName
             || '',
         ).trim();
         const planCode = String(
-          user.user_metadata?.plan_code
-            || redirectPlanCode
-            || existingCustomerContext?.planCode
+          redirectPlanCode
+            || contextPlanCode
+            || metadataPlanCode
             || 'free_trial',
-        );
-        setResolvedPlanCode(String(planCode).trim().toLowerCase());
+        ).trim().toLowerCase();
+        const isPaidFinalize = planCode && planCode !== 'free_trial';
+
+        setResolvedPlanCode(planCode);
+
+        if (isPaidFinalize && (!checkoutSessionIdFromRedirect || checkoutStatusFromRedirect !== 'success')) {
+          finalizeFromRedirectRef.current = false;
+          setSignupError('');
+          setCheckoutError(
+            checkoutStatusFromRedirect === 'expired'
+              ? 'Checkout expirado. Gere um novo link seguro para continuar.'
+              : checkoutStatusFromRedirect === 'cancel'
+                ? 'Checkout cancelado. Voce pode iniciar um novo checkout quando quiser.'
+                : 'Antes de finalizar sua assinatura, precisamos concluir o checkout seguro do Asaas.',
+          );
+          setFormData((previous) => ({
+            ...previous,
+            establishmentName: establishmentName || previous.establishmentName,
+            email: user.email || previous.email,
+            emailConfirmation: user.email || previous.emailConfirmation,
+          }));
+          setFinishedFlow('');
+          setStep(3);
+          return;
+        }
 
         const result = await provisionSignup({
           establishmentName,
@@ -985,6 +1012,7 @@ function SignupPage() {
   }, [
     authSession,
     checkoutSessionIdFromRedirect,
+    checkoutStatusFromRedirect,
     provisionSignup,
     searchParams,
     shouldFinalizeFromRedirect,
@@ -1096,7 +1124,7 @@ function SignupPage() {
               </div>
 
               <AnimatePresence mode="wait">
-                {!finishedFlow && shouldFinalizeFromRedirect && (
+                {!finishedFlow && shouldBlockFormForFinalize && (
                   <motion.div
                     key="finalizing-signup"
                     initial={{ opacity: 0, y: 10 }}
@@ -1147,7 +1175,7 @@ function SignupPage() {
                   </motion.div>
                 )}
 
-                {!finishedFlow && !shouldFinalizeFromRedirect && step === 1 && (
+                {!finishedFlow && !shouldBlockFormForFinalize && step === 1 && (
                   <motion.form
                     key="step-1"
                     initial={{ opacity: 0, y: 10 }}
