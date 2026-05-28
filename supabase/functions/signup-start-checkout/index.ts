@@ -402,10 +402,6 @@ Deno.serve(async (req) => {
           value: plan.base_price_cents / 100,
         },
       ],
-      customerData: {
-        name: establishmentName,
-        email,
-      },
       subscription: {
         cycle: "MONTHLY",
         nextDueDate: formatAsaasDate(new Date()),
