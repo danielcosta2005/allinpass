@@ -651,8 +651,9 @@ Payload enviado ao Asaas inclui:
 - `externalReference` com referencia local;
 - callbacks de sucesso, cancelamento e expiracao para `/cadastro`;
 - item unico com nome do plano e valor em reais;
-- dados basicos do cliente (`name`, `email`);
 - assinatura mensal (`cycle = MONTHLY`).
+
+A function nao envia `customerData` nem `customer` ao Asaas. Com isso, o proprio checkout do Asaas coleta CPF/CNPJ, telefone, endereco e dados de pagamento do cliente.
 
 ### Variaveis de ambiente
 
@@ -679,7 +680,7 @@ Esta function utiliza `service_role_key`, portanto pode bypassar RLS. As proteco
 - rejeita callbacks que nao sejam URL publica HTTPS;
 - grava apenas providers permitidos pela migration (`asaas`);
 - reutiliza somente checkout do mesmo `user_id` e `plan_id`;
-- nao coleta nem processa dados de cartao no AllinPass; o cartao fica no ambiente do Asaas.
+- nao coleta nem processa CPF/CNPJ, endereco ou dados de cartao no AllinPass; esses dados ficam no ambiente do Asaas.
 
 Ponto de atencao: a function salva `asaas_request` e `asaas_response` em `metadata`. Nao incluir dados sensiveis nesses payloads sem revisar mascaramento.
 
