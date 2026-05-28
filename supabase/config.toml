@@ -405,6 +405,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/signup-start-checkout/index.ts"
 
+[functions.signup-status]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/signup-status/index.ts"
+
 [functions.asaas-webhook]
 enabled = true
 verify_jwt = false

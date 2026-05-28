@@ -230,10 +230,43 @@ export async function startPaidSignupCheckout({
   }
 
   if (!data?.checkout_url) {
-    throw buildSignupError('Nao foi possivel iniciar o checkout do Asaas.');
+    throw buildSignupError('Não foi possível iniciar o checkout do Asaas.');
   }
 
   return data;
+}
+
+export async function getSignupStatus() {
+  const { data, error } = await supabase.functions.invoke('signup-status', {
+    body: {},
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildSignupError(parsedError.message, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildSignupError(data.error, data.code || null);
+  }
+
+  return {
+    success: Boolean(data?.success),
+    hasProject: Boolean(data?.has_project),
+    projectId: data?.project_id || null,
+    signupState: data?.signup_state || 'no_project_no_signup_context',
+    planCode: data?.plan_code || null,
+    establishmentName: data?.establishment_name || '',
+    checkoutStatus: data?.checkout_status || null,
+    checkoutSessionId: data?.checkout_session_id || null,
+    checkoutUrl: data?.checkout_url || null,
+    checkoutExpired: Boolean(data?.checkout_expired),
+    expiresAt: data?.expires_at || null,
+    paidAt: data?.paid_at || null,
+    amountCents: data?.amount_cents ?? null,
+    currency: data?.currency || null,
+    updatedAt: data?.updated_at || null,
+  };
 }
 
 export async function sendExistingCustomerSignupLink({

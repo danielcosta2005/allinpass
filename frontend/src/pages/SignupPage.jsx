@@ -267,7 +267,7 @@ function normalizeSignupErrorMessage(error) {
     return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
   }
 
-  return error?.message || 'Nao foi possivel iniciar o cadastro.';
+  return error?.message || 'Não foi possível iniciar o cadastro.';
 }
 
 function getPasswordError(password, passwordState) {
@@ -614,7 +614,7 @@ function SignupPage() {
     if (Object.keys(nextErrors).length > 0) return;
 
     if (signupCaptchaEnabled && !captchaToken) {
-      const message = 'Confirme a verificacao antiabuso para iniciar o cadastro.';
+      const message = 'Confirme a verificação antiabuso para iniciar o cadastro.';
       setSignupError(message);
       toast({
         title: 'Verificação pendente',
@@ -746,8 +746,8 @@ function SignupPage() {
             ? 'Enviamos um novo link de acesso para continuar sua assinatura.'
             : 'Enviamos um novo link de acesso para finalizar o Free Trial.'
           : paidPlan
-            ? 'Se a confirmacao ainda estiver pendente, enviamos um novo link para continuar sua assinatura.'
-            : 'Se a confirmacao ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+            ? 'Se a confirmação ainda estiver pendente, enviamos um novo link para continuar sua assinatura.'
+            : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
       });
     } catch (error) {
       const message = normalizeSignupErrorMessage(error);
@@ -782,7 +782,7 @@ function SignupPage() {
       const planCode = String(selectedPlan?.code || resolvedPlanCode || '').trim().toLowerCase();
 
       if (!establishmentName) {
-        throw new Error('Nao foi possivel identificar o nome do estabelecimento.');
+        throw new Error('Não foi possível identificar o nome do estabelecimento.');
       }
 
       if (!planCode || planCode === 'free_trial') {
@@ -796,7 +796,7 @@ function SignupPage() {
 
       window.location.assign(checkout.checkout_url);
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar o checkout do Asaas.';
+      const message = error?.message || 'Não foi possível iniciar o checkout do Asaas.';
       setCheckoutError(message);
       toast({
         title: 'Erro no checkout',
@@ -883,7 +883,7 @@ function SignupPage() {
     setStep(3);
 
     if (checkoutStatusFromRedirect === 'cancel') {
-      setCheckoutError('Checkout cancelado. Voce pode iniciar um novo checkout quando quiser.');
+      setCheckoutError('Checkout cancelado. Você pode iniciar um novo checkout quando quiser.');
     } else if (checkoutStatusFromRedirect === 'expired') {
       setCheckoutError('Checkout expirado. Gere um novo link seguro para continuar.');
     } else {
@@ -953,7 +953,7 @@ function SignupPage() {
             checkoutStatusFromRedirect === 'expired'
               ? 'Checkout expirado. Gere um novo link seguro para continuar.'
               : checkoutStatusFromRedirect === 'cancel'
-                ? 'Checkout cancelado. Voce pode iniciar um novo checkout quando quiser.'
+                ? 'Checkout cancelado. Você pode iniciar um novo checkout quando quiser.'
                 : 'Antes de finalizar sua assinatura, precisamos concluir o checkout seguro do Asaas.',
           );
           setFormData((previous) => ({
@@ -996,7 +996,7 @@ function SignupPage() {
         clearSignupPasswordSetupRequired();
         setFinishedFlow(finalizedPlanCode === 'free_trial' ? 'trial' : 'paid');
       } catch (error) {
-        const message = error?.message || 'Nao foi possivel finalizar o cadastro.';
+        const message = error?.message || 'Não foi possível finalizar o cadastro.';
         setSignupError(message);
         toast({
           title: 'Erro ao finalizar cadastro',
@@ -1297,12 +1297,12 @@ function SignupPage() {
                         Checkout seguro via Asaas
                       </p>
                       <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                        Vamos criar uma sessao de checkout recorrente no Asaas para este plano.
-                        Nenhum dado de cartao e coletado dentro do AllinPass.
+                        Vamos criar uma sessão de checkout recorrente no Asaas para este plano.
+                        Nenhum dado de cartão é coletado dentro do AllinPass.
                       </p>
                       <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
                         <Lock className="w-3.5 h-3.5" />
-                        Voce sera redirecionado para o ambiente seguro do provedor.
+                        Você será redirecionado para o ambiente seguro do provedor.
                       </div>
                     </div>
 
@@ -1597,7 +1597,7 @@ function SignupPage() {
                     <h2 className="text-2xl font-bold text-purple-900">Cadastro concluído</h2>
                     <p className="text-purple-800 mt-2">
                       Pagamento confirmado e acesso criado para o plano {selectedPlan.name}.
-                      Voce ja pode acessar o painel do estabelecimento.
+                      Você já pode acessar o painel do estabelecimento.
                     </p>
                     <div className="flex flex-wrap gap-3 mt-5">
                       <Link to="/org">
