@@ -23,8 +23,10 @@ describe("signup finalize auth redirect", () => {
 
     expect(signupPageSource).toContain("session: authSession");
     expect(signupPageSource).toContain("const session = authSession");
-    expect(signupPageSource).toContain("if (!user)");
-    expect(signupPageSource).toContain("[authSession, provisionFreeTrial, searchParams, shouldFinalizeFromRedirect, toast]");
+    expect(signupPageSource).toContain("if (!shouldAttemptFinalize || finalizeFromRedirectRef.current || !user) return;");
+    expect(signupPageSource).toContain("provisionSignup");
+    expect(signupPageSource).toContain("checkoutSessionIdFromRedirect");
+    expect(signupPageSource).toContain("checkoutStatusFromRedirect");
   });
 
   test("pending free trial signups are auto-finalized before redirecting to /org", () => {
@@ -55,6 +57,16 @@ describe("signup finalize auth redirect", () => {
     expect(authContextSource).toContain("passwordSetupParams.set('passwordSetup', '1')");
     expect(signupPageSource).toContain("shouldFinalizeFromExistingCustomerContext");
     expect(signupPageSource).toContain("shouldAttemptFinalize");
+  });
+
+  test("paid signup returns stay on /cadastro instead of using the generic /org redirect", () => {
+    const authContextSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/contexts/SupabaseAuthContext.jsx"),
+      "utf8"
+    );
+    expect(authContextSource).toContain(
+      "} else if ((event === 'SIGNED_IN' || didAutoFinalizeSignup) && !paidSignupReturn)"
+    );
   });
 
   test("auth callback without a claim project falls back to signup finalization", () => {

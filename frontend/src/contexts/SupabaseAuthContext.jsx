@@ -537,7 +537,7 @@ export const AuthProvider = ({ children }) => {
             if (shouldRedirectToUnauthorized) {
               navigate('/nao-autorizado', { replace: true });
             }
-          } else if (event === 'SIGNED_IN' || didAutoFinalizeSignup) {
+          } else if ((event === 'SIGNED_IN' || didAutoFinalizeSignup) && !paidSignupReturn) {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
 

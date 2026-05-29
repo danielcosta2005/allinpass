@@ -24,6 +24,8 @@ import {
 import {
   clearExistingCustomerSignupContext,
   finalizeSignup,
+  isExistingCustomerSignupPasswordReady,
+  markExistingCustomerSignupPasswordReady,
   precheckFreeTrialSignup,
   readExistingCustomerSignupContext,
   sendExistingCustomerSignupLink,
@@ -338,6 +340,31 @@ function SignupPage() {
   const totalSteps = paidPlan ? 3 : 2;
   const checkoutStatusFromRedirect = String(searchParams.get('checkout') || '').trim().toLowerCase();
   const checkoutSessionIdFromRedirect = String(searchParams.get('checkoutSessionId') || '').trim();
+  const existingCustomerReturnFromRedirect = searchParams.get('existingCustomer') === '1';
+  const authSessionEmail = String(authSession?.user?.email || '').trim().toLowerCase();
+  const signupPlanCodeForCurrentView = String(
+    selectedPlan?.code
+      || resolvedPlanCode
+      || contextPlanCode
+      || searchParams.get('planCode')
+      || 'free_trial',
+  ).trim().toLowerCase();
+  const isExistingCustomerSignupReturn =
+    existingCustomerReturnFromRedirect
+    || (
+      Boolean(existingCustomerSignupContext?.email)
+      && existingCustomerSignupContext.email === authSessionEmail
+    );
+  const shouldSetupExistingCustomerPasswordBeforePaidCheckout =
+    paidPlan
+    && Boolean(authSession?.user)
+    && !shouldFinalizeFromRedirect
+    && !Boolean(authSession?.user?.app_metadata?.signup_project_id)
+    && isExistingCustomerSignupReturn
+    && !isExistingCustomerSignupPasswordReady({
+      email: authSessionEmail,
+      planCode: signupPlanCodeForCurrentView,
+    });
   const shouldBlockFormForFinalize = shouldFinalizeFromRedirect
     && (!paidPlan || checkoutStatusFromRedirect === 'success');
 
@@ -443,9 +470,11 @@ function SignupPage() {
     });
     const establishmentName = String(metadata.establishmentName || '').trim();
     const isPaidEmailPlan = planCode && planCode !== 'free_trial';
+    const isExistingCustomer = metadata.existingCustomer === true;
 
     if (!isPaidEmailPlan) params.set('finalizar', '1');
     if (isPaidEmailPlan) params.set('checkout', 'pending');
+    if (isExistingCustomer) params.set('existingCustomer', '1');
     if (establishmentName) params.set('establishmentName', establishmentName);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
@@ -480,6 +509,9 @@ function SignupPage() {
       return;
     }
 
+    const shouldContinueToPaidCheckoutAfterPasswordSetup =
+      shouldSetupExistingCustomerPasswordBeforePaidCheckout;
+
     setPasswordSetupLoading(true);
 
     try {
@@ -487,7 +519,33 @@ function SignupPage() {
 
       if (error) throw error;
 
+      if (shouldContinueToPaidCheckoutAfterPasswordSetup) {
+        markExistingCustomerSignupPasswordReady({
+          email: authSession.user.email,
+          establishmentName: formData.establishmentName
+            || existingCustomerSignupContext?.establishmentName
+            || authSession.user.user_metadata?.establishment_name
+            || '',
+          planCode: signupPlanCodeForCurrentView,
+          planKey: selectedPlanKey,
+        });
+        clearSignupPasswordSetupRequired();
+        setPasswordSetupValue('');
+        setPasswordSetupTouched(false);
+        setPasswordSetupError('');
+        await refreshAuthProfile();
+        setCheckoutError('');
+        setFinishedFlow('');
+        setStep(3);
+        toast({
+          title: 'Senha criada',
+          description: 'Senha criada. Agora siga para o checkout seguro do Asaas.',
+        });
+        return;
+      }
+
       clearSignupPasswordSetupRequired();
+      clearExistingCustomerSignupContext();
       setPasswordSetupValue('');
       setPasswordSetupTouched(false);
       setPasswordSetupError('');
@@ -639,7 +697,11 @@ function SignupPage() {
       });
 
       if (precheck.code === 'existing_customer') {
-        const emailRedirectTo = buildSignupEmailRedirectTo({ establishmentName, planCode });
+        const emailRedirectTo = buildSignupEmailRedirectTo({
+          establishmentName,
+          planCode,
+          existingCustomer: true,
+        });
         await sendExistingCustomerSignupLink({
           email: normalizedEmail,
           emailRedirectTo,
@@ -719,6 +781,7 @@ function SignupPage() {
           emailRedirectTo: buildSignupEmailRedirectTo({
             establishmentName: formData.establishmentName.trim(),
             planCode: selectedPlan?.code || 'free_trial',
+            existingCustomer: true,
           }),
           establishmentName: formData.establishmentName.trim(),
           planCode: selectedPlan?.code || 'free_trial',
@@ -879,6 +942,14 @@ function SignupPage() {
       emailConfirmation: user.email || previous.emailConfirmation,
     }));
     setPendingNewSignup(null);
+
+    if (shouldSetupExistingCustomerPasswordBeforePaidCheckout) {
+      setCheckoutError('');
+      setFinishedFlow('set-password');
+      setStep(2);
+      return;
+    }
+
     setFinishedFlow('');
     setStep(3);
 
@@ -897,6 +968,7 @@ function SignupPage() {
     resolvedPlanCode,
     searchParams,
     shouldFinalizeFromRedirect,
+    shouldSetupExistingCustomerPasswordBeforePaidCheckout,
   ]);
 
   useEffect(() => {
@@ -979,7 +1051,10 @@ function SignupPage() {
         }
         const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
         const passwordSetupRequired = Boolean(result?.auth?.password_setup_required);
-        clearExistingCustomerSignupContext();
+        const existingCustomerPasswordReadyBeforeFinalize = isExistingCustomerSignupPasswordReady({
+          email: user.email,
+          planCode: finalizedPlanCode || planCode,
+        });
         setFormData((previous) => ({
           ...previous,
           establishmentName: finalizedEstablishmentName,
@@ -987,12 +1062,13 @@ function SignupPage() {
           emailConfirmation: user.email || previous.emailConfirmation,
         }));
 
-        if (passwordSetupRequired) {
+        if (passwordSetupRequired && !existingCustomerPasswordReadyBeforeFinalize) {
           markSignupPasswordSetupRequired();
           setFinishedFlow('set-password');
           return;
         }
 
+        clearExistingCustomerSignupContext();
         clearSignupPasswordSetupRequired();
         setFinishedFlow(finalizedPlanCode === 'free_trial' ? 'trial' : 'paid');
       } catch (error) {

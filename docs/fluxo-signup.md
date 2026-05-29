@@ -21,7 +21,7 @@ A Edge Function `signup-finalize` nao cria usuario nem recebe senha. A senha pas
 
 Nos planos pagos, a conta tambem nasce pelo `supabase.auth.signUp`, mas o provisionamento so acontece depois do checkout recorrente do Asaas ser criado por `signup-start-checkout` e confirmado pelo webhook `asaas-webhook`.
 
-Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, reaproveitando o mesmo `auth.users.id`. No free trial, o retorno pode finalizar direto. Em plano pago, o retorno leva o usuario autenticado para a etapa de checkout antes de chamar `signup-finalize`.
+Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com `profiles.role = customer`, o frontend nao chama `signUp`. A function grava uma intencao em `signup_existing_customer_intents`, e o frontend envia um magic link com `supabase.auth.signInWithOtp` e `shouldCreateUser=false`, reaproveitando o mesmo `auth.users.id`. No free trial, o retorno pode finalizar direto. Em plano pago, o retorno leva o usuario autenticado para criar a senha antes da etapa de checkout.
 
 ## Arquivos Principais
 
@@ -54,12 +54,12 @@ Se `signup-precheck` retornar `code = existing_customer`:
 1. Frontend nao chama `supabase.auth.signUp`.
 2. `signup-precheck` grava `email`, `establishment_name` e `plan_code` em `signup_existing_customer_intents`.
 3. Frontend chama `supabase.auth.signInWithOtp` com `shouldCreateUser=false`.
-4. O magic link tenta retornar para `/cadastro?plano=free-trial&finalizar=1&establishmentName=...&planCode=free_trial`.
+4. O magic link tenta retornar para `/cadastro?plano=free-trial&finalizar=1&establishmentName=...&planCode=free_trial`. Em plano pago, ele retorna com `checkout=pending` e `existingCustomer=1`.
 5. Ao voltar autenticado, a pagina chama `signup-finalize`; se o link cair fora de `/cadastro`, o `SupabaseAuthContext` pode sondar o backend durante o retorno de Auth.
 6. Se o link abrir em outro navegador/dispositivo e os dados nao vierem pela URL/localStorage, `signup-finalize` busca a intencao pendente por `user.email`.
 7. `signup-finalize` atualiza `profiles.role` para `establishment`, provisiona o projeto e marca a intencao como `completed`.
-8. Como a conta ja existia e o fluxo usou magic link em vez de `signUp`, `signup-finalize` retorna `auth.password_setup_required = true`.
-9. O frontend mostra a etapa "Crie sua senha de acesso" e, com a sessao ja autenticada, chama `supabase.auth.updateUser({ password })`.
+8. Como a conta ja existia e o fluxo usou magic link em vez de `signUp`, o frontend mostra a etapa "Crie sua senha de acesso" com a sessao ja autenticada.
+9. O frontend chama `supabase.auth.updateUser({ password })`. No free trial, isso acontece depois de `signup-finalize`; no plano pago, acontece antes de `signup-start-checkout`.
 
 ## Fluxo Com Confirmacao de Email
 
@@ -123,7 +123,7 @@ Depois de validar o JWT, ela usa `SUPABASE_SERVICE_ROLE_KEY` para:
 - Plano pago exige `checkoutSessionId` com `status = paid` em `signup_checkout_sessions`.
 - A senha nunca passa pela Edge Function.
 - A primeira etapa do formulario nao pede senha; ela aparece somente depois do `signup-precheck`.
-- Para clientes existentes, a senha preenchida no formulario inicial nao e usada; o acesso e confirmado por magic link e a senha e criada depois com `supabase.auth.updateUser({ password })`.
+- Para clientes existentes, a senha preenchida no formulario inicial nao e usada; o acesso e confirmado por magic link e a senha e criada com `supabase.auth.updateUser({ password })` usando uma sessao autenticada.
 - Para clientes existentes, a intencao backend expira em 24 horas e so e acessada pelas Edge Functions com `service_role`.
 - `/cadastro` nao redireciona automaticamente durante o signup, para evitar conflito enquanto `profiles.role` muda de `customer` para `establishment`.
 - Depois do provisionamento, `refreshAuthProfile` recarrega `profiles` e `project_members`.
@@ -156,6 +156,19 @@ Frontend -> signup-finalize
 ```
 
 O `signup-finalize` e unico para free trial e pago. A diferenca e que, para plano pago, ele so provisiona se o checkout tiver sido confirmado pelo webhook do Asaas.
+
+Para `existing_customer` em plano pago, a ordem fica:
+
+```text
+Frontend -> signup-precheck
+Frontend -> magic link com shouldCreateUser=false
+Supabase Auth -> retorna autenticado para /cadastro?...&checkout=pending&existingCustomer=1
+Frontend -> senha via supabase.auth.updateUser
+Frontend -> signup-start-checkout
+Asaas Checkout -> pagamento
+Frontend retorna para /cadastro?...&finalizar=1&checkoutSessionId=...
+Frontend -> signup-finalize
+```
 
 ## Checklist Rapido
 

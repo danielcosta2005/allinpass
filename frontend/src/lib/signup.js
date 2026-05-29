@@ -65,6 +65,7 @@ export function readExistingCustomerSignupContext() {
     const planCode = String(parsed?.planCode || 'free_trial').trim().toLowerCase();
     const planKey = String(parsed?.planKey || '').trim().toLowerCase();
     const createdAt = Number(parsed?.createdAt || 0);
+    const passwordSetupCompletedAt = Number(parsed?.passwordSetupCompletedAt || 0);
     const now = Date.now();
     const expired = !Number.isFinite(createdAt) || createdAt <= 0 || now - createdAt > EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS;
 
@@ -79,6 +80,9 @@ export function readExistingCustomerSignupContext() {
       planCode: planCode || 'free_trial',
       planKey,
       createdAt,
+      passwordSetupCompletedAt: Number.isFinite(passwordSetupCompletedAt)
+        ? passwordSetupCompletedAt
+        : 0,
     };
   } catch {
     clearExistingCustomerSignupContext();
@@ -110,6 +114,7 @@ export function rememberExistingCustomerSignupContext({
     planCode: normalizedPlanCode || 'free_trial',
     planKey: normalizedPlanKey,
     createdAt: Date.now(),
+    passwordSetupCompletedAt: 0,
   };
 
   try {
@@ -197,6 +202,66 @@ export async function finalizeSignup({
     return await request;
   } finally {
     pendingFinalizeRequests.delete(requestKey);
+  }
+}
+
+export function isExistingCustomerSignupPasswordReady({
+  email,
+  planCode = '',
+} = {}) {
+  const context = readExistingCustomerSignupContext();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
+
+  if (!context || !normalizedEmail || context.email !== normalizedEmail) {
+    return false;
+  }
+
+  if (
+    normalizedPlanCode
+    && context.planCode
+    && context.planCode !== normalizedPlanCode
+  ) {
+    return false;
+  }
+
+  return Boolean(context.passwordSetupCompletedAt);
+}
+
+export function markExistingCustomerSignupPasswordReady({
+  email,
+  establishmentName = '',
+  planCode = '',
+  planKey = '',
+} = {}) {
+  if (typeof window === 'undefined') return;
+
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
+  const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
+  const currentContext = readExistingCustomerSignupContext();
+  const currentMatchesEmail = currentContext?.email === normalizedEmail;
+  const normalizedEstablishmentName = String(
+    currentMatchesEmail
+      ? currentContext.establishmentName
+      : establishmentName
+  ).trim();
+
+  if (!normalizedEmail || !normalizedEstablishmentName) return;
+
+  const payload = {
+    email: normalizedEmail,
+    establishmentName: normalizedEstablishmentName,
+    planCode: normalizedPlanCode || currentContext?.planCode || 'free_trial',
+    planKey: normalizedPlanKey || currentContext?.planKey || '',
+    createdAt: currentMatchesEmail ? currentContext.createdAt : Date.now(),
+    passwordSetupCompletedAt: Date.now(),
+  };
+
+  try {
+    window.localStorage.setItem(EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
   }
 }
 

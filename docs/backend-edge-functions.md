@@ -327,7 +327,7 @@ Em sucesso, retorna JSON com status HTTP `200`.
 | Campo | Tipo | Descricao |
 |---|---|---|
 | `success` | `boolean` | Sempre `true` em sucesso. |
-| `auth.password_setup_required` | `boolean` | `true` quando a finalizacao veio de `existing_customer`; o frontend deve pedir uma nova senha e chamar `supabase.auth.updateUser({ password })` com sessao autenticada. |
+| `auth.password_setup_required` | `boolean` | `true` quando a finalizacao veio de `existing_customer`; o frontend deve garantir uma senha via `supabase.auth.updateUser({ password })` com sessao autenticada. No plano pago, essa etapa pode ter sido concluida antes do checkout. |
 | `project.id` | `string` | ID do projeto criado ou reaproveitado. |
 | `project.slug` | `string \| null` | Slug do projeto. Para projeto novo, e gerado a partir do nome do estabelecimento. |
 | `project.name` | `string` | Nome do estabelecimento usado no provisionamento. |
@@ -412,7 +412,7 @@ Esta function utiliza `service_role_key`, portanto pode bypassar RLS. Por isso, 
 - usa `user.id` do token como usuario provisionado;
 - usa `signup_finalizations.user_id = user.id` como chave de idempotencia;
 - busca intencao de cliente existente apenas pelo `user.email` ja autenticado;
-- nunca recebe nem persiste senha; o frontend so pede senha depois do `signup-precheck` e, em `existing_customer`, apenas orienta o frontend a criar a senha autenticada via Supabase Auth;
+- nunca recebe nem persiste senha; o frontend so pede senha depois do `signup-precheck` e, em `existing_customer`, cria a senha autenticada via Supabase Auth depois do magic link;
 - nao aceita valores financeiros, limites, status ou datas vindos do frontend;
 - aceita apenas `planCode = free_trial`;
 - ao reaproveitar projeto, busca apenas `project_members.user_id = user.id` e `role = 'owner'`.
@@ -436,7 +436,7 @@ Comportamento:
 - se a tentativa falhar, grava `status = 'failed'`, `error_code` e `error_message`, permitindo retry;
 - se `processing` ficar travado por mais de `FINALIZATION_STALE_AFTER_MS` (2min), uma chamada posterior pode reassumir a finalizacao.
 - quando usa ou reutiliza uma finalizacao de `existing_customer`, marca `signup_existing_customer_intents.status = 'completed'`.
-- para `existing_customer`, a resposta persistida tambem mantem `auth.password_setup_required = true`, evitando que chamadas repetidas redirecionem direto para `/org` antes da senha ser criada.
+- para `existing_customer`, a resposta persistida tambem mantem `auth.password_setup_required = true`; no plano pago, o frontend pode dispensar nova solicitacao quando ja marcou que a senha foi criada antes do checkout.
 
 Tambem ha protecoes locais:
 
@@ -513,7 +513,7 @@ Esta function nao cria usuario, nao provisiona projeto e nao ativa assinatura. E
 ### Quando e utilizada
 
 - Depois de `supabase.auth.signUp` criar o usuario no fluxo de plano pago.
-- Depois de um cliente existente acessar por magic link e voltar autenticado para a etapa de pagamento.
+- Depois de um cliente existente acessar por magic link, criar a senha autenticado e voltar para a etapa de pagamento.
 - Quando o frontend precisa redirecionar o usuario para o checkout seguro do Asaas.
 - Quando ja existe um checkout pendente/criado e ainda valido para o mesmo usuario e plano, para reutilizar o link em vez de criar outro.
 

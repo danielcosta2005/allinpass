@@ -19,7 +19,7 @@ describe("signup confirmation UX", () => {
     const confirmEmailStart = signupPageSource.indexOf("{finishedFlow === 'confirm-email'");
     const confirmEmailBlock = signupPageSource.slice(
       confirmEmailStart,
-      signupPageSource.indexOf("finishedFlow === 'paid'")
+      signupPageSource.indexOf("finishedFlow === 'paid'", confirmEmailStart)
     );
 
     expect(confirmEmailBlock).toContain("Reenviar e-mail");
@@ -41,7 +41,9 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("sendExistingCustomerSignupLink");
     expect(signupPageSource).toContain("precheckFreeTrialSignup({");
     expect(signupPageSource).toContain("planCode,");
-    expect(signupPageSource).toContain("buildFreeTrialEmailRedirectTo({ establishmentName, planCode })");
+    expect(signupPageSource).toContain("buildSignupEmailRedirectTo({");
+    expect(signupPageSource).toContain("existingCustomer: true");
+    expect(signupPageSource).toContain("params.set('existingCustomer', '1')");
     expect(signupPageSource).toContain("planKey: selectedPlanKey");
     expect(signupPageSource).toContain("searchParams.get('establishmentName')");
     expect(signupPageSource).toContain("setFinishedFlow('confirm-email')");
@@ -63,7 +65,7 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("searchParams.get('planCode')");
     expect(signupPageSource).toContain("findPlanKeyByCode");
     expect(signupPageSource).toContain("planCodeFromMetadata");
-    expect(signupPageSource).toContain("[selectedPlanKey]");
+    expect(signupPageSource).toContain("[selectedPlan, selectedPlanKey]");
     expect(signupPageSource).not.toContain("const planKey = selectedPlan?.key || 'free-trial'");
   });
 
