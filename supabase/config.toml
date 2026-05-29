@@ -410,6 +410,16 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/signup-status/index.ts"
 
+[functions.billing-start-plan-change]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-start-plan-change/index.ts"
+
+[functions.billing-finalize-plan-change]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-finalize-plan-change/index.ts"
+
 [functions.asaas-webhook]
 enabled = true
 verify_jwt = false

@@ -19,6 +19,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
@@ -28,6 +35,13 @@ import NotificationsDashboard from '@/components/restaurant/NotificationsDashboa
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  finalizeBillingPlanChange,
+  getBillingPlanName,
+  getCurrentBillingSubscription,
+  getUpgradeablePlans,
+  startBillingPlanChange,
+} from '@/lib/billing';
 import { finalizeSignup, getSignupStatus, startPaidSignupCheckout } from '@/lib/signup';
 import { subscriptionPlans } from '@/lib/subscriptionPlans';
 
@@ -47,6 +61,19 @@ const formatPlanName = (planCode) => {
 
   const plan = subscriptionPlans.find((candidate) => candidate.code === normalizedPlanCode);
   return plan?.name || normalizedPlanCode.replace(/_/g, ' ');
+};
+
+const formatCurrencyBRL = (value) =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  }).format(Number(value || 0));
+
+const loadBillingData = async (projectId) => {
+  const subscription = await getCurrentBillingSubscription(projectId);
+  const upgradeablePlans = await getUpgradeablePlans(subscription);
+  return { subscription, upgradeablePlans };
 };
 
 const getPaidSignupCardCopy = (signupState) => {
@@ -231,8 +258,17 @@ const RestaurantDashboard = () => {
   const [signupStatusLoading, setSignupStatusLoading] = useState(false);
   const [signupStatusError, setSignupStatusError] = useState('');
   const [signupActionLoading, setSignupActionLoading] = useState(false);
+  const [billingSubscription, setBillingSubscription] = useState(null);
+  const [upgradeablePlans, setUpgradeablePlans] = useState([]);
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingError, setBillingError] = useState('');
+  const [planUpgradeOpen, setPlanUpgradeOpen] = useState(false);
+  const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
   const userMetadataPlanCode = user?.user_metadata?.plan_code || '';
   const userMetadataEstablishmentName = user?.user_metadata?.establishment_name || '';
+  const billingPlanName = billingLoading && !billingSubscription
+    ? 'Carregando plano'
+    : getBillingPlanName(billingSubscription);
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -258,6 +294,127 @@ const RestaurantDashboard = () => {
       } catch (_) {}
     }
   }, [activeTab]);
+
+  const refreshBillingState = useCallback(async () => {
+    if (!projectId) {
+      setBillingSubscription(null);
+      setUpgradeablePlans([]);
+      setBillingError('');
+      setBillingLoading(false);
+      return null;
+    }
+
+    setBillingLoading(true);
+    setBillingError('');
+
+    try {
+      const data = await loadBillingData(projectId);
+      setBillingSubscription(data.subscription);
+      setUpgradeablePlans(data.upgradeablePlans);
+      return data.subscription;
+    } catch (error) {
+      const message = error?.message || 'Nao foi possivel carregar o plano atual.';
+      setBillingSubscription(null);
+      setUpgradeablePlans([]);
+      setBillingError(message);
+      return null;
+    } finally {
+      setBillingLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setBillingSubscription(null);
+      setUpgradeablePlans([]);
+      setBillingError('');
+      setBillingLoading(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBillingLoading(true);
+    setBillingError('');
+
+    loadBillingData(projectId)
+      .then((data) => {
+        if (cancelled) return;
+        setBillingSubscription(data.subscription);
+        setUpgradeablePlans(data.upgradeablePlans);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setBillingSubscription(null);
+        setUpgradeablePlans([]);
+        setBillingError(error?.message || 'Nao foi possivel carregar o plano atual.');
+      })
+      .finally(() => {
+        if (!cancelled) setBillingLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || typeof window === 'undefined') return undefined;
+
+    const params = new URLSearchParams(window.location.search || '');
+    const upgradeStatus = params.get('upgrade');
+    const planChangeSessionId = String(params.get('planChangeSessionId') || '').trim();
+
+    if (!upgradeStatus || !planChangeSessionId) return undefined;
+
+    const clearUpgradeParams = () => {
+      const nextParams = new URLSearchParams(window.location.search || '');
+      nextParams.delete('upgrade');
+      nextParams.delete('planChangeSessionId');
+      const nextSearch = nextParams.toString();
+      const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    };
+
+    if (upgradeStatus !== 'success') {
+      toast({
+        title: upgradeStatus === 'expired' ? 'Checkout expirado' : 'Upgrade nao concluido',
+        description: 'Voce pode abrir a selecao de planos e tentar novamente.',
+        variant: upgradeStatus === 'expired' ? 'destructive' : undefined,
+      });
+      clearUpgradeParams();
+      return undefined;
+    }
+
+    let cancelled = false;
+    setBillingActionPlanCode('finalize');
+
+    finalizeBillingPlanChange({ planChangeSessionId })
+      .then(async () => {
+        if (cancelled) return;
+        await refreshBillingState();
+        toast({
+          title: 'Plano atualizado',
+          description: 'Seu upgrade foi aplicado ao projeto.',
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setBillingError(error?.message || 'Nao foi possivel finalizar o upgrade.');
+        toast({
+          title: 'Upgrade pendente',
+          description: error?.message || 'Aguarde a confirmacao do pagamento e atualize o painel.',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setBillingActionPlanCode('');
+        clearUpgradeParams();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, refreshBillingState, toast]);
 
   useEffect(() => {
     if (projectId || !user?.id) {
@@ -395,6 +552,42 @@ const RestaurantDashboard = () => {
     }
   }, [resolvePendingSignupData, signupActionLoading, signupStatus?.checkoutSessionId, toast]);
 
+  const handleStartPlanUpgrade = useCallback(async (plan) => {
+    if (!projectId || !plan?.code || billingActionPlanCode) return;
+
+    setBillingActionPlanCode(plan.code);
+    setBillingError('');
+
+    try {
+      const result = await startBillingPlanChange({
+        projectId,
+        planCode: plan.code,
+      });
+
+      if (result?.checkout_url) {
+        window.location.assign(result.checkout_url);
+        return;
+      }
+
+      await refreshBillingState();
+      setPlanUpgradeOpen(false);
+      toast({
+        title: 'Plano atualizado',
+        description: `Seu projeto agora usa o plano ${plan.name}.`,
+      });
+    } catch (error) {
+      const message = error?.message || 'Nao foi possivel iniciar o upgrade.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao fazer upgrade',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingActionPlanCode('');
+    }
+  }, [billingActionPlanCode, projectId, refreshBillingState, toast]);
+
   async function handleSignOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -438,7 +631,17 @@ const RestaurantDashboard = () => {
               </div>
 
               <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">{user?.email}</span>
+                <div className="min-w-0 text-right">
+                  <p className="truncate text-sm text-gray-600">{user?.email}</p>
+                  <button
+                    type="button"
+                    onClick={() => setPlanUpgradeOpen(true)}
+                    disabled={!projectId || billingLoading}
+                    className="max-w-[180px] truncate text-xs font-medium text-purple-600 transition-colors hover:text-purple-800 disabled:cursor-default disabled:text-purple-400"
+                  >
+                    {billingPlanName}
+                  </button>
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
@@ -457,6 +660,74 @@ const RestaurantDashboard = () => {
             </div>
           </div>
         </nav>
+
+        <Dialog open={planUpgradeOpen} onOpenChange={setPlanUpgradeOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Plano atual</DialogTitle>
+              <DialogDescription>
+                {billingSubscription
+                  ? `${billingPlanName} - ${formatCurrencyBRL(billingSubscription.basePriceCents / 100)}/mes`
+                  : 'Carregando dados do plano.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {billingError && (
+                <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+                  <span>{billingError}</span>
+                </div>
+              )}
+
+              {billingLoading ? (
+                <div className="flex items-center gap-2 rounded-md border border-purple-100 bg-purple-50 p-4 text-sm text-purple-700">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando opcoes de upgrade
+                </div>
+              ) : upgradeablePlans.length > 0 ? (
+                <div className="space-y-3">
+                  {upgradeablePlans.map((plan) => {
+                    const isLoading = billingActionPlanCode === plan.code;
+                    return (
+                      <div
+                        key={plan.code}
+                        className="flex flex-col gap-3 rounded-md border border-purple-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900">{plan.name}</p>
+                          <p className="mt-1 text-sm text-gray-600">
+                            {formatCurrencyBRL(plan.price)}/mes
+                          </p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {plan.limits.passInstalls} instalacoes de passe e {plan.limits.notifications} notificacoes inclusas
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => handleStartPlanUpgrade(plan)}
+                          disabled={Boolean(billingActionPlanCode)}
+                          className="gap-2 sm:w-auto"
+                        >
+                          {isLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <CreditCard className="h-4 w-4" />
+                          )}
+                          Fazer upgrade
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  Nao ha upgrades disponiveis para o plano atual.
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
           {!projectId ? (
