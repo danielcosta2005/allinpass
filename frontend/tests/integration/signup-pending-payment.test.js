@@ -30,6 +30,11 @@ describe("signup paid checkout recovery", () => {
 
     expect(signupClientSource).toContain("getSignupStatus");
     expect(signupClientSource).toContain("signup-status");
+    expect(signupClientSource).toContain("pendingSignupStatusRequest");
+    expect(signupClientSource).toContain("completedSignupStatusRequest");
+    expect(signupClientSource).toContain("SIGNUP_STATUS_DEDUPE_TTL_MS");
+    expect(signupClientSource).toContain("force = false");
+    expect(signupClientSource).toContain("cacheKey = ''");
   });
 
   test("/org replaces the generic no-project state with paid signup recovery actions", () => {

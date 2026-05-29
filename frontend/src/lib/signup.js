@@ -1,8 +1,11 @@
 import { supabase } from '@/lib/supabaseClient';
 
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
+const SIGNUP_STATUS_DEDUPE_TTL_MS = 5_000;
 const pendingFinalizeRequests = new Map();
 const completedFinalizeRequests = new Map();
+const pendingSignupStatusRequests = new Map();
+const completedSignupStatusRequests = new Map();
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY = '__allinpass_existing_customer_signup_context_v1';
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -236,20 +239,19 @@ export async function startPaidSignupCheckout({
   return data;
 }
 
-export async function getSignupStatus() {
-  const { data, error } = await supabase.functions.invoke('signup-status', {
-    body: {},
-  });
+function readCompletedSignupStatusRequest(requestKey) {
+  const completedSignupStatusRequest = completedSignupStatusRequests.get(requestKey);
+  if (!completedSignupStatusRequest) return null;
 
-  if (error) {
-    const parsedError = await readFunctionError(error);
-    throw buildSignupError(parsedError.message, parsedError.code);
+  if (completedSignupStatusRequest.expiresAt <= Date.now()) {
+    completedSignupStatusRequests.delete(requestKey);
+    return null;
   }
 
-  if (data?.error) {
-    throw buildSignupError(data.error, data.code || null);
-  }
+  return completedSignupStatusRequest.data;
+}
 
+function normalizeSignupStatusResponse(data) {
   return {
     success: Boolean(data?.success),
     hasProject: Boolean(data?.has_project),
@@ -267,6 +269,53 @@ export async function getSignupStatus() {
     currency: data?.currency || null,
     updatedAt: data?.updated_at || null,
   };
+}
+
+export async function getSignupStatus({ force = false, cacheKey = '' } = {}) {
+  const requestKey = String(cacheKey || 'current-user');
+
+  if (!force) {
+    const completed = readCompletedSignupStatusRequest(requestKey);
+    if (completed) return completed;
+
+    const pendingSignupStatusRequest = pendingSignupStatusRequests.get(requestKey);
+    if (pendingSignupStatusRequest) {
+      return pendingSignupStatusRequest;
+    }
+  }
+
+  const request = (async () => {
+    const { data, error } = await supabase.functions.invoke('signup-status', {
+      body: {},
+    });
+
+    if (error) {
+      const parsedError = await readFunctionError(error);
+      throw buildSignupError(parsedError.message, parsedError.code);
+    }
+
+    if (data?.error) {
+      throw buildSignupError(data.error, data.code || null);
+    }
+
+    const normalized = normalizeSignupStatusResponse(data);
+    completedSignupStatusRequests.set(requestKey, {
+      data: normalized,
+      expiresAt: Date.now() + SIGNUP_STATUS_DEDUPE_TTL_MS,
+    });
+
+    return normalized;
+  })();
+
+  pendingSignupStatusRequests.set(requestKey, request);
+
+  try {
+    return await request;
+  } finally {
+    if (pendingSignupStatusRequests.get(requestKey) === request) {
+      pendingSignupStatusRequests.delete(requestKey);
+    }
+  }
 }
 
 export async function sendExistingCustomerSignupLink({

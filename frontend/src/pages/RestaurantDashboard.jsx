@@ -271,7 +271,7 @@ const RestaurantDashboard = () => {
     setSignupStatusLoading(true);
     setSignupStatusError('');
 
-    getSignupStatus()
+    getSignupStatus({ cacheKey: user.id })
       .then((status) => {
         if (cancelled) return;
         setSignupStatus(status);
@@ -297,7 +297,7 @@ const RestaurantDashboard = () => {
     setSignupStatusError('');
 
     try {
-      const status = await getSignupStatus();
+      const status = await getSignupStatus({ force: true, cacheKey: user.id });
       setSignupStatus(status);
     } catch (error) {
       setSignupStatus(null);
