@@ -147,6 +147,18 @@ async function callPush(
   };
 }
 
+async function invalidatePkpassCache(
+  sbAdmin: any,
+  passId: string,
+  passToken: string,
+) {
+  const pkPath = `issued_users/${passId}/${passToken}.pkpass`;
+  const { error } = await sbAdmin.storage.from("pass-assets").remove([pkPath]);
+  if (error) {
+    throw new Error(`Falha ao invalidar cache Apple (${pkPath}): ${error.message}`);
+  }
+}
+
 serve(async (req: Request) => {
   const origin = req.headers.get("Origin") || "*";
 
@@ -391,6 +403,19 @@ serve(async (req: Request) => {
       return status === "installed";
     });
 
+    const openedAppleRows = (userPassRows ?? []).filter((row: any) => {
+      const status = cleanString(row.install_status)?.toLowerCase();
+      const platform = cleanString(row.install_platform)?.toLowerCase();
+      // During claim flow, Apple rows may still be "opened" without install_platform.
+      return status === "opened" && platform !== "google";
+    });
+
+    const openedAppleTokens = [...new Set(
+      openedAppleRows
+        .map((row: any) => cleanString(row.pass_token))
+        .filter(Boolean) as string[],
+    )];
+
     const appleTokens = [...new Set(
       installedRows
         .filter((row: any) => cleanString(row.install_platform)?.toLowerCase() === "apple")
@@ -422,6 +447,32 @@ serve(async (req: Request) => {
       }
     }
 
+    let appleCacheInvalidated = 0;
+    let appleCacheInvalidationFailed = 0;
+    for (let i = 0; i < openedAppleTokens.length; i += PUSH_CONCURRENCY) {
+      const chunk = openedAppleTokens.slice(i, i + PUSH_CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map(async (token) => {
+          try {
+            await invalidatePkpassCache(sbAdmin, passId, token);
+            return { ok: true };
+          } catch (error) {
+            console.error("[update-pass] pkpass cache invalidation failed", {
+              passId,
+              tokenPrefix: token.slice(0, 8),
+              message: String((error as any)?.message ?? error),
+            });
+            return { ok: false };
+          }
+        }),
+      );
+
+      for (const result of results) {
+        if (result.ok) appleCacheInvalidated += 1;
+        else appleCacheInvalidationFailed += 1;
+      }
+    }
+
     for (let i = 0; i < googleTokens.length; i += PUSH_CONCURRENCY) {
       const chunk = googleTokens.slice(i, i + PUSH_CONCURRENCY);
       const results = await Promise.all(
@@ -442,6 +493,11 @@ serve(async (req: Request) => {
           total_tokens: appleTokens.length + googleTokens.length,
           apple: { success: appleSuccess, failed: appleFailed },
           google: { success: googleSuccess, failed: googleFailed },
+        },
+        cache_invalidation: {
+          apple_opened_tokens: openedAppleTokens.length,
+          apple_pkpass_invalidated: appleCacheInvalidated,
+          apple_pkpass_invalidation_failed: appleCacheInvalidationFailed,
         },
       },
       200,

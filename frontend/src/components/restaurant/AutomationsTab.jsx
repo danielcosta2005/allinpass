@@ -71,6 +71,20 @@ function Toggle({ checked, onChange, disabled }) {
   );
 }
 
+function AutomationStatusLight({ active }) {
+  return (
+    <span
+      aria-label={active ? "Automação ativa" : "Automação inativa"}
+      title={active ? "Automação ativa" : "Automação inativa"}
+      className={`inline-flex h-4 w-4 rounded-full ${
+        active
+          ? "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.95)] ring-2 ring-emerald-100"
+          : "bg-gray-300"
+      }`}
+    />
+  );
+}
+
 function FlowConnector() {
   return (
     <div className="flex items-center justify-center py-3">
@@ -93,7 +107,11 @@ function FlowConnector() {
   );
 }
 
-export default function AutomationsTab({ projectId }) {
+export default function AutomationsTab({
+  projectId,
+  isStaff = false,
+  canManageAutomations = !isStaff,
+}) {
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
   const functionsUrl =
     import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
@@ -112,6 +130,7 @@ export default function AutomationsTab({ projectId }) {
   const [message, setMessage] = useState(buildSuggestedMessage(TRIGGER_OPTIONS[0].id, TRIGGER_OPTIONS[0].defaultValue));
 
   const selectedTrigger = useMemo(() => optionById(triggerId), [triggerId]);
+  const isReadOnly = !canManageAutomations;
 
   async function getAuthHeader() {
     try {
@@ -154,7 +173,15 @@ export default function AutomationsTab({ projectId }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, supabaseAnonKey]);
 
+  useEffect(() => {
+    if (isReadOnly && isCreating) {
+      setIsCreating(false);
+    }
+  }, [isReadOnly, isCreating]);
+
   function startCreate() {
+    if (isReadOnly) return;
+
     const nextOption = TRIGGER_OPTIONS[0];
     setActiveBox("trigger");
     setTriggerId(nextOption.id);
@@ -189,6 +216,15 @@ export default function AutomationsTab({ projectId }) {
   }
 
   async function saveAutomation() {
+    if (isReadOnly) {
+      toast({
+        variant: "destructive",
+        title: "Acesso restrito",
+        description: "Este perfil pode apenas visualizar as automacoes.",
+      });
+      return;
+    }
+
     if (!projectId) {
       toast({
         variant: "destructive",
@@ -243,6 +279,7 @@ export default function AutomationsTab({ projectId }) {
   }
 
   async function toggleAutomation(automationId) {
+    if (isReadOnly) return;
     if (!supabaseAnonKey || !projectId) return;
     const target = automations.find((item) => item.id === automationId);
     if (!target) return;
@@ -288,13 +325,17 @@ export default function AutomationsTab({ projectId }) {
             <div>
               <h3 className="text-xl font-semibold text-gray-900">Automações</h3>
               <p className="mt-1 text-sm text-gray-600">
-                Crie regras para enviar notificações automaticamente com base no comportamento dos passes.
+                {isReadOnly
+                  ? "Acompanhe as automações configuradas para este projeto."
+                  : "Crie regras para enviar notificações automaticamente com base no comportamento dos passes."}
               </p>
             </div>
-            <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
-              <Plus className="h-4 w-4" />
-              Criar
-            </Button>
+            {!isReadOnly && (
+              <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
+                <Plus className="h-4 w-4" />
+                Criar
+              </Button>
+            )}
           </div>
         </div>
 
@@ -307,10 +348,12 @@ export default function AutomationsTab({ projectId }) {
           <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
             <Bot className="mx-auto h-10 w-10 text-gray-400" />
             <p className="mt-4 text-base font-medium text-gray-800">Voce nao possui automações</p>
-            <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
-              <Plus className="h-4 w-4" />
-              Criar
-            </Button>
+            {!isReadOnly && (
+              <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
+                <Plus className="h-4 w-4" />
+                Criar
+              </Button>
+            )}
           </div>
         ) : (
           <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
@@ -319,7 +362,7 @@ export default function AutomationsTab({ projectId }) {
                 <tr className="border-b text-left text-gray-600">
                   <th className="px-4 py-3">Trigger</th>
                   <th className="px-4 py-3">Mensagem</th>
-                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,17 +376,20 @@ export default function AutomationsTab({ projectId }) {
                     </td>
                     <td className="px-4 py-3 text-gray-700">{automation.message}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <Toggle
-                          checked={automation.status === "on"}
-                          disabled={updatingStatusId === automation.id}
-                          onChange={() => toggleAutomation(automation.id)}
-                        />
-                        <span className="text-xs font-medium text-gray-600">
-                          {automation.status === "on" ? "On" : "Off"}
-                        </span>
-                        {updatingStatusId === automation.id && (
-                          <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                      <div className="flex items-center justify-center gap-3">
+                        {isReadOnly ? (
+                          <AutomationStatusLight active={automation.status === "on"} />
+                        ) : (
+                          <Toggle
+                            checked={automation.status === "on"}
+                            disabled={updatingStatusId === automation.id}
+                            onChange={() => toggleAutomation(automation.id)}
+                          />
+                        )}
+                        {canManageAutomations && (
+                          <span className="text-xs font-medium text-gray-600">
+                            {automation.status === "on" ? "On" : "Off"}
+                          </span>
                         )}
                       </div>
                     </td>
