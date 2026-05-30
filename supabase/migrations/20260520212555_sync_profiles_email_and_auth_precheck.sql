@@ -10,7 +10,6 @@ where p.id = u.id
   and (p.email is null or btrim(p.email) = '')
   and u.email is not null
   and btrim(u.email) <> '';
-
 -- 2) Future auth-created profiles should carry the user's email immediately.
 create or replace function public.handle_new_user()
 returns trigger
@@ -29,7 +28,6 @@ begin
   return new;
 end;
 $$;
-
 -- 3) signup-precheck must not depend on public.profiles.email. auth.users is
 -- the authoritative source for whether an email already owns an Auth account.
 create or replace function public.signup_precheck_auth_email_exists(p_email text)
@@ -48,7 +46,6 @@ as $$
       and u.deleted_at is null
   );
 $$;
-
 revoke all on function public.signup_precheck_auth_email_exists(text) from public;
 revoke all on function public.signup_precheck_auth_email_exists(text) from anon;
 revoke all on function public.signup_precheck_auth_email_exists(text) from authenticated;

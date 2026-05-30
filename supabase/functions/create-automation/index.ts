@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+// branch
 
 type AutomationType = "points_wallet" | "expiring_soon" | "days_without_visit";
 type AutomationStatus = "on" | "off";
@@ -93,6 +94,31 @@ serve(async (req) => {
 
     if (!isValidStatus(status)) {
       return jsonResponse({ error: "Invalid status" }, 400);
+    }
+
+    const { data: membership, error: membershipError } = await supabase
+      .from("project_members")
+      .select("role")
+      .eq("project_id", projectId)
+      .eq("user_id", user.id)
+      .eq("role", "owner")
+      .maybeSingle();
+
+    if (membershipError) {
+      return jsonResponse(
+        {
+          error: "Failed to validate project role",
+          details: membershipError.message,
+        },
+        500,
+      );
+    }
+
+    if (!membership) {
+      return jsonResponse(
+        { error: "Forbidden: only project owners can create automations" },
+        403,
+      );
     }
 
     const { data, error } = await supabase

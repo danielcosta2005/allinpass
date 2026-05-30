@@ -18,25 +18,19 @@ create table if not exists public.signup_existing_customer_intents (
   constraint signup_existing_customer_intents_establishment_name_check
     check (btrim(establishment_name) <> '')
 );
-
 comment on table public.signup_existing_customer_intents is
   'Pending Free Trial signup intent for existing customer Auth accounts.';
-
 create index if not exists signup_existing_customer_intents_status_expires_at_idx
   on public.signup_existing_customer_intents (status, expires_at);
-
 create index if not exists signup_existing_customer_intents_user_id_idx
   on public.signup_existing_customer_intents (user_id)
   where user_id is not null;
-
 drop trigger if exists trg_signup_existing_customer_intents_updated_at
   on public.signup_existing_customer_intents;
 create trigger trg_signup_existing_customer_intents_updated_at
 before update on public.signup_existing_customer_intents
 for each row execute function public.set_updated_at();
-
 alter table public.signup_existing_customer_intents enable row level security;
-
 revoke all on table public.signup_existing_customer_intents from anon;
 revoke all on table public.signup_existing_customer_intents from authenticated;
 grant select, insert, update on table public.signup_existing_customer_intents to service_role;

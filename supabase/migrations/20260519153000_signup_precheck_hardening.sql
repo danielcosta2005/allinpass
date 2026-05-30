@@ -13,21 +13,16 @@ create table if not exists public.signup_precheck_rate_limits (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create index if not exists signup_precheck_rate_limits_last_seen_idx
   on public.signup_precheck_rate_limits (last_seen_at desc);
-
 create index if not exists signup_precheck_rate_limits_blocked_until_idx
   on public.signup_precheck_rate_limits (blocked_until)
   where blocked_until is not null;
-
 drop trigger if exists trg_signup_precheck_rate_limits_updated_at on public.signup_precheck_rate_limits;
 create trigger trg_signup_precheck_rate_limits_updated_at
 before update on public.signup_precheck_rate_limits
 for each row execute function public.set_updated_at();
-
 alter table public.signup_precheck_rate_limits enable row level security;
-
 drop policy if exists signup_precheck_rate_limits_service_role_only on public.signup_precheck_rate_limits;
 create policy signup_precheck_rate_limits_service_role_only
 on public.signup_precheck_rate_limits
@@ -35,7 +30,6 @@ for all
 to service_role
 using (true)
 with check (true);
-
 create or replace function public.consume_signup_precheck_rate_limit(
   p_key_hash text,
   p_email_hash text,
@@ -156,7 +150,5 @@ begin
   select true, 0, v_next_attempts, null::timestamptz;
 end;
 $$;
-
 grant execute on function public.consume_signup_precheck_rate_limit(text, text, text, integer, integer, integer)
 to service_role;
-

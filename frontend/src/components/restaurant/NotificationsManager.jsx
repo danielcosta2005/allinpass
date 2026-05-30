@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Loader2,
   RefreshCcw,
-  Ban,
 } from "lucide-react";
 
 // Se você ainda NÃO tem os componentes Card no seu projeto, troque por <div> como fallback.
@@ -50,7 +49,9 @@ function BoxContent({ className, children }) {
   return <div className={cn("p-6 pt-0", className)}>{children}</div>;
 }
 
-export default function NotificationsManager({ projectId }) {
+export default function NotificationsManager({
+  projectId,
+}) {
   const { toast } = useToast();
 
   const [loadingKpis, setLoadingKpis] = useState(true);
@@ -62,8 +63,6 @@ export default function NotificationsManager({ projectId }) {
   const [expandedId, setExpandedId] = useState(null);
   const [jobsByCampaign, setJobsByCampaign] = useState({});
   const [loadingJobsId, setLoadingJobsId] = useState(null);
-
-  const [cancelingId, setCancelingId] = useState(null);
 
   // =========================
   // Derived KPIs (usa coluna gerada do banco quando existe)
@@ -191,136 +190,6 @@ export default function NotificationsManager({ projectId }) {
       await fetchJobsForCampaign(campaignId); 
     }
   }
-
-  // =========================
-  // Cancel campaign: atualiza notification_jobs -> canceled
-  // =========================
- async function cancelCampaign(campaign) {
-  if (!projectId) return;
-
-  const campaignId = campaign.id;
-
-  // Regra: "ainda não foi enviada" -> sent_at null
-  if (campaign.sent_at) {
-    toast({
-      title: "Campanha já enviada",
-      description: "Não é possível cancelar uma campanha que já foi enviada.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  setCancelingId(campaignId);
-
-  // 1) Diagnóstico: quantos jobs existem e quais status (ajuda a debugar filtros/RLS)
-  const { data: jobsSnapshot, error: snapErr } = await supabase
-    .from("notification_jobs")
-    .select("id,status", { count: "exact" })
-    .eq("project_id", projectId)
-    .eq("notification_id", campaignId);
-
-  if (snapErr) {
-    setCancelingId(null);
-    toast({
-      title: "Erro ao inspecionar jobs",
-      description: snapErr.message,
-      variant: "destructive",
-    });
-    return;
-  }
-
-  const totalJobs = jobsSnapshot?.length ?? 0;
-
-  // Se não tem jobs, provavelmente notification_id não está sendo preenchido (ou ainda não foram enfileirados)
-  if (totalJobs === 0) {
-    setCancelingId(null);
-    toast({
-      title: "Nada para cancelar",
-      description:
-        "Não encontrei jobs dessa campanha. Verifique se notification_jobs.notification_id está sendo preenchido com notifications.id (ou se a campanha ainda não gerou jobs).",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  // 2) Cancela SOMENTE jobs pendentes (evita mexer em sent/failed)
-  const cancelableStatuses = ["pending", "rate_limited"];
-  // Se você quiser permitir cancelar processing também:
-  // const cancelableStatuses = ["pending", "rate_limited", "processing"];
-
-  const { data: updatedRows, error: updErr, count: updatedCount } = await supabase
-    .from("notification_jobs")
-    .update({ status: "canceled" })
-    .eq("project_id", projectId)
-    .eq("notification_id", campaignId)
-    .in("status", cancelableStatuses)
-    .select("id,status", { count: "exact" }); // <- essencial pra saber se alterou
-
-  if (updErr) {
-    setCancelingId(null);
-    toast({
-      title: "Erro ao cancelar envios",
-      description: updErr.message,
-      variant: "destructive",
-    });
-    return;
-  }
-
-  const changed = updatedCount ?? (updatedRows?.length ?? 0);
-
-  // 3) Se não alterou nada, avisar o motivo provável
-  if (changed === 0) {
-    const statusCounts = jobsSnapshot.reduce((acc, j) => {
-      acc[j.status] = (acc[j.status] || 0) + 1;
-      return acc;
-    }, {});
-
-    setCancelingId(null);
-    toast({ 
-      title: "Nenhum job foi cancelado",
-      description:
-        `Encontrei ${totalJobs} jobs, mas 0 eram canceláveis. ` +
-        `Status atuais: ${JSON.stringify(statusCounts)}. ` +
-        `Pode ser filtro de status (ex.: estão 'processing') ou RLS bloqueando update.`,
-      variant: "destructive",
-    });
-    return;
-  }
-
-  // 4) Marca a CAMPANHA como canceled também (na tabela notifications)
-  const { error: notifErr } = await supabase
-    .from("notifications")
-    .update({ status: "canceled" })
-    .eq("project_id", projectId)
-    .eq("id", campaignId);
-
-  setCancelingId(null);
-
-  if (notifErr) {
-    toast({
-      title: "Envios cancelados, mas falhou atualizar campanha",
-      description: notifErr.message,
-      variant: "destructive",
-    });
-    // Mesmo com erro aqui, os jobs já foram cancelados, então apenas recarrega UI.
-    if (expandedId === campaignId) {
-      await fetchJobsForCampaign(campaignId);
-    }
-    await fetchCampaigns();
-    return;
-  }
-
-  toast({
-    title: "Campanha cancelada",
-    description: `${changed} envios pendentes foram marcados como canceled e a campanha foi marcada como canceled.`,
-  });
-
-  // 5) Recarrega UI
-  if (expandedId === campaignId) {
-    await fetchJobsForCampaign(campaignId);
-  }
-  await fetchCampaigns();
-}
 
   // =========================
   // Effects
@@ -466,7 +335,6 @@ export default function NotificationsManager({ projectId }) {
                     <th className="py-2 pr-2">Criada em</th>
                     <th className="py-2 pr-2">Agendada para</th>
                     <th className="py-2 pr-2">Enviada em</th>
-                    <th className="py-2 pr-2 text-right">Ações</th>
                   </tr>
                 </thead>
 
@@ -474,7 +342,6 @@ export default function NotificationsManager({ projectId }) {
                   {campaigns.map((c) => {
                     const isExpanded = expandedId === c.id;
                     const jobs = jobsByCampaign[c.id] || [];
-                    const isCancelable = !c.sent_at; // regra base
 
                     return (
                       <React.Fragment key={c.id}>
@@ -498,26 +365,11 @@ export default function NotificationsManager({ projectId }) {
                           <td className="py-2 pr-2">{formatDateTimeBR(c.scheduled_for)}</td>
                           <td className="py-2 pr-2">{formatDateTimeBR(c.sent_at)}</td>
 
-                          <td className="py-2 pr-2 text-right">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={!isCancelable || cancelingId === c.id}
-                              onClick={() => cancelCampaign(c)}
-                            >
-                              {cancelingId === c.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                              ) : (
-                                <Ban className="w-4 h-4 mr-2" />
-                              )}
-                              Cancelar
-                            </Button>
-                          </td>
                         </tr>
 
                         {isExpanded && (
                           <tr className="border-b">
-                            <td colSpan={7} className="py-3">
+                            <td colSpan={6} className="py-3">
                               <motion.div
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}

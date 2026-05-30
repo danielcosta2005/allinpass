@@ -15,19 +15,14 @@ create table if not exists public.signup_finalizations (
   updated_at timestamptz not null default now(),
   completed_at timestamptz
 );
-
 comment on table public.signup_finalizations is
   'Idempotency guard for signup-finalize, keyed by auth.users.id.';
-
 create index if not exists signup_finalizations_status_updated_at_idx
   on public.signup_finalizations (status, updated_at);
-
 create index if not exists signup_finalizations_project_id_idx
   on public.signup_finalizations (project_id)
   where project_id is not null;
-
 alter table public.signup_finalizations enable row level security;
-
 revoke all on table public.signup_finalizations from anon;
 revoke all on table public.signup_finalizations from authenticated;
 grant select, insert, update on table public.signup_finalizations to service_role;

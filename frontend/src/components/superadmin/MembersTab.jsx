@@ -26,6 +26,11 @@ import {
 import { listMembers } from '@/lib/api';
 import { adminCreateMember, adminUpdateMember, adminRemoveMember } from '@/lib/admin';
 
+const memberRoleLabels = {
+  owner: 'Gestor',
+  staff: 'Funcionário',
+};
+
 const MembersTab = ({ projectId }) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -176,9 +181,10 @@ const MembersTab = ({ projectId }) => {
               </thead>
               <tbody>
                 {members.map(member => (
-                  <tr key={member.user_id} className="bg-white border-b">
+                    
+                    <tr key={member.user_id} className="bg-white border-b">
                     <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
-                    <td className="px-6 py-4 capitalize">{member.role}</td>
+                    <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
                     <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
                     <td className="px-6 py-4 text-right">
                       <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}><Edit className="h-4 w-4 text-blue-500" /></Button>
@@ -202,7 +208,7 @@ const MembersTab = ({ projectId }) => {
             <div className="space-y-2"><Label htmlFor="password">Senha (Opcional)</Label><Input id="password" type="password" placeholder="Deixe em branco para enviar convite" value={createForm.password} onChange={handleCreateFormChange} disabled={isSubmitting}/></div>
             <div className="space-y-2"><Label htmlFor="role">Papel</Label>
               <select id="role" value={createForm.role} onChange={handleCreateFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Owner</option><option value="staff">Staff</option>
+                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
               </select>
             </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Criar</Button></DialogFooter>
@@ -217,7 +223,7 @@ const MembersTab = ({ projectId }) => {
             <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
             <div className="space-y-2"><Label htmlFor="role">Papel</Label>
               <select id="role" value={editForm.role} onChange={handleEditFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Owner</option><option value="staff">Staff</option>
+                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
               </select>
             </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Salvar</Button></DialogFooter>

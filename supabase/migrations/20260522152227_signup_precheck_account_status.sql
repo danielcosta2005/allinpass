@@ -31,11 +31,9 @@ as $$
     'available'
   );
 $$;
-
 revoke all on function public.signup_precheck_auth_account_status(text) from public;
 revoke all on function public.signup_precheck_auth_account_status(text) from anon;
 revoke all on function public.signup_precheck_auth_account_status(text) from authenticated;
 grant execute on function public.signup_precheck_auth_account_status(text) to service_role;
-
 -- Remove a RPC antiga: o precheck agora usa classificacao por role.
 drop function if exists public.signup_precheck_auth_email_exists(text);
