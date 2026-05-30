@@ -1,238 +1,43 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import {
-  AlertCircle,
-  BarChart3,
-  Bell,
-  CheckCircle2,
-  CreditCard,
-  ExternalLink,
-  Gift,
-  History,
-  Loader2,
-  LogOut,
-  MessageCircle,
-  RefreshCw,
-  ScanLine,
-  Users,
-  Wallet,
-} from 'lucide-react';
+import { LogOut, ScanLine, BarChart3, Wallet, Users, History, Bell, Loader2, MessageCircle, Gift } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
+import MembersTab from '@/components/superadmin/MembersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
-import { finalizeSignup, getSignupStatus, startPaidSignupCheckout } from '@/lib/signup';
-import { subscriptionPlans } from '@/lib/subscriptionPlans';
+import { supabase } from '@/lib/supabaseClient';
 
 const SUPPORT_MESSAGE = 'Olá, preciso de suporte no Allin Pass.';
 const SUPPORT_WHATSAPP_URL =
   import.meta.env.VITE_RESTAURANT_SUPPORT_WHATSAPP_URL ||
   `https://wa.me/?text=${encodeURIComponent(SUPPORT_MESSAGE)}`;
-
-const PAID_SIGNUP_RECOVERY_STATES = new Set([
-  'payment_pending',
-  'payment_retry_available',
-]);
-
-const formatPlanName = (planCode) => {
-  const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
-  if (!normalizedPlanCode) return 'plano selecionado';
-
-  const plan = subscriptionPlans.find((candidate) => candidate.code === normalizedPlanCode);
-  return plan?.name || normalizedPlanCode.replace(/_/g, ' ');
-};
-
-const getPaidSignupCardCopy = (signupState) => {
-  if (signupState === 'payment_confirmed_finalization_pending') {
-    return {
-      icon: CheckCircle2,
-      tone: 'emerald',
-      eyebrow: 'Pagamento confirmado',
-      title: 'Finalize a ativação da sua conta',
-      description:
-        'Recebemos a confirmação do pagamento. Falta apenas concluir a criação do projeto para liberar o painel.',
-      actionLabel: 'Finalizar ativação',
-    };
-  }
-
-  if (signupState === 'payment_retry_available') {
-    return {
-      icon: RefreshCw,
-      tone: 'amber',
-      eyebrow: 'Pagamento não concluído',
-      title: 'Retome sua assinatura',
-      description:
-        'Sua conta foi criada, mas o pagamento ainda não ativou o plano. Gere um novo checkout seguro para continuar.',
-      actionLabel: 'Continuar pagamento',
-    };
-  }
-
-  return {
-    icon: CreditCard,
-    tone: 'blue',
-    eyebrow: 'Pagamento pendente',
-    title: 'Conclua o pagamento para liberar o painel',
-    description:
-      'Sua conta já existe no AllinPass. Agora falta concluir o checkout seguro do Asaas para ativar o projeto.',
-    actionLabel: 'Continuar pagamento',
-  };
-};
-
-const getToneClasses = (tone) => {
-  if (tone === 'emerald') {
-    return {
-      wrapper: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-      icon: 'bg-emerald-600 text-white',
-      button: 'bg-emerald-600 hover:bg-emerald-700',
-    };
-  }
-
-  if (tone === 'amber') {
-    return {
-      wrapper: 'border-amber-200 bg-amber-50 text-amber-900',
-      icon: 'bg-amber-500 text-white',
-      button: 'bg-amber-500 hover:bg-amber-600',
-    };
-  }
-
-  return {
-    wrapper: 'border-blue-200 bg-blue-50 text-blue-900',
-    icon: 'bg-blue-600 text-white',
-    button: 'bg-blue-600 hover:bg-blue-700',
-  };
-};
-
-const NoProjectSignupState = ({
-  actionLoading,
-  onContinuePayment,
-  onFinalizeActivation,
-  onRefreshStatus,
-  status,
-  statusError,
-  statusLoading,
-}) => {
-  if (statusLoading) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-lg"
-      >
-        <Loader2 className="mx-auto h-8 w-8 animate-spin text-purple-600" />
-        <p className="mt-3 font-semibold text-slate-900">Verificando sua assinatura...</p>
-        <p className="mt-1 text-sm text-slate-600">Estamos conferindo se existe pagamento pendente para sua conta.</p>
-      </motion.div>
-    );
-  }
-
-  if (statusError) {
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-red-900 shadow-lg"
-      >
-        <AlertCircle className="mx-auto h-8 w-8" />
-        <p className="mt-3 font-bold">Não foi possível verificar sua assinatura</p>
-        <p className="mt-1 text-sm">{statusError}</p>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onRefreshStatus}
-          className="mt-5 border-red-200 bg-white text-red-700 hover:bg-red-100"
-        >
-          Tentar novamente
-        </Button>
-      </motion.div>
-    );
-  }
-
-  const signupState = status?.signupState || 'no_project_no_signup_context';
-  const canContinuePayment = PAID_SIGNUP_RECOVERY_STATES.has(signupState);
-  const canFinalizeActivation = signupState === 'payment_confirmed_finalization_pending';
-
-  if (canContinuePayment || canFinalizeActivation) {
-    const copy = getPaidSignupCardCopy(signupState);
-    const toneClasses = getToneClasses(copy.tone);
-    const Icon = copy.icon;
-    const planName = formatPlanName(status?.planCode);
-    const handleAction = canFinalizeActivation ? onFinalizeActivation : onContinuePayment;
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`rounded-2xl border p-6 shadow-lg ${toneClasses.wrapper}`}
-      >
-        <div className="flex flex-col gap-5 text-left md:flex-row md:items-start md:justify-between">
-          <div className="flex gap-4">
-            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${toneClasses.icon}`}>
-              <Icon className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em]">{copy.eyebrow}</p>
-              <h2 className="mt-2 text-2xl font-bold text-slate-950">{copy.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">{copy.description}</p>
-              <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700">
-                <span className="font-semibold text-slate-950">Plano:</span> {planName}
-                {status?.checkoutStatus ? (
-                  <span className="ml-3">
-                    <span className="font-semibold text-slate-950">Status:</span> {status.checkoutStatus}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <Button
-            type="button"
-            onClick={handleAction}
-            disabled={actionLoading}
-            className={`min-w-[210px] gap-2 text-white ${toneClasses.button}`}
-          >
-            {actionLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : canFinalizeActivation ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <ExternalLink className="h-4 w-4" />
-            )}
-            {copy.actionLabel}
-          </Button>
-        </div>
-      </motion.div>
-    );
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="text-center bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-md shadow-lg"
-    >
-      <p className="font-bold">Atenção</p>
-      <p>Seu usuário não está associado a nenhum projeto, fale com um administrador.</p>
-    </motion.div>
-  );
-};
+const getProjectNameCacheKey = (projectId) => `restaurant_project_name:${projectId}`;
+const DASHBOARD_TABS = [
+  { value: 'kpis', label: 'KPIs', icon: BarChart3 },
+  { value: 'scanner', label: 'Scanner', icon: ScanLine },
+  { value: 'customers', label: 'Clientes', icon: Users },
+  { value: 'members', label: 'Membros', icon: Users },
+  { value: 'visits', label: 'Visitas', icon: History },
+  { value: 'notifications', label: 'Notificações', icon: Bell },
+  { value: 'rewards', label: 'Recompensas', icon: Gift },
+];
+const ALLOWED_TABS = new Set(DASHBOARD_TABS.map((tab) => tab.value));
 
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
-  const [signupStatus, setSignupStatus] = useState(null);
-  const [signupStatusLoading, setSignupStatusLoading] = useState(false);
-  const [signupStatusError, setSignupStatusError] = useState('');
-  const [signupActionLoading, setSignupActionLoading] = useState(false);
-  const userMetadataPlanCode = user?.user_metadata?.plan_code || '';
-  const userMetadataEstablishmentName = user?.user_metadata?.establishment_name || '';
+  const [projectName, setProjectName] = useState('');
+  const [isProjectNameLoading, setIsProjectNameLoading] = useState(false);
+  const projectDisplayName = String(projectName || '').trim();
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -250,8 +55,7 @@ const RestaurantDashboard = () => {
   };
 
   useEffect(() => {
-    const allowedTabs = new Set(['kpis', 'scanner', 'customers', 'visits', 'notifications', 'rewards']);
-    if (!allowedTabs.has(activeTab)) {
+    if (!ALLOWED_TABS.has(activeTab)) {
       setActiveTab('kpis');
       try {
         sessionStorage.setItem('restaurant_active_tab', 'kpis');
@@ -260,140 +64,63 @@ const RestaurantDashboard = () => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (projectId || !user?.id) {
-      setSignupStatus(null);
-      setSignupStatusError('');
-      setSignupStatusLoading(false);
-      return undefined;
-    }
-
     let cancelled = false;
-    setSignupStatusLoading(true);
-    setSignupStatusError('');
 
-    getSignupStatus({ cacheKey: user.id })
-      .then((status) => {
-        if (cancelled) return;
-        setSignupStatus(status);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setSignupStatus(null);
-        setSignupStatusError(error?.message || 'Não foi possível verificar o status da assinatura.');
-      })
-      .finally(() => {
-        if (!cancelled) setSignupStatusLoading(false);
-      });
+    const loadProjectName = async () => {
+      if (!projectId) {
+        setProjectName('');
+        setIsProjectNameLoading(false);
+        return;
+      }
+
+      const projectNameCacheKey = getProjectNameCacheKey(projectId);
+      let hasCachedProjectName = false;
+      try {
+        const cachedProjectName = String(sessionStorage.getItem(projectNameCacheKey) || '').trim();
+        if (cachedProjectName) {
+          setProjectName(cachedProjectName);
+          hasCachedProjectName = true;
+        } else {
+          setProjectName('');
+        }
+      } catch (_) {
+        setProjectName('');
+      }
+
+      setIsProjectNameLoading(!hasCachedProjectName);
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('name')
+        .eq('id', projectId)
+        .single();
+
+      if (cancelled) return;
+
+      if (error) {
+        console.error('[restaurant-dashboard] erro ao carregar nome do projeto', error);
+        setIsProjectNameLoading(false);
+        return;
+      }
+
+      const nextProjectName = String(data?.name || '').trim();
+      setProjectName(nextProjectName);
+      setIsProjectNameLoading(false);
+      try {
+        if (nextProjectName) {
+          sessionStorage.setItem(projectNameCacheKey, nextProjectName);
+        } else {
+          sessionStorage.removeItem(projectNameCacheKey);
+        }
+      } catch (_) {}
+    };
+
+    loadProjectName();
 
     return () => {
       cancelled = true;
     };
-  }, [projectId, user?.id]);
-
-  const handleRefreshSignupStatus = useCallback(async () => {
-    if (projectId || !user?.id) return;
-
-    setSignupStatusLoading(true);
-    setSignupStatusError('');
-
-    try {
-      const status = await getSignupStatus({ force: true, cacheKey: user.id });
-      setSignupStatus(status);
-    } catch (error) {
-      setSignupStatus(null);
-      setSignupStatusError(error?.message || 'Não foi possível verificar o status da assinatura.');
-    } finally {
-      setSignupStatusLoading(false);
-    }
-  }, [projectId, user?.id]);
-
-  const resolvePendingSignupData = useCallback(() => {
-    const planCode = String(
-      signupStatus?.planCode || userMetadataPlanCode || '',
-    ).trim().toLowerCase();
-    const establishmentName = String(
-      signupStatus?.establishmentName || userMetadataEstablishmentName || '',
-    ).trim();
-
-    return { planCode, establishmentName };
-  }, [
-    signupStatus?.establishmentName,
-    signupStatus?.planCode,
-    userMetadataEstablishmentName,
-    userMetadataPlanCode,
-  ]);
-
-  const handleContinuePayment = useCallback(async () => {
-    if (signupActionLoading) return;
-
-    const { planCode, establishmentName } = resolvePendingSignupData();
-    if (!planCode || planCode === 'free_trial' || !establishmentName) {
-      toast({
-        title: 'Não foi possível continuar',
-        description: 'Não encontramos os dados do plano pago para retomar o checkout.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setSignupActionLoading(true);
-
-    try {
-      const checkout = await startPaidSignupCheckout({ establishmentName, planCode });
-      window.location.assign(checkout.checkout_url);
-    } catch (error) {
-      const message = error?.message || 'Não foi possível iniciar o checkout.';
-      setSignupStatusError(message);
-      toast({
-        title: 'Erro ao abrir checkout',
-        description: message,
-        variant: 'destructive',
-      });
-      setSignupActionLoading(false);
-    }
-  }, [resolvePendingSignupData, signupActionLoading, toast]);
-
-  const handleFinalizeActivation = useCallback(async () => {
-    if (signupActionLoading) return;
-
-    const { planCode, establishmentName } = resolvePendingSignupData();
-    const checkoutSessionId = String(signupStatus?.checkoutSessionId || '').trim();
-
-    if (!planCode || planCode === 'free_trial' || !establishmentName || !checkoutSessionId) {
-      toast({
-        title: 'Não foi possível finalizar',
-        description: 'Não encontramos a confirmação de pagamento para ativar sua conta.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setSignupActionLoading(true);
-
-    try {
-      await finalizeSignup({
-        establishmentName,
-        planCode,
-        checkoutSessionId,
-        dedupeKey: `org-finalize:${planCode}:${checkoutSessionId}`,
-      });
-
-      toast({
-        title: 'Conta ativada',
-        description: 'Seu projeto foi criado. Vamos recarregar o painel.',
-      });
-      window.location.assign('/org');
-    } catch (error) {
-      const message = error?.message || 'Não foi possível finalizar a ativação.';
-      setSignupStatusError(message);
-      toast({
-        title: 'Erro ao finalizar ativação',
-        description: message,
-        variant: 'destructive',
-      });
-      setSignupActionLoading(false);
-    }
-  }, [resolvePendingSignupData, signupActionLoading, signupStatus?.checkoutSessionId, toast]);
+  }, [projectId]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -424,27 +151,27 @@ const RestaurantDashboard = () => {
       <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-purple-50 via-white to-indigo-50">
         <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center h-16">
-              <div className="flex items-center gap-3">
+            <div className="flex h-16 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="bg-gradient-to-br from-purple-600 to-indigo-600 p-2 rounded-xl">
                   <Wallet className="w-6 h-6 text-white" />
                 </div>
-                <div>
-                  <h1 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                <div className="min-w-0">
+                  <h1 className="truncate text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
                     Allin Pass
                   </h1>
-                  <p className="text-xs text-gray-600">Painel do Projeto</p>
+                  <p className="hidden text-xs text-gray-600 sm:block">Painel do Projeto</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-600">{user?.email}</span>
+              <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+                <span className="hidden max-w-[240px] truncate text-sm text-gray-600 sm:block">{user?.email}</span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleSignOut}
                   disabled={signingOut}
-                  className="gap-2"
+                  className="gap-2 whitespace-nowrap"
                 >
                   {signingOut ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -460,15 +187,14 @@ const RestaurantDashboard = () => {
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
           {!projectId ? (
-            <NoProjectSignupState
-              actionLoading={signupActionLoading}
-              onContinuePayment={handleContinuePayment}
-              onFinalizeActivation={handleFinalizeActivation}
-              onRefreshStatus={handleRefreshSignupStatus}
-              status={signupStatus}
-              statusError={signupStatusError}
-              statusLoading={signupStatusLoading}
-            />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 rounded-md shadow-lg"
+            >
+              <p className="font-bold">Atenção</p>
+              <p>Seu usuário não está associado a nenhum projeto. Fale com o superadministrador.</p>
+            </motion.div>
           ) : (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -476,32 +202,28 @@ const RestaurantDashboard = () => {
               transition={{ duration: 0.5 }}
             >
               <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-                <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
-                  <TabsTrigger value="kpis" className="gap-2">
-                    <BarChart3 className="w-4 h-4" />
-                    KPIs
-                  </TabsTrigger>
-                  
-                  <TabsTrigger value="scanner" className="gap-2">
-                    <ScanLine className="w-4 h-4" />
-                    Scanner
-                  </TabsTrigger>
-                  <TabsTrigger value="customers" className="gap-2">
-                    <Users className="w-4 h-4" />
-                    Clientes
-                  </TabsTrigger>
-                  <TabsTrigger value="visits" className="gap-2">
-                    <History className="w-4 h-4" />
-                    Visitas
-                  </TabsTrigger>
-                  <TabsTrigger value="notifications" className="gap-2">
-                    <Bell className="w-4 h-4" />
-                    Notificações
-                  </TabsTrigger>
-                  <TabsTrigger value="rewards" className="gap-2">
-                    <Gift className="w-4 h-4" />
-                    Recompensas
-                  </TabsTrigger>
+                <h2 className="min-h-[1.75rem] text-xl font-bold leading-tight text-purple-700 sm:min-h-[2rem] sm:text-2xl">
+                  {projectDisplayName ? (
+                    projectDisplayName
+                  ) : isProjectNameLoading ? (
+                    <span
+                      aria-label="Carregando nome do projeto"
+                      className="inline-block h-7 w-52 animate-pulse rounded-md bg-purple-100 align-middle sm:h-8 sm:w-64"
+                    />
+                  ) : (
+                    'Projeto'
+                  )}
+                </h2>
+                <TabsList
+                  aria-label="Navegação do painel do projeto"
+                  className="grid w-full grid-cols-2 gap-2 rounded-xl border border-slate-300 bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 xl:grid-cols-7"
+                >
+                  {DASHBOARD_TABS.map((tab) => (
+                    <TabsTrigger key={tab.value} value={tab.value} className="h-10 w-full gap-2 px-2 text-xs sm:px-3 sm:text-sm">
+                      <tab.icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{tab.label}</span>
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
 
                 <TabsContent value="kpis">
@@ -518,6 +240,9 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="customers">
                   <CustomersTab projectId={projectId} />
+                </TabsContent>
+                <TabsContent value="members">
+                  <MembersTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
@@ -549,4 +274,3 @@ const RestaurantDashboard = () => {
 };
 
 export default RestaurantDashboard;
-
