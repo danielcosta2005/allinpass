@@ -27,6 +27,23 @@ describe("signup confirmation UX", () => {
     expect(confirmEmailBlock).not.toContain("Voltar aos planos");
   });
 
+  test("login confirmation resend does not force the free trial signup redirect", () => {
+    const loginSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/Login.jsx"),
+      "utf8"
+    );
+    const resendStart = loginSource.indexOf("const handleResendConfirmationEmail");
+    const resendEnd = loginSource.indexOf("if (authLoading)", resendStart);
+    const resendBlock = loginSource.slice(resendStart, resendEnd);
+
+    expect(resendBlock).toContain("supabase.auth.resend");
+    expect(resendBlock).toContain("type: 'signup'");
+    expect(resendBlock).toContain("emailRedirectTo: `${window.location.origin}/login`");
+    expect(resendBlock).not.toContain("free-trial");
+    expect(resendBlock).not.toContain("finalizar=1");
+    expect(resendBlock).not.toContain("/cadastro");
+  });
+
   test("existing customer precheck sends a passwordless login link without creating a new auth user", () => {
     const signupPageSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
@@ -118,6 +135,30 @@ describe("signup confirmation UX", () => {
     expect(firstStepBlock).not.toContain('id="password"');
     expect(createPasswordBlock).toContain('htmlFor="password"');
     expect(signupPageSource).toContain("supabase.auth.signUp");
+  });
+
+  test("create password step confirms matching passwords and can reveal typed passwords", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const createPasswordStart = signupPageSource.indexOf("finishedFlow === 'create-password'");
+    const createPasswordEnd = signupPageSource.indexOf("finishedFlow === 'trial'", createPasswordStart);
+    const createPasswordBlock = signupPageSource.slice(createPasswordStart, createPasswordEnd);
+    const submitStart = signupPageSource.indexOf("const handleCreatePasswordSubmit");
+    const submitEnd = signupPageSource.indexOf("const handleSignupSubmit", submitStart);
+    const submitBlock = signupPageSource.slice(submitStart, submitEnd);
+
+    expect(signupPageSource).toContain("passwordConfirmation: ''");
+    expect(submitBlock).toContain("formData.passwordConfirmation !== formData.password");
+    expect(submitBlock).toContain("passwordConfirmation:");
+    expect(submitBlock).toContain("As senhas não conferem. Ajuste para continuar.");
+    expect(createPasswordBlock).toContain('htmlFor="password-confirmation"');
+    expect(createPasswordBlock).toContain('id="password-confirmation"');
+    expect(createPasswordBlock).toContain("autoComplete=\"new-password\"");
+    expect(createPasswordBlock).toContain("showPassword");
+    expect(createPasswordBlock).toContain("EyeOff");
+    expect(createPasswordBlock).toContain("Eye");
   });
 
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {
