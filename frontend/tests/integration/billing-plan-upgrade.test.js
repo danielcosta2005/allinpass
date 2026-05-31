@@ -59,6 +59,9 @@ describe("billing plan changes", () => {
   test("/org shows the current billing plan and can start any paid plan change", () => {
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
+    const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
+    const billingDialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanDialog.jsx");
+    const billingCardSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanChoiceCard.jsx");
 
     expect(billingClientSource).toContain("getCurrentBillingSubscription");
     expect(billingClientSource).toContain("getPlanChangeOptions");
@@ -68,13 +71,30 @@ describe("billing plan changes", () => {
     expect(billingClientSource).toContain("if (targetPlanCode === FREE_PLAN_CODE) return 'unavailable';");
     expect(billingClientSource).toContain(".filter((plan) => plan.changeKind !== 'unavailable')");
 
-    expect(dashboardSource).toContain("getCurrentBillingSubscription");
-    expect(dashboardSource).toContain("startBillingPlanChange");
-    expect(dashboardSource).toContain("Escolha seu plano");
+    expect(billingHookSource).toContain("getCurrentBillingSubscription");
+    expect(billingHookSource).toContain("startBillingPlanChange");
+    expect(billingDialogSource).toContain("Escolha seu plano");
     expect(dashboardSource).toContain("handleStartPlanChange");
-    expect(dashboardSource).toContain("Plano atual");
-    expect(dashboardSource).toContain("Fazer downgrade");
-    expect(dashboardSource).toContain("flex flex-wrap justify-center gap-5");
+    expect(billingCardSource).toContain("Plano atual");
+    expect(billingCardSource).toContain("Fazer downgrade");
+    expect(billingDialogSource).toContain("flex flex-wrap justify-center gap-5");
     expect(dashboardSource).toContain("billingPlanName");
+  });
+
+  test("keeps the restaurant dashboard modular after adding billing flows", () => {
+    const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
+
+    expect(readIfExists("frontend/src/constants/restaurantDashboard.js")).toContain("DASHBOARD_TABS");
+    expect(readIfExists("frontend/src/hooks/useRestaurantBilling.js")).toContain("useRestaurantBilling");
+    expect(readIfExists("frontend/src/hooks/usePaidSignupRecovery.js")).toContain("usePaidSignupRecovery");
+    expect(readIfExists("frontend/src/hooks/useProjectName.js")).toContain("useProjectName");
+    expect(readIfExists("frontend/src/components/restaurant/dashboard/RestaurantTopBar.jsx")).toContain("RestaurantTopBar");
+    expect(readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanDialog.jsx")).toContain("BillingPlanDialog");
+    expect(readIfExists("frontend/src/components/restaurant/dashboard/NoProjectSignupState.jsx")).toContain("NoProjectSignupState");
+
+    expect(dashboardSource).toContain("useRestaurantBilling");
+    expect(dashboardSource).toContain("RestaurantTopBar");
+    expect(dashboardSource).not.toContain("const BillingPlanChoiceCard");
+    expect(dashboardSource).not.toContain("const NoProjectSignupState");
   });
 });
