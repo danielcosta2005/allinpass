@@ -1,25 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
-  CheckCircle2,
-  CreditCard,
-  Eye,
-  EyeOff,
-  Loader2,
-  Lock,
   Wallet,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   DEFAULT_PLAN_KEY,
   fetchSubscriptionPlans,
   findPlanByKey,
-  formatCurrencyBRL,
   isPaidPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
@@ -34,7 +24,6 @@ import {
   startPaidSignupCheckout,
 } from '@/lib/signup';
 import {
-  TURNSTILE_SCRIPT_SRC,
   getTurnstileSiteKey,
   shouldUseSignupCaptcha,
 } from '@/lib/turnstileConfig';
@@ -42,260 +31,28 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import PlanCard from '@/components/landing/PlanCard';
+import CreatePasswordForm from './signup/CreatePasswordForm';
+import SetPasswordForm from './signup/SetPasswordForm';
+import SignupProgressSteps from './signup/SignupProgressSteps';
+import StepOneSignupForm from './signup/StepOneSignupForm';
+import {
+  ConfirmEmailCard,
+  FinalizingSignupCard,
+  PaidSuccessCard,
+  PaymentStep,
+  TrialSuccessCard,
+} from './signup/SignupStatusCards';
+import {
+  EMAIL_REGEX,
+  clearSignupPasswordSetupRequired,
+  evaluatePassword,
+  findPlanKeyByCode,
+  getPasswordError,
+  isSignupPasswordSetupRequired,
+  markSignupPasswordSetupRequired,
+  normalizeSignupErrorMessage,
+} from './signup/signupPageUtils';
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-let turnstileScriptPromise = null;
-const FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE = 'Aguarde alguns minutos para tentar novamente';
-const SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY = '__signup_password_setup_required';
-
-const PASSWORD_RULES = [
-  { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
-  { id: 'upper', label: 'Uma letra maiúscula', test: (value) => /[A-Z]/.test(value) },
-  { id: 'lower', label: 'Uma letra minúscula', test: (value) => /[a-z]/.test(value) },
-  { id: 'number', label: 'Um número', test: (value) => /\d/.test(value) },
-  { id: 'symbol', label: 'Um símbolo especial', test: (value) => /[^A-Za-z0-9]/.test(value) },
-];
-
-function evaluatePassword(password) {
-  const checks = PASSWORD_RULES.map((rule) => ({
-    id: rule.id,
-    label: rule.label,
-    met: rule.test(password),
-  }));
-  const score = checks.filter((rule) => rule.met).length;
-  const progress = Math.max(8, (score / PASSWORD_RULES.length) * 100);
-  const strength =
-    score <= 1
-      ? { label: 'Muito fraca', textColor: 'text-rose-600', barColor: 'bg-rose-500' }
-      : score <= 3
-        ? { label: 'Em evolução', textColor: 'text-amber-600', barColor: 'bg-amber-500' }
-        : { label: 'Forte', textColor: 'text-emerald-600', barColor: 'bg-emerald-500' };
-
-  return {
-    checks,
-    score,
-    progress,
-    ...strength,
-    isStrong: score >= 4,
-  };
-}
-
-function markSignupPasswordSetupRequired() {
-  try {
-    sessionStorage.setItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY, '1');
-  } catch (_) {}
-}
-
-function clearSignupPasswordSetupRequired() {
-  try {
-    sessionStorage.removeItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY);
-  } catch (_) {}
-}
-
-function isSignupPasswordSetupRequired() {
-  try {
-    return sessionStorage.getItem(SIGNUP_PASSWORD_SETUP_REQUIRED_STORAGE_KEY) === '1';
-  } catch (_) {
-    return false;
-  }
-}
-
-function loadTurnstileScript() {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('Turnstile indisponível fora do navegador.'));
-  }
-
-  if (window.turnstile) {
-    return Promise.resolve(window.turnstile);
-  }
-
-  if (turnstileScriptPromise) {
-    return turnstileScriptPromise;
-  }
-
-  turnstileScriptPromise = new Promise((resolve, reject) => {
-    const existingScript = document.querySelector(`script[src="${TURNSTILE_SCRIPT_SRC}"]`);
-
-    const handleLoad = () => {
-      if (window.turnstile) {
-        resolve(window.turnstile);
-        return;
-      }
-
-      turnstileScriptPromise = null;
-      reject(new Error('Turnstile carregou sem expor a API.'));
-    };
-
-    const handleError = () => {
-      turnstileScriptPromise = null;
-      reject(new Error('Não foi possível carregar o Turnstile.'));
-    };
-
-    if (existingScript) {
-      existingScript.addEventListener('load', handleLoad, { once: true });
-      existingScript.addEventListener('error', handleError, { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = TURNSTILE_SCRIPT_SRC;
-    script.async = true;
-    script.defer = true;
-    script.addEventListener('load', handleLoad, { once: true });
-    script.addEventListener('error', handleError, { once: true });
-    document.head.appendChild(script);
-  });
-
-  return turnstileScriptPromise;
-}
-
-function TurnstileWidget({ siteKey, onTokenChange, onResetReady }) {
-  const containerRef = useRef(null);
-  const widgetIdRef = useRef(null);
-  const onTokenChangeRef = useRef(onTokenChange);
-  const onResetReadyRef = useRef(onResetReady);
-  const [status, setStatus] = useState('loading');
-
-  useEffect(() => {
-    onTokenChangeRef.current = onTokenChange;
-  }, [onTokenChange]);
-
-  useEffect(() => {
-    onResetReadyRef.current = onResetReady;
-  }, [onResetReady]);
-
-  useEffect(() => {
-    if (!siteKey) return undefined;
-
-    let cancelled = false;
-    setStatus('loading');
-    onTokenChangeRef.current('');
-
-    loadTurnstileScript()
-      .then((turnstile) => {
-        if (cancelled || !containerRef.current) return;
-
-        try {
-          if (widgetIdRef.current && typeof turnstile.remove === 'function') {
-            turnstile.remove(widgetIdRef.current);
-          }
-
-          setStatus('pending');
-          widgetIdRef.current = turnstile.render(containerRef.current, {
-            sitekey: siteKey,
-            action: 'signup_precheck',
-            theme: 'light',
-            callback: (token) => {
-              setStatus('verified');
-              onTokenChangeRef.current(String(token ?? '').trim());
-            },
-            'expired-callback': () => {
-              setStatus('expired');
-              onTokenChangeRef.current('');
-            },
-            'timeout-callback': () => {
-              setStatus('expired');
-              onTokenChangeRef.current('');
-            },
-            'error-callback': () => {
-              setStatus('error');
-              onTokenChangeRef.current('');
-            },
-          });
-
-          onResetReadyRef.current(() => {
-            if (!window.turnstile || !widgetIdRef.current) return;
-            window.turnstile.reset(widgetIdRef.current);
-            setStatus('pending');
-            onTokenChangeRef.current('');
-          });
-        } catch (error) {
-          console.error('Turnstile render error', error);
-          setStatus('error');
-          onTokenChangeRef.current('');
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('Turnstile load error', error);
-        setStatus('error');
-        onTokenChangeRef.current('');
-      });
-
-    return () => {
-      cancelled = true;
-      onResetReadyRef.current(null);
-
-      if (window.turnstile && widgetIdRef.current && typeof window.turnstile.remove === 'function') {
-        window.turnstile.remove(widgetIdRef.current);
-      }
-
-      widgetIdRef.current = null;
-    };
-  }, [siteKey]);
-
-  const statusMessage = {
-    loading: 'Carregando verificação antiabuso...',
-    pending: 'Confirme a verificação para continuar.',
-    verified: 'Verificação concluída.',
-    expired: 'A verificação expirou. Confirme novamente para continuar.',
-    error: 'Não foi possível carregar a verificação. Recarregue a página e tente novamente.',
-  }[status];
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
-      <div ref={containerRef} className="min-h-[70px] flex items-center justify-center" />
-      <p
-        className={`text-xs text-center ${
-          status === 'error' || status === 'expired'
-            ? 'text-rose-600'
-            : status === 'verified'
-              ? 'text-emerald-700'
-              : 'text-slate-500'
-        }`}
-      >
-        {statusMessage}
-      </p>
-    </div>
-  );
-}
-
-function normalizeSignupErrorMessage(error) {
-  const message = String(error?.message || '').toLowerCase();
-  const code = String(error?.code || '').toLowerCase();
-
-  if (
-    message.includes('email rate limit exceeded')
-    || code === 'over_email_send_rate_limit'
-  ) {
-    return FRIENDLY_SIGNUP_RATE_LIMIT_MESSAGE;
-  }
-
-  return error?.message || 'Não foi possível iniciar o cadastro.';
-}
-
-function getPasswordError(password, passwordState) {
-  if (!password) {
-    return 'Crie uma senha forte para proteger os dados da sua conta.';
-  }
-
-  if (!passwordState.isStrong) {
-    const missingRules = passwordState.checks
-      .filter((rule) => !rule.met)
-      .map((rule) => rule.label.toLowerCase());
-    return `Sua senha ainda precisa de: ${missingRules.join(', ')}.`;
-  }
-
-  return '';
-}
-
-function findPlanKeyByCode(planCode, plans = subscriptionPlans) {
-  const normalizedCode = String(planCode || '').trim().toLowerCase();
-  if (!normalizedCode) return '';
-
-  const matchedPlan = plans.find((plan) => String(plan?.code || '').trim().toLowerCase() === normalizedCode);
-  return String(matchedPlan?.key || '').trim();
-}
 
 function SignupPage() {
   const [searchParams] = useSearchParams();
@@ -890,6 +647,31 @@ function SignupPage() {
 
   const shouldShowError = (field) => Boolean(errors[field]) && (attemptedSubmit || touched[field]);
 
+  const handleCreatePasswordBack = () => {
+    setPendingNewSignup(null);
+    setFinishedFlow('');
+    setStep(1);
+    setAttemptedSubmit(false);
+    setSignupError('');
+    setTouched((previous) => ({
+      ...previous,
+      password: false,
+      passwordConfirmation: false,
+    }));
+    setErrors((previous) => ({
+      ...previous,
+      password: '',
+      passwordConfirmation: '',
+    }));
+    setShowPassword(false);
+    setShowPasswordConfirmation(false);
+    setFormData((previous) => ({
+      ...previous,
+      password: '',
+      passwordConfirmation: '',
+    }));
+  };
+
   useEffect(() => {
     if (!signupCaptchaEnabled) {
       setCaptchaToken('');
@@ -1173,624 +955,106 @@ function SignupPage() {
                 </p>
               </div>
 
-              <div className="mb-8">
-                <ol className={`grid grid-cols-1 ${paidPlan ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
-                  {steps.map((stepLabel, index) => {
-                    const position = index + 1;
-                    const isPasswordStep =
-                      finishedFlow === 'create-password' || finishedFlow === 'set-password';
-                    const isWaitingEmailFlow = finishedFlow === 'confirm-email';
-                    const isSuccessFlow = Boolean(finishedFlow) && !isPasswordStep && !isWaitingEmailFlow;
-                    const done = activeStep > position || isSuccessFlow;
-                    const current = (!finishedFlow || isPasswordStep) && activeStep === position;
-                    return (
-                      <li
-                        key={stepLabel}
-                        className={`rounded-2xl border p-3 transition-colors ${
-                          done
-                            ? 'border-emerald-200 bg-emerald-50'
-                            : current
-                              ? 'border-purple-200 bg-purple-50'
-                              : 'border-slate-200 bg-slate-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${
-                              done
-                                ? 'bg-emerald-500 text-white'
-                                : current
-                                  ? 'bg-purple-600 text-white'
-                                  : 'bg-slate-200 text-slate-600'
-                            }`}
-                          >
-                            {done ? 'OK' : position}
-                          </span>
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-slate-500">Etapa {position}</p>
-                            <p className="font-semibold text-slate-900">{stepLabel}</p>
-                          </div>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ol>
-              </div>
+              <SignupProgressSteps
+                activeStep={activeStep}
+                finishedFlow={finishedFlow}
+                paidPlan={paidPlan}
+                steps={steps}
+              />
 
               <AnimatePresence mode="wait">
                 {!finishedFlow && shouldBlockFormForFinalize && (
-                  <motion.div
-                    key="finalizing-signup"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                    className="rounded-2xl border border-purple-200 bg-purple-50 p-6"
-                  >
-                    {signupLoading ? (
-                      <Loader2 className="w-10 h-10 text-purple-600 mb-4 animate-spin" />
-                    ) : (
-                      <CheckCircle2 className="w-10 h-10 text-rose-600 mb-4" />
-                    )}
-                    <h2 className="text-2xl font-bold text-slate-900">
-                      {signupLoading
-                        ? paidPlan ? 'Finalizando sua assinatura' : 'Finalizando seu Free Trial'
-                        : 'Não foi possível finalizar automaticamente'}
-                    </h2>
-                    <p className="text-slate-700 mt-2">
-                      {signupLoading
-                        ? paidPlan
-                          ? 'Estamos validando o pagamento no Asaas e criando seu acesso ao painel.'
-                          : 'Estamos criando seu projeto, assinatura trial e acesso ao painel.'
-                        : signupError || 'Entre novamente para continuar o provisionamento.'}
-                    </p>
-                    {!signupLoading && (
-                      <div className="flex flex-wrap gap-3 mt-5">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          onClick={() => window.location.reload()}
-                          className="border-purple-300 text-purple-800 hover:bg-purple-100"
-                        >
-                          Tentar novamente
-                        </Button>
-                        <Link to="/login">
-                          <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
-                            Ir para login
-                          </Button>
-                        </Link>
-                        <Link to="/#planos">
-                          <Button variant="outline" className="border-purple-300 text-purple-800 hover:bg-purple-100">
-                            Voltar aos planos
-                          </Button>
-                        </Link>
-                      </div>
-                    )}
-                  </motion.div>
+                  <FinalizingSignupCard
+                    paidPlan={paidPlan}
+                    signupError={signupError}
+                    signupLoading={signupLoading}
+                  />
                 )}
 
                 {!finishedFlow && !shouldBlockFormForFinalize && step === 1 && (
-                  <motion.form
-                    key="step-1"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
+                  <StepOneSignupForm
+                    captchaToken={captchaToken}
+                    errors={errors}
+                    formData={formData}
+                    onCaptchaTokenChange={setCaptchaToken}
+                    onFieldChange={setField}
+                    onFieldTouched={setFieldTouched}
                     onSubmit={handleStepOneSubmit}
-                    className="space-y-5"
-                    noValidate
-                  >
-                    <div className="space-y-2">
-                      <Label htmlFor="establishment-name">Nome do estabelecimento</Label>
-                      <Input
-                        id="establishment-name"
-                        type="text"
-                        className="h-12"
-                        value={formData.establishmentName}
-                        onChange={(event) => setField('establishmentName', event.target.value)}
-                        onBlur={() => setFieldTouched('establishmentName')}
-                        placeholder="Ex.: Padaria Bom Dia"
-                        aria-invalid={shouldShowError('establishmentName')}
-                      />
-                      {shouldShowError('establishmentName') && (
-                        <p className="text-sm text-rose-600">{errors.establishmentName}</p>
-                      )}
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="email">E-mail</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          className="h-12"
-                          value={formData.email}
-                          onChange={(event) => setField('email', event.target.value)}
-                          onBlur={() => setFieldTouched('email')}
-                          placeholder="contato@empresa.com"
-                          aria-invalid={shouldShowError('email')}
-                        />
-                        {shouldShowError('email') && (
-                          <p className="text-sm text-rose-600">{errors.email}</p>
-                        )}
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="email-confirmation">Confirmação de e-mail</Label>
-                        <Input
-                          id="email-confirmation"
-                          type="email"
-                          className="h-12"
-                          value={formData.emailConfirmation}
-                          onChange={(event) => setField('emailConfirmation', event.target.value)}
-                          onBlur={() => setFieldTouched('emailConfirmation')}
-                          placeholder="repita seu e-mail"
-                          aria-invalid={shouldShowError('emailConfirmation')}
-                        />
-                        {shouldShowError('emailConfirmation') && (
-                          <p className="text-sm text-rose-600">{errors.emailConfirmation}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {signupCaptchaEnabled && (
-                      <TurnstileWidget
-                        siteKey={turnstileSiteKey}
-                        onTokenChange={setCaptchaToken}
-                        onResetReady={(resetWidget) => {
-                          turnstileResetRef.current = resetWidget;
-                        }}
-                      />
-                    )}
-
-                    <Button
-                      type="submit"
-                      className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                      disabled={signupLoading || (signupCaptchaEnabled && !captchaToken)}
-                    >
-                      {signupLoading ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Iniciando...
-                        </span>
-                      ) : paidPlan ? 'Continuar para senha' : 'Continuar'}
-                    </Button>
-                    {signupError && (
-                      <p className="text-sm text-rose-600 text-center">{signupError}</p>
-                    )}
-                  </motion.form>
+                    onTurnstileResetReady={(resetWidget) => {
+                      turnstileResetRef.current = resetWidget;
+                    }}
+                    paidPlan={paidPlan}
+                    shouldShowError={shouldShowError}
+                    signupCaptchaEnabled={signupCaptchaEnabled}
+                    signupError={signupError}
+                    signupLoading={signupLoading}
+                    turnstileSiteKey={turnstileSiteKey}
+                  />
                 )}
 
                 {!finishedFlow && step === 3 && paidPlan && (
-                  <motion.div
-                    key="step-3"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                    className="space-y-6"
-                  >
-                    <div className="rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-5">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-purple-600 mb-2">
-                        Resumo do plano selecionado
-                      </p>
-                      <div className="flex items-end justify-between gap-3 flex-wrap">
-                        <div>
-                          <p className="text-2xl font-bold text-slate-900">{selectedPlan.name}</p>
-                          <p className="text-sm text-slate-600 mt-1">{selectedPlan.description}</p>
-                        </div>
-                        <p className="text-2xl font-bold text-purple-700">
-                          R$ {formatCurrencyBRL(selectedPlan.price)}/mês
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
-                      <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                        <CreditCard className="w-4 h-4 text-purple-600" />
-                        Checkout seguro via Asaas
-                      </p>
-                      <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                        Vamos criar uma sessão de checkout recorrente no Asaas para este plano.
-                        Nenhum dado de cartão é coletado dentro do AllinPass.
-                      </p>
-                      <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
-                        <Lock className="w-3.5 h-3.5" />
-                        Você será redirecionado para o ambiente seguro do provedor.
-                      </div>
-                    </div>
-
-                    {checkoutError && (
-                      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                        {checkoutError}
-                      </div>
-                    )}
-
-                    <Button
-                      type="button"
-                      onClick={handlePaymentContinue}
-                      disabled={checkoutLoading}
-                      className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                    >
-                      {checkoutLoading ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Abrindo checkout...
-                        </span>
-                      ) : 'Ir para checkout Asaas'}
-                    </Button>
-                  </motion.div>
+                  <PaymentStep
+                    checkoutError={checkoutError}
+                    checkoutLoading={checkoutLoading}
+                    onContinue={handlePaymentContinue}
+                    selectedPlan={selectedPlan}
+                  />
                 )}
 
                 {finishedFlow === 'create-password' && (
-                  <motion.form
-                    key="create-password"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
+                  <CreatePasswordForm
+                    errors={errors}
+                    formData={formData}
+                    onBack={handleCreatePasswordBack}
+                    onFieldChange={setField}
+                    onFieldTouched={setFieldTouched}
                     onSubmit={handleCreatePasswordSubmit}
-                    className="space-y-5"
-                    noValidate
-                  >
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                      <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
-                      <h2 className="text-2xl font-bold text-emerald-950">E-mail liberado</h2>
-                      <p className="text-emerald-800 mt-2">
-                        Agora crie a senha que você usará para entrar no painel do estabelecimento.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label htmlFor="password">Senha</Label>
-                      <div className="relative">
-                        <Input
-                          id="password"
-                          type={showPassword ? 'text' : 'password'}
-                          className="h-12 pr-12"
-                          value={formData.password}
-                          onChange={(event) => setField('password', event.target.value)}
-                          onBlur={() => setFieldTouched('password')}
-                          placeholder="Crie uma senha forte"
-                          autoComplete="new-password"
-                          aria-invalid={shouldShowError('password')}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
-                          onClick={() => setShowPassword((visible) => !visible)}
-                          aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                        >
-                          {showPassword ? (
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <EyeOff className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </Button>
-                      </div>
-                      {shouldShowError('password') && (
-                        <p className="text-sm text-rose-600">{errors.password}</p>
-                      )}
-
-                      <Label htmlFor="password-confirmation">Confirmação de senha</Label>
-                      <div className="relative">
-                        <Input
-                          id="password-confirmation"
-                          type={showPasswordConfirmation ? 'text' : 'password'}
-                          className="h-12 pr-12"
-                          value={formData.passwordConfirmation}
-                          onChange={(event) => setField('passwordConfirmation', event.target.value)}
-                          onBlur={() => setFieldTouched('passwordConfirmation')}
-                          placeholder="Digite a senha novamente"
-                          autoComplete="new-password"
-                          aria-invalid={shouldShowError('passwordConfirmation')}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
-                          onClick={() => setShowPasswordConfirmation((visible) => !visible)}
-                          aria-label={
-                            showPasswordConfirmation
-                              ? 'Ocultar confirmação de senha'
-                              : 'Mostrar confirmação de senha'
-                          }
-                        >
-                          {showPasswordConfirmation ? (
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <EyeOff className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </Button>
-                      </div>
-                      {shouldShowError('passwordConfirmation') && (
-                        <p className="text-sm text-rose-600">{errors.passwordConfirmation}</p>
-                      )}
-
-                      <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
-                          <p className={`text-sm font-semibold ${passwordState.textColor}`}>
-                            {passwordState.label}
-                          </p>
-                        </div>
-
-                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                          <motion.div
-                            className={`h-full ${passwordState.barColor}`}
-                            initial={false}
-                            animate={{ width: `${passwordState.progress}%` }}
-                            transition={{ duration: 0.35, ease: 'easeOut' }}
-                          />
-                        </div>
-
-                        <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-                          {passwordState.checks.map((rule) => (
-                            <li
-                              key={rule.id}
-                              className={`text-xs flex items-center gap-2 ${
-                                rule.met ? 'text-emerald-700' : 'text-slate-500'
-                              }`}
-                            >
-                              <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                              {rule.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          setPendingNewSignup(null);
-                          setFinishedFlow('');
-                          setStep(1);
-                          setAttemptedSubmit(false);
-                          setSignupError('');
-                          setTouched((previous) => ({
-                            ...previous,
-                            password: false,
-                            passwordConfirmation: false,
-                          }));
-                          setErrors((previous) => ({
-                            ...previous,
-                            password: '',
-                            passwordConfirmation: '',
-                          }));
-                          setShowPassword(false);
-                          setShowPasswordConfirmation(false);
-                          setFormData((previous) => ({
-                            ...previous,
-                            password: '',
-                            passwordConfirmation: '',
-                          }));
-                        }}
-                        className="h-12 sm:w-40"
-                      >
-                        Voltar
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="h-12 flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                        disabled={signupLoading}
-                      >
-                        {signupLoading ? (
-                          <span className="inline-flex items-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Criando conta...
-                          </span>
-                        ) : 'Criar conta'}
-                      </Button>
-                    </div>
-                    {signupError && (
-                      <p className="text-sm text-rose-600 text-center">{signupError}</p>
-                    )}
-                  </motion.form>
+                    passwordState={passwordState}
+                    shouldShowError={shouldShowError}
+                    showPassword={showPassword}
+                    showPasswordConfirmation={showPasswordConfirmation}
+                    signupError={signupError}
+                    signupLoading={signupLoading}
+                    togglePasswordConfirmationVisibility={() => setShowPasswordConfirmation((visible) => !visible)}
+                    togglePasswordVisibility={() => setShowPassword((visible) => !visible)}
+                  />
                 )}
 
                 {finishedFlow === 'trial' && (
-                  <motion.div
-                    key="success-trial"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6"
-                  >
-                    <CheckCircle2 className="w-10 h-10 text-emerald-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-emerald-900">Free Trial iniciado com sucesso</h2>
-                    <p className="text-emerald-800 mt-2">
-                      Seu acesso de 7 dias foi iniciado sem necessidade de cartão de crédito.
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-5">
-                      <Link to="/org">
-                        <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                          Acessar painel
-                        </Button>
-                      </Link>
-                      <Link to="/#planos">
-                        <Button variant="outline" className="border-emerald-300 text-emerald-800 hover:bg-emerald-100">
-                          Voltar aos planos
-                        </Button>
-                      </Link>
-                    </div>
-                  </motion.div>
+                  <TrialSuccessCard />
                 )}
 
                 {finishedFlow === 'set-password' && (
-                  <motion.form
-                    key="set-password"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
+                  <SetPasswordForm
+                    onPasswordChange={(value) => {
+                      setPasswordSetupValue(value);
+                      setPasswordSetupError('');
+                    }}
+                    onPasswordTouched={() => setPasswordSetupTouched(true)}
                     onSubmit={handlePasswordSetupSubmit}
-                    className="space-y-5"
-                    noValidate
-                  >
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                      <CheckCircle2 className="w-9 h-9 text-emerald-600 mb-3" />
-                      <h2 className="text-2xl font-bold text-emerald-950">E-mail confirmado</h2>
-                      <p className="text-emerald-800 mt-2">
-                        Agora crie a senha que você usará para entrar no painel do estabelecimento.
-                      </p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Label htmlFor="password-setup">Senha</Label>
-                      <div className="relative">
-                        <Input
-                          id="password-setup"
-                          type={showPasswordSetup ? 'text' : 'password'}
-                          className="h-12 pr-12"
-                          autoComplete="new-password"
-                          value={passwordSetupValue}
-                          onChange={(event) => {
-                            setPasswordSetupValue(event.target.value);
-                            setPasswordSetupError('');
-                          }}
-                          onBlur={() => setPasswordSetupTouched(true)}
-                          aria-invalid={Boolean(passwordSetupError)}
-                          placeholder="Crie uma senha forte"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
-                          onClick={() => setShowPasswordSetup((visible) => !visible)}
-                          aria-label={showPasswordSetup ? 'Ocultar senha' : 'Mostrar senha'}
-                        >
-                          {showPasswordSetup ? (
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <EyeOff className="h-4 w-4" aria-hidden="true" />
-                          )}
-                        </Button>
-                      </div>
-                      {passwordSetupError && (
-                        <p className="text-sm text-rose-600">{passwordSetupError}</p>
-                      )}
-
-                      <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-slate-700">Força da senha</p>
-                          <p className={`text-sm font-semibold ${passwordSetupState.textColor}`}>
-                            {passwordSetupState.label}
-                          </p>
-                        </div>
-
-                        <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                          <motion.div
-                            className={`h-full ${passwordSetupState.barColor}`}
-                            initial={false}
-                            animate={{ width: `${passwordSetupState.progress}%` }}
-                            transition={{ duration: 0.35, ease: 'easeOut' }}
-                          />
-                        </div>
-
-                        <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-                          {passwordSetupState.checks.map((rule) => (
-                            <li
-                              key={rule.id}
-                              className={`text-xs flex items-center gap-2 ${
-                                rule.met ? 'text-emerald-700' : 'text-slate-500'
-                              }`}
-                            >
-                              <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                              {rule.label}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={passwordSetupLoading}
-                      className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                    >
-                      {passwordSetupLoading ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          Criando senha...
-                        </span>
-                      ) : 'Criar senha e continuar'}
-                    </Button>
-                  </motion.form>
+                    passwordSetupError={passwordSetupError}
+                    passwordSetupLoading={passwordSetupLoading}
+                    passwordSetupState={passwordSetupState}
+                    passwordSetupValue={passwordSetupValue}
+                    showPasswordSetup={showPasswordSetup}
+                    togglePasswordSetupVisibility={() => setShowPasswordSetup((visible) => !visible)}
+                  />
                 )}
 
                 {finishedFlow === 'confirm-email' && (
-                  <motion.div
-                    key="confirm-email"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-sky-200 bg-sky-50 p-6"
-                  >
-                    <CheckCircle2 className="w-10 h-10 text-sky-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-sky-950">
-                      {confirmationFlow === 'existing-customer' ? 'Confira seu e-mail' : 'Confirme seu e-mail'}
-                    </h2>
-                    <p className="text-sky-900 mt-2">
-                      {confirmationFlow === 'existing-customer'
-                        ? paidPlan
-                          ? `Enviamos um link de acesso para ${formData.email}. Abra o link para continuar a assinatura no checkout.`
-                          : `Enviamos um link de acesso para ${formData.email}. Abra o link para finalizar o Free Trial e provisionar seu painel.`
-                        : paidPlan
-                          ? `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para continuar a assinatura no checkout. Não se esqueça de olhar o lixo eletrônico!`
-                          : `Criamos sua conta no Supabase Auth. Abra o link enviado para ${formData.email} para finalizar o Free Trial e provisionar seu painel. Não se esqueça de olhar o lixo eletrônico!`}
-                    </p>
-                    <p className="text-sm text-sky-800 mt-3">
-                      Se o link não chegou, você pode pedir um novo envio sem refazer o cadastro.
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-5">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleResendConfirmationEmail}
-                        disabled={resendLoading}
-                        className="border-sky-300 text-sky-900 hover:bg-sky-100"
-                      >
-                        {resendLoading ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
-                        Reenviar e-mail
-                      </Button>
-                    </div>
-                  </motion.div>
+                  <ConfirmEmailCard
+                    confirmationFlow={confirmationFlow}
+                    formData={formData}
+                    onResendConfirmationEmail={handleResendConfirmationEmail}
+                    paidPlan={paidPlan}
+                    resendLoading={resendLoading}
+                  />
                 )}
 
                 {finishedFlow === 'paid' && (
-                  <motion.div
-                    key="success-paid"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-purple-200 bg-purple-50 p-6"
-                  >
-                    <CheckCircle2 className="w-10 h-10 text-purple-600 mb-4" />
-                    <h2 className="text-2xl font-bold text-purple-900">Cadastro concluído</h2>
-                    <p className="text-purple-800 mt-2">
-                      Pagamento confirmado e acesso criado para o plano {selectedPlan.name}.
-                      Você já pode acessar o painel do estabelecimento.
-                    </p>
-                    <div className="flex flex-wrap gap-3 mt-5">
-                      <Link to="/org">
-                        <Button className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white">
-                          Acessar painel
-                        </Button>
-                      </Link>
-                      <Link to="/#planos">
-                        <Button variant="outline" className="border-purple-300 text-purple-800 hover:bg-purple-100">
-                          Ver outros planos
-                        </Button>
-                      </Link>
-                    </div>
-                  </motion.div>
+                  <PaidSuccessCard selectedPlan={selectedPlan} />
                 )}
+
               </AnimatePresence>
             </section>
 
