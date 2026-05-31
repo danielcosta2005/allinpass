@@ -156,7 +156,7 @@ const RestaurantDashboard = () => {
 
                 <TabsList
                   aria-label="Navegacao do painel do projeto"
-                  className="grid w-full grid-cols-2 gap-2 rounded-xl border border-slate-300 bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 xl:grid-cols-7"
+                  className="grid w-full grid-cols-2 gap-2 rounded-xl bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 xl:grid-cols-7"
                 >
                   {DASHBOARD_TABS.map((tab) => (
                     <TabsTrigger
