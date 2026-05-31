@@ -7,6 +7,7 @@ import {
   Loader2,
   RefreshCcw,
   Ban,
+  Repeat,
 } from "lucide-react";
 
 // Se você ainda NÃO tem os componentes Card no seu projeto, troque por <div> como fallback.
@@ -28,8 +29,106 @@ function safeNumber(n) {
   return Number.isFinite(v) ? v : 0;
 }
 
+const WEEKDAY_SHORT = {
+  1: "Seg",
+  2: "Ter",
+  3: "Qua",
+  4: "Qui",
+  5: "Sex",
+  6: "Sáb",
+  7: "Dom",
+};
+
+function getWeeklyRecurrence(campaign) {
+  const rec = campaign?.trigger_config?.recurrence;
+  if (!rec || rec.type !== "weekly") return null;
+
+  const days = Array.isArray(rec.daysOfWeek)
+    ? rec.daysOfWeek
+      .map((d) => Number(d))
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 7)
+      .sort((a, b) => a - b)
+    : [];
+
+  if (days.length === 0) return null;
+
+  const timeOfDay = typeof rec.timeOfDay === "string" ? rec.timeOfDay : null;
+  const timezone = typeof rec.timezone === "string" ? rec.timezone : null;
+
+  return { days, timeOfDay, timezone };
+}
+
+function recurrenceBadgeLabel(campaign) {
+  const rec = getWeeklyRecurrence(campaign);
+  if (!rec) return null;
+
+  const dayLabels = rec.days.map((d) => WEEKDAY_SHORT[d]).filter(Boolean);
+  if (dayLabels.length === 0) return null;
+
+  if (rec.timeOfDay) return `Semanal: ${dayLabels.join(", ")} às ${rec.timeOfDay}`;
+  return `Semanal: ${dayLabels.join(", ")}`;
+}
+
 function cn(...classes) {
   return classes.filter(Boolean).join(" ");
+}
+
+const STATUS_LABELS_PT = {
+  scheduled: "Agendada",
+  running: "Em andamento",
+  active: "Ativa",
+  queued: "Na fila",
+  pending: "Pendente",
+  processing: "Processando",
+  rate_limited: "Limitado por taxa",
+  sent: "Enviada",
+  failed: "Falhou",
+  partial_failed: "Parcialmente falhou",
+  canceled: "Cancelada",
+  skipped: "Ignorada",
+};
+
+function normalizeStatusKey(status) {
+  return typeof status === "string" ? status.trim().toLowerCase() : "";
+}
+
+function translateStatusPt(status) {
+  const key = normalizeStatusKey(status);
+  if (!key) return "-";
+  return STATUS_LABELS_PT[key] || status;
+}
+
+function statusBadgeClass(status) {
+  const key = normalizeStatusKey(status);
+  if (key === "sent" || key === "active") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+  if (key === "failed") {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+  if (key === "partial_failed" || key === "rate_limited") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  if (key === "processing" || key === "running") {
+    return "border-sky-200 bg-sky-50 text-sky-700";
+  }
+  if (key === "canceled") {
+    return "border-slate-200 bg-slate-100 text-slate-700";
+  }
+  return "border-indigo-200 bg-indigo-50 text-indigo-700";
+}
+
+function StatusBadge({ status }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        statusBadgeClass(status),
+      )}
+    >
+      {translateStatusPt(status)}
+    </span>
+  );
 }
 
 // Fallback Card (se você não tiver shadcn Card ainda)
@@ -196,12 +295,13 @@ export default function NotificationsManager({ projectId }) {
   // Cancel campaign: atualiza notification_jobs -> canceled
   // =========================
  async function cancelCampaign(campaign) {
-  if (!projectId) return;
+ if (!projectId) return;
 
   const campaignId = campaign.id;
+  const isRecurring = campaign.trigger_type === "recurring_weekly";
 
-  // Regra: "ainda não foi enviada" -> sent_at null
-  if (campaign.sent_at) {
+  // Regra para one-shot: "ainda não foi enviada" -> sent_at null
+  if (!isRecurring && campaign.sent_at) {
     toast({
       title: "Campanha já enviada",
       description: "Não é possível cancelar uma campanha que já foi enviada.",
@@ -232,7 +332,7 @@ export default function NotificationsManager({ projectId }) {
   const totalJobs = jobsSnapshot?.length ?? 0;
 
   // Se não tem jobs, provavelmente notification_id não está sendo preenchido (ou ainda não foram enfileirados)
-  if (totalJobs === 0) {
+  if (totalJobs === 0 && !isRecurring) {
     setCancelingId(null);
     toast({
       title: "Nada para cancelar",
@@ -269,7 +369,7 @@ export default function NotificationsManager({ projectId }) {
   const changed = updatedCount ?? (updatedRows?.length ?? 0);
 
   // 3) Se não alterou nada, avisar o motivo provável
-  if (changed === 0) {
+  if (changed === 0 && !isRecurring) {
     const statusCounts = jobsSnapshot.reduce((acc, j) => {
       acc[j.status] = (acc[j.status] || 0) + 1;
       return acc;
@@ -311,8 +411,10 @@ export default function NotificationsManager({ projectId }) {
   }
 
   toast({
-    title: "Campanha cancelada",
-    description: `${changed} envios pendentes foram marcados como canceled e a campanha foi marcada como canceled.`,
+    title: isRecurring ? "Recorrência cancelada" : "Campanha cancelada",
+    description: isRecurring
+      ? `A recorrência foi interrompida e ${changed} envio(s) pendente(s) foram cancelados.`
+      : `${changed} envios pendentes foram marcados como canceled e a campanha foi marcada como canceled.`,
   });
 
   // 5) Recarrega UI
@@ -474,7 +576,9 @@ export default function NotificationsManager({ projectId }) {
                   {campaigns.map((c) => {
                     const isExpanded = expandedId === c.id;
                     const jobs = jobsByCampaign[c.id] || [];
-                    const isCancelable = !c.sent_at; // regra base
+                    const isRecurring = c.trigger_type === "recurring_weekly";
+                    const isCancelable = isRecurring ? c.status !== "canceled" : !c.sent_at;
+                    const recurringLabel = recurrenceBadgeLabel(c);
 
                     return (
                       <React.Fragment key={c.id}>
@@ -490,10 +594,20 @@ export default function NotificationsManager({ projectId }) {
                           </td>
 
                           <td className="py-2 pr-2">
-                            <div>{c.message || "-"}</div>
+                            <div className="space-y-1">
+                              <div>{c.message || "-"}</div>
+                              {recurringLabel && (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                                  <Repeat className="h-3 w-3" />
+                                  {recurringLabel}
+                                </span>
+                              )}
+                            </div>
                           </td>
 
-                          <td className="py-2 pr-2">{c.status || "-"}</td>
+                          <td className="py-2 pr-2">
+                            <StatusBadge status={c.status} />
+                          </td>
                           <td className="py-2 pr-2">{formatDateTimeBR(c.created_at)}</td>
                           <td className="py-2 pr-2">{formatDateTimeBR(c.scheduled_for)}</td>
                           <td className="py-2 pr-2">{formatDateTimeBR(c.sent_at)}</td>
@@ -510,7 +624,7 @@ export default function NotificationsManager({ projectId }) {
                               ) : (
                                 <Ban className="w-4 h-4 mr-2" />
                               )}
-                              Cancelar
+                              {isRecurring ? "Cancelar recorrência" : "Cancelar"}
                             </Button>
                           </td>
                         </tr>
@@ -525,7 +639,15 @@ export default function NotificationsManager({ projectId }) {
                               >
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="text-sm font-semibold">
-                                    Envios 
+                                    Envios
+                                    {recurringLabel && (
+                                      <div className="mt-1 text-[11px] font-medium text-indigo-700">
+                                        {recurringLabel}
+                                        {c?.trigger_config?.recurrence?.timezone
+                                          ? ` (${c.trigger_config.recurrence.timezone})`
+                                          : ""}
+                                      </div>
+                                    )}
                                   </div>
 
                                   <Button
@@ -550,7 +672,9 @@ export default function NotificationsManager({ projectId }) {
                                   </div>
                                 ) : jobs.length === 0 ? (
                                   <div className="text-sm text-muted-foreground">
-                                    Nenhum envio encontrado para essa campanha.
+                                    {isRecurring
+                                      ? "Nenhum envio materializado ainda para esta recorrência."
+                                      : "Nenhum envio encontrado para essa campanha."}
                                   </div>
                                 ) : (
                                   <div className="w-full overflow-x-auto">
@@ -572,7 +696,9 @@ export default function NotificationsManager({ projectId }) {
                                       <tbody>
                                         {jobs.map((j) => (
                                           <tr key={j.id} className="border-b">
-                                            <td className="py-2 pr-2">{j.status}</td>
+                                            <td className="py-2 pr-2">
+                                              <StatusBadge status={j.status} />
+                                            </td>
                                             <td className="py-2 pr-2">{j.platform}</td>
                                             <td className="py-2 pr-2">{j.notification_type}</td>
                                             <td className="py-2 pr-2">{formatDateTimeBR(j.created_at)}</td>
