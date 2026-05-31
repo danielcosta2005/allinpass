@@ -13,6 +13,7 @@ import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import NoProjectSignupState from '@/components/restaurant/dashboard/NoProjectSignupState';
+import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { ALLOWED_TABS, DASHBOARD_TABS, SUPPORT_WHATSAPP_URL } from '@/constants/restaurantDashboard';
@@ -156,7 +157,7 @@ const RestaurantDashboard = () => {
 
                 <TabsList
                   aria-label="Navegacao do painel do projeto"
-                  className="grid w-full grid-cols-2 gap-2 rounded-xl bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 xl:grid-cols-7"
+                  className="grid w-full grid-cols-2 gap-2 rounded-xl bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
                 >
                   {DASHBOARD_TABS.map((tab) => (
                     <TabsTrigger
@@ -178,6 +179,9 @@ const RestaurantDashboard = () => {
                 </TabsContent>
                 <TabsContent value="scanner">
                   <ScannerTab projectId={projectId} />
+                </TabsContent>
+                <TabsContent value="wallet">
+                  <WalletConfigTab projectId={projectId} />
                 </TabsContent>
                 <TabsContent value="rewards">
                   <RewardsTab projectId={projectId} />

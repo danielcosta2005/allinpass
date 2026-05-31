@@ -3,11 +3,33 @@
 	<head>
 		<meta charset="UTF-8" />
 		<link rel="icon" type="image/svg+xml" href="/vite.svg" />
+		<!-- Meta Pixel loader (init + PageView gated by user consent — see src/lib/metaPixel.js) -->
+		<script>
+			!function(f,b,e,v,n,t,s)
+			{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+			n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+			if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+			n.queue=[];t=b.createElement(e);t.async=!0;
+			t.src=v;s=b.getElementsByTagName(e)[0];
+			s.parentNode.insertBefore(t,s)}(window, document,'script',
+			'https://connect.facebook.net/en_US/fbevents.js');
+		</script>
+		<!-- End Meta Pixel loader -->
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>Allin Pass — Programa de fidelidade direto na carteira do seu cliente</title>
 		<meta name="description" content="Crie passes de fidelidade na Apple Wallet e Google Wallet, envie notificações e fidelize clientes com a Allin Pass." />
 	</head>
 	<body>
+		<!-- Meta Pixel noscript fallback (body-only — <img> not allowed inside <noscript> in <head>) -->
+		<noscript>
+			<img
+				height="1"
+				width="1"
+				style="display:none"
+				src="https://www.facebook.com/tr?id=1890317175016680&ev=PageView&noscript=1"
+				alt=""
+			/>
+		</noscript>
 		<div id="root"></div>
 		<script type="module" src="/src/main.jsx"></script>
 	</body>

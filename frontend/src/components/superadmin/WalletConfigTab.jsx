@@ -781,6 +781,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const isCreatingPass = walletView === 'new';
   const isEditorOpen = isEditingPass || isCreatingPass;
   const activeLocationIds = isEditingPass ? selectedPassLocationIds : draftLocationIds;
+  const canGoBackToProjects = typeof onBack === 'function';
 
   const updateLocationSelection = useCallback((ids) => {
     const normalized = normalizeLocationIds(ids);
@@ -1143,15 +1144,17 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   if (!isEditorOpen) {
     return (
       <div className="p-4 md:p-6 lg:p-8">
-        <div className="mb-6 flex justify-start">
-          <Button
-            onClick={onBack}
-            className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
-          >
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            Voltar aos Projetos
-          </Button>
-        </div>
+        {canGoBackToProjects && (
+          <div className="mb-6 flex justify-start">
+            <Button
+              onClick={onBack}
+              className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+            >
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Voltar aos Projetos
+            </Button>
+          </div>
+        )}
 
         <PassInventory
           passes={passes}
@@ -1190,13 +1193,15 @@ const WalletConfigTab = ({ projectId, onBack }) => {
               <ChevronLeft className="mr-2 h-4 w-4" />
               Voltar para meus passes
             </Button>
-            <Button
-              onClick={onBack}
-              className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
-            >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              Voltar aos Projetos
-            </Button>
+            {canGoBackToProjects && (
+              <Button
+                onClick={onBack}
+                className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+              >
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                Voltar aos Projetos
+              </Button>
+            )}
           </div>
         </div>
       </div>

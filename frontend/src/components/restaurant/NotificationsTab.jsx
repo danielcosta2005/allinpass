@@ -1,6 +1,16 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Bell, Loader2, Send, Filter, RefreshCcw, CheckSquare, Square, Clock } from "lucide-react";
+import {
+  Bell,
+  Loader2,
+  Send,
+  Filter,
+  RefreshCcw,
+  CheckSquare,
+  Square,
+  Clock,
+  Repeat,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +27,18 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/ui/dialog";
+
+const RECURRENCE_TIMEZONE = "America/Sao_Paulo";
+
+const WEEKDAY_OPTIONS = [
+  { iso: 1, shortLabel: "S", shortName: "Seg", fullName: "Segunda-feira" },
+  { iso: 2, shortLabel: "T", shortName: "Ter", fullName: "Terça-feira" },
+  { iso: 3, shortLabel: "Q", shortName: "Qua", fullName: "Quarta-feira" },
+  { iso: 4, shortLabel: "Q", shortName: "Qui", fullName: "Quinta-feira" },
+  { iso: 5, shortLabel: "S", shortName: "Sex", fullName: "Sexta-feira" },
+  { iso: 6, shortLabel: "S", shortName: "Sáb", fullName: "Sábado" },
+  { iso: 7, shortLabel: "D", shortName: "Dom", fullName: "Domingo" },
+];
 
 const NotificationsTab = ({ projectId }) => {
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -50,6 +72,9 @@ const NotificationsTab = ({ projectId }) => {
   // ✅ agendamento (agora fica na coluna do CTA)
   const [sendMode, setSendMode] = useState("now"); // now | schedule
   const [scheduledLocal, setScheduledLocal] = useState(""); // datetime-local string
+  const [isRecurringWeekly, setIsRecurringWeekly] = useState(false);
+  const [weeklyDays, setWeeklyDays] = useState([]);
+  const [recurrenceTimeLocal, setRecurrenceTimeLocal] = useState("");
 
   const [isSending, setIsSending] = useState(false);
 
@@ -145,6 +170,44 @@ const NotificationsTab = ({ projectId }) => {
     const d = new Date(localStr);
     if (Number.isNaN(d.getTime())) return null;
     return d.toISOString();
+  }
+
+  function getTimeOfDay(localStr) {
+    if (!localStr || typeof localStr !== "string") return null;
+    const match = localStr.match(/T(\d{2}:\d{2})/);
+    return match?.[1] || null;
+  }
+
+  function anchorIsoForWeeklyRecurrence(timeOfDay) {
+    if (!timeOfDay || typeof timeOfDay !== "string") return null;
+    const [h, m] = timeOfDay.split(":").map((v) => Number(v));
+    if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+    const base = new Date();
+    base.setSeconds(0, 0);
+    base.setHours(h, m, 0, 0);
+    return base.toISOString();
+  }
+
+  function listWeekdayShortNames(days) {
+    const sorted = [...new Set(days)].sort((a, b) => a - b);
+    return sorted
+      .map((iso) => WEEKDAY_OPTIONS.find((d) => d.iso === iso)?.shortName)
+      .filter(Boolean);
+  }
+
+  function recurrenceSummary(days, timeOfDay) {
+    const dayNames = listWeekdayShortNames(days);
+    if (dayNames.length === 0) return "Selecione os dias da semana para repetir.";
+    if (!timeOfDay) return `Repete: ${dayNames.join(", ")}`;
+    return `Repete: ${dayNames.join(", ")} às ${timeOfDay}`;
+  }
+
+  function toggleWeeklyDay(isoDay) {
+    setWeeklyDays((prev) => {
+      if (prev.includes(isoDay)) return prev.filter((d) => d !== isoDay);
+      return [...prev, isoDay].sort((a, b) => a - b);
+    });
+    setIsRecurringWeekly(true);
   }
 
   async function getAuthHeader() {
@@ -403,10 +466,10 @@ const NotificationsTab = ({ projectId }) => {
 // Enqueue notifications (via notifications-enqueue)
 // =========================
 async function handleEnqueue() {
-  // validações...
   const functionsUrl =
     import.meta.env.VITE_SUPABASE_FUNCTIONS_URL ||
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+  const isWeeklySchedule = sendMode === "schedule" && isRecurringWeekly;
 
   const user_pass_ids = allowedRows.map((p) => String(p?.id ?? "").trim()).filter(Boolean);
 
@@ -419,16 +482,61 @@ async function handleEnqueue() {
     return;
   }
 
+  if (isWeeklySchedule && weeklyDays.length === 0) {
+    toast({
+      variant: "destructive",
+      title: "Dias da repetição ausentes",
+      description: "Selecione ao menos um dia da semana para ativar a recorrência.",
+    });
+    return;
+  }
+
+  const recurrence = isWeeklySchedule
+    ? {
+        type: "weekly",
+        timezone: RECURRENCE_TIMEZONE,
+        daysOfWeek: [...weeklyDays].sort((a, b) => a - b),
+        timeOfDay: recurrenceTimeLocal || null,
+      }
+    : null;
+
+  if (isWeeklySchedule && !recurrence?.timeOfDay) {
+    toast({
+      variant: "destructive",
+      title: "Horario inválido",
+      description: "Defina a hora para configurar a recorrência semanal.",
+    });
+    return;
+  }
+
+  const scheduledFor = sendMode !== "schedule"
+    ? null
+    : isWeeklySchedule
+      ? anchorIsoForWeeklyRecurrence(recurrence?.timeOfDay)
+      : localDateTimeToUtcIso(scheduledLocal);
+
+  if (sendMode === "schedule" && !scheduledFor) {
+    toast({
+      variant: "destructive",
+      title: "Agendamento inválido",
+      description: isWeeklySchedule
+        ? "Defina uma hora válida para os dias selecionados."
+        : "Defina uma data e hora válida para o envio.",
+    });
+    return;
+  }
+
   setIsSending(true);
   try {
     const authHeader = await getAuthHeader();
 
     const payload = {
       projectId,
-      title: sendMode === "schedule" ? "Envio manual (agendado)" : "Envio manual",
+      title: recurrence ? "Envio manual (recorrente semanal)" : sendMode === "schedule" ? "Envio manual (agendado)" : "Envio manual",
       message: message.trim(),
       sendMode,
-      scheduledFor: sendMode === "schedule" ? localDateTimeToUtcIso(scheduledLocal) : null,
+      scheduledFor,
+      recurrence,
       segment: {
         preset: segmentPreset,
         inactiveDays,
@@ -451,13 +559,22 @@ async function handleEnqueue() {
     if (!res.ok || json?.error) throw new Error(json?.error || "Falha ao enfileirar notificação.");
 
     toast({
-      title: sendMode === "schedule" ? "Agendado ✅" : "Enfileirado ✅",
-      description: isOverLimit
-        ? `Criados ${json?.jobs_created ?? 0} job(s). Ignorados por limite: ${ignoredCount}.`
-        : `Criados ${json?.jobs_created ?? 0} job(s).`,
+      title: recurrence ? "Recorrência ativada ✅" : sendMode === "schedule" ? "Agendado ✅" : "Enfileirado ✅",
+      description: recurrence
+        ? `${json?.note || "A campanha semanal foi salva."} Próxima ocorrência: ${
+            json?.scheduled_for ? fmtDateTime(json.scheduled_for) : "-"
+          }.`
+        : isOverLimit
+          ? `Criados ${json?.jobs_created ?? 0} job(s). Ignorados por limite: ${ignoredCount}.`
+          : `Criados ${json?.jobs_created ?? 0} job(s).`,
     });
 
-    if (sendMode === "schedule") setScheduledLocal("");
+    if (sendMode === "schedule") {
+      setScheduledLocal("");
+      setRecurrenceTimeLocal("");
+      setIsRecurringWeekly(false);
+      setWeeklyDays([]);
+    }
   } catch (err) {
     toast({
       variant: "destructive",
@@ -505,6 +622,15 @@ async function handleEnqueue() {
     return ignoredRows.slice(0, 5);
   }, [ignoredRows]);
 
+  const recurrenceTimeOfDay = recurrenceTimeLocal || null;
+  const weeklySummaryLabel = recurrenceSummary(weeklyDays, recurrenceTimeOfDay);
+  const isScheduledRecurring = sendMode === "schedule" && isRecurringWeekly;
+  const isRecurringSelectionInvalid =
+    sendMode === "schedule" && isRecurringWeekly && (weeklyDays.length === 0 || !recurrenceTimeOfDay);
+  const schedulingStatusLabel =
+    sendMode === "now" ? "Imediato" : isScheduledRecurring ? "Semanal" : "Data específica";
+  const reviewActionLabel = "Revisar" 
+  const confirmActionLabel = "Confirmar"
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -742,9 +868,7 @@ async function handleEnqueue() {
                   <Clock className="w-4 h-4" />
                   Agendamento
                 </div>
-                <span className="text-[11px] text-gray-500">
-                  {sendMode === "schedule" ? "Agendado" : "Imediato"}
-                </span>
+                <span className="text-[11px] text-gray-500">{schedulingStatusLabel}</span>
               </div>
 
               <div className="flex gap-2">
@@ -755,9 +879,11 @@ async function handleEnqueue() {
                   onClick={() => {
                     setSendMode("now");
                     setScheduledLocal(""); // evita “agendamento antigo” por acidente
+                    setIsRecurringWeekly(false);
+                    setWeeklyDays([]);
                   }}
                 >
-                  Agora
+                  Envio imediato
                 </Button>
 
                 <Button
@@ -771,22 +897,115 @@ async function handleEnqueue() {
               </div>
 
               {sendMode === "schedule" && (
-                <div className="space-y-2">
-                  <div>
-                    <label className="text-xs text-gray-600">Data e hora</label>
-                    <Input
-                      type="datetime-local"
-                      value={scheduledLocal}
-                      onChange={(e) => setScheduledLocal(e.target.value)}
-                    />
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-gray-600">Frequência do envio</label>
+                    <div className="grid grid-cols-2 gap-2 rounded-lg border bg-gray-50 p-1">
+                      <button
+                        type="button"
+                        className={`h-11 rounded-md px-3 text-sm font-medium transition ${
+                          !isRecurringWeekly
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                        onClick={() => setIsRecurringWeekly(false)}
+                      >
+                        Data específica
+                      </button>
+                      <button
+                        type="button"
+                        className={`inline-flex h-11 items-center justify-center gap-1 rounded-md px-3 text-sm font-medium transition ${
+                          isRecurringWeekly
+                            ? "bg-white text-indigo-700 shadow-sm"
+                            : "text-gray-600 hover:text-gray-900"
+                        }`}
+                        onClick={() => {
+                          setIsRecurringWeekly(true);
+                          if (!recurrenceTimeLocal) {
+                            setRecurrenceTimeLocal(getTimeOfDay(scheduledLocal) || "09:00");
+                          }
+                        }}
+                      >
+                        <Repeat className="h-4 w-4" />
+                        Repetição semanal
+                      </button>
+                    </div>
                   </div>
+
+                  {!isRecurringWeekly ? (
+                    <div className="space-y-2">
+                      <label className="text-xs text-gray-600">Data e hora do envio</label>
+                      <Input
+                        type="datetime-local"
+                        value={scheduledLocal}
+                        onChange={(e) => setScheduledLocal(e.target.value)}
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-3 rounded-lg border bg-indigo-50/40 p-3">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-gray-700">Dias da semana</label>
+                        <div className="flex flex-nowrap items-center gap-1.5">
+                          {WEEKDAY_OPTIONS.map((day) => {
+                            const isActive = weeklyDays.includes(day.iso);
+                            return (
+                              <button
+                                key={day.iso}
+                                type="button"
+                                aria-label={day.fullName}
+                                aria-pressed={isActive}
+                                className={`h-8 w-8 shrink-0 rounded-full border text-xs font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 sm:h-9 sm:w-9 sm:text-sm ${
+                                  isActive
+                                    ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
+                                    : "border-gray-300 bg-white text-gray-700 hover:border-indigo-300 hover:text-indigo-700"
+                                }`}
+                                onClick={() => toggleWeeklyDay(day.iso)}
+                              >
+                                {day.shortLabel}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-gray-700">Hora dos dias selecionados</label>
+                        <Input
+                          type="time"
+                          step={300}
+                          value={recurrenceTimeLocal}
+                          onChange={(e) => setRecurrenceTimeLocal(e.target.value)}
+                        />
+                      </div>
+
+                      <div
+                        className={`rounded-md border px-3 py-2 text-xs ${
+                          isRecurringSelectionInvalid
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-indigo-200 bg-white text-indigo-700"
+                        }`}
+                      >
+                        {weeklySummaryLabel}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="text-xs text-gray-500">
                     Prévia:{" "}
                     <span className="text-gray-800 font-medium">
-                      {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
+                      {isRecurringWeekly
+                        ? `${weeklySummaryLabel}${recurrenceTimeOfDay ? ` (${RECURRENCE_TIMEZONE})` : ""}`
+                        : scheduledLocal
+                          ? fmtDateTime(new Date(scheduledLocal))
+                          : "-"}
                     </span>
                   </div>
+
+                  {isRecurringSelectionInvalid && (
+                    <p className="text-xs text-red-600">
+                      Para repetição semanal, selecione dia(s) e defina a hora.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -800,28 +1019,40 @@ async function handleEnqueue() {
                     isSending ||
                     selectedCount === 0 ||
                     !message.trim() ||
-                    (sendMode === "schedule" && !scheduledLocal)
+                    (sendMode === "schedule" && !isRecurringWeekly && !scheduledLocal) ||
+                    isRecurringSelectionInvalid
                   }
                 >
                   <Send className="w-4 h-4" />
-                  Revisar e {sendMode === "schedule" ? "Agendar" : "Enfileirar"}
+                  {reviewActionLabel}
                 </Button>
               </DialogTrigger>
 
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>
-                    Confirmar {sendMode === "schedule" ? "agendamento" : "envio"}?
+                    Confirmar{" "}
+                    {isScheduledRecurring
+                      ? "recorrência semanal"
+                      : sendMode === "schedule"
+                        ? "agendamento"
+                        : "envio"}
+                    ?
                   </DialogTitle>
                   <DialogDescription>
                     {!isOverLimit ? (
                       <>
-                        Você está prestes a {sendMode === "schedule" ? "agendar" : "enfileirar"} esta mensagem para{" "}
-                        <b>{selectedCount}</b> passe(s), criando jobs Apple e Google.
+                        Você está prestes a{" "}
+                        {isScheduledRecurring
+                          ? "ativar uma recorrência semanal"
+                          : sendMode === "schedule"
+                            ? "agendar"
+                            : "enfileirar"}{" "}
+                        esta mensagem para <b>{selectedCount}</b> passe(s), criando jobs Apple e Google.
                       </>
                     ) : (
                       <span className="text-red-600 font-semibold">
-                        Atanção: Voce esta prestes a enfileirar esta mensagem para {selectedCount} passes,{" "}
+                        Atenção: você está prestes a enfileirar esta mensagem para {selectedCount} passes,{" "}
                         {ignoredCount} serão ignorados (limite excedido).
                       </span>
                     )}
@@ -836,10 +1067,26 @@ async function handleEnqueue() {
 
                   {sendMode === "schedule" && (
                     <div className="p-4 bg-white rounded-md border">
-                      <div className="text-xs text-gray-500 mb-1">Agendado para</div>
-                      <div className="text-sm font-semibold text-gray-800">
-                        {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
-                      </div>
+                      {!isRecurringWeekly ? (
+                        <>
+                          <div className="text-xs text-gray-500 mb-1">Agendado para</div>
+                          <div className="text-sm font-semibold text-gray-800">
+                            {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-xs text-gray-500 mb-1">Recorrência semanal</div>
+                          <div className="text-sm font-semibold text-gray-800">
+                            {weeklySummaryLabel}
+                          </div>
+                        </>
+                      )}
+                      {isRecurringWeekly && recurrenceTimeOfDay && (
+                        <div className="text-xs text-indigo-700 mt-2">
+                          Hora aplicada: {recurrenceTimeOfDay} ({RECURRENCE_TIMEZONE})
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -860,7 +1107,7 @@ async function handleEnqueue() {
                       {allowedCount > 5 && (
                         <li className="text-gray-500">... e mais {allowedCount - 5}</li>
                       )}
-                      {allowedCount === 0 && <li className="text-gray-500">Nenhum passe sera enfileirado.</li>}
+                      {allowedCount === 0 && <li className="text-gray-500">Nenhum passe será enfileirado.</li>}
                     </ul>
                   </div>
 
@@ -894,24 +1141,11 @@ async function handleEnqueue() {
                     ) : (
                       <Bell className="w-4 h-4 mr-2" />
                     )}
-                    Confirmar e {sendMode === "schedule" ? "Agendar" : "Enfileirar"}
+                    {confirmActionLabel}
                   </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                const suggested = buildSuggestedMessage(segmentPreset);
-                if (suggested) setMessage(suggested);
-                else toast({ title: "Sem sugestão", description: "Selecione um filtro para sugerir uma mensagem." });
-              }}
-              disabled={segmentPreset === "none"}
-            >
-              Usar mensagem sugerida
-            </Button>
           </div>
         </div>
       </div>
