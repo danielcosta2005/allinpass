@@ -9,14 +9,20 @@ import PasswordInput from './PasswordInput';
 import PasswordStrengthMeter from './PasswordStrengthMeter';
 
 function SetPasswordForm({
+  onPasswordConfirmationChange,
+  onPasswordConfirmationTouched,
   onPasswordChange,
   onPasswordTouched,
   onSubmit,
+  passwordSetupConfirmationError,
+  passwordSetupConfirmationValue,
   passwordSetupError,
   passwordSetupLoading,
   passwordSetupState,
   passwordSetupValue,
+  showPasswordSetupConfirmation,
   showPasswordSetup,
+  togglePasswordSetupConfirmationVisibility,
   togglePasswordSetupVisibility,
 }) {
   return (
@@ -52,6 +58,23 @@ function SetPasswordForm({
         />
         {passwordSetupError && (
           <p className="text-sm text-rose-600">{passwordSetupError}</p>
+        )}
+
+        <Label htmlFor="password-setup-confirmation">Confirmação de senha</Label>
+        <PasswordInput
+          id="password-setup-confirmation"
+          value={passwordSetupConfirmationValue}
+          visible={showPasswordSetupConfirmation}
+          onChange={(event) => onPasswordConfirmationChange(event.target.value)}
+          onBlur={onPasswordConfirmationTouched}
+          onToggleVisibility={togglePasswordSetupConfirmationVisibility}
+          placeholder="Digite a senha novamente"
+          ariaInvalid={Boolean(passwordSetupConfirmationError)}
+          showLabel="Mostrar confirmação de senha"
+          hideLabel="Ocultar confirmação de senha"
+        />
+        {passwordSetupConfirmationError && (
+          <p className="text-sm text-rose-600">{passwordSetupConfirmationError}</p>
         )}
 
         <PasswordStrengthMeter passwordState={passwordSetupState} />

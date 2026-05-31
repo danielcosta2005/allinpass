@@ -140,12 +140,16 @@ function SignupPage() {
   const [resendLoading, setResendLoading] = useState(false);
   const [signupError, setSignupError] = useState('');
   const [passwordSetupValue, setPasswordSetupValue] = useState('');
-  const [passwordSetupTouched, setPasswordSetupTouched] = useState(false);
+  const [passwordSetupConfirmationValue, setPasswordSetupConfirmationValue] = useState('');
+  const [, setPasswordSetupTouched] = useState(false);
+  const [, setPasswordSetupConfirmationTouched] = useState(false);
   const [passwordSetupLoading, setPasswordSetupLoading] = useState(false);
   const [passwordSetupError, setPasswordSetupError] = useState('');
+  const [passwordSetupConfirmationError, setPasswordSetupConfirmationError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
   const [showPasswordSetup, setShowPasswordSetup] = useState(false);
+  const [showPasswordSetupConfirmation, setShowPasswordSetupConfirmation] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
   const turnstileResetRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -246,7 +250,9 @@ function SignupPage() {
   const handlePasswordSetupSubmit = async (event) => {
     event.preventDefault();
     setPasswordSetupTouched(true);
+    setPasswordSetupConfirmationTouched(true);
     setPasswordSetupError('');
+    setPasswordSetupConfirmationError('');
 
     if (!authSession?.user) {
       const message = 'Sua sessão expirou. Abra o magic link novamente para criar sua senha.';
@@ -272,6 +278,16 @@ function SignupPage() {
       return;
     }
 
+    if (!passwordSetupConfirmationValue) {
+      setPasswordSetupConfirmationError('Confirme a senha para evitar erros de acesso.');
+      return;
+    }
+
+    if (passwordSetupConfirmationValue !== passwordSetupValue) {
+      setPasswordSetupConfirmationError('As senhas não conferem. Ajuste para continuar.');
+      return;
+    }
+
     const shouldContinueToPaidCheckoutAfterPasswordSetup =
       shouldSetupExistingCustomerPasswordBeforePaidCheckout;
 
@@ -294,8 +310,11 @@ function SignupPage() {
         });
         clearSignupPasswordSetupRequired();
         setPasswordSetupValue('');
+        setPasswordSetupConfirmationValue('');
         setPasswordSetupTouched(false);
+        setPasswordSetupConfirmationTouched(false);
         setPasswordSetupError('');
+        setPasswordSetupConfirmationError('');
         await refreshAuthProfile();
         setCheckoutError('');
         setFinishedFlow('');
@@ -310,8 +329,11 @@ function SignupPage() {
       clearSignupPasswordSetupRequired();
       clearExistingCustomerSignupContext();
       setPasswordSetupValue('');
+      setPasswordSetupConfirmationValue('');
       setPasswordSetupTouched(false);
+      setPasswordSetupConfirmationTouched(false);
       setPasswordSetupError('');
+      setPasswordSetupConfirmationError('');
       await refreshAuthProfile();
       toast({
         title: 'Senha criada',
@@ -1026,17 +1048,26 @@ function SignupPage() {
 
                 {finishedFlow === 'set-password' && (
                   <SetPasswordForm
+                    onPasswordConfirmationChange={(value) => {
+                      setPasswordSetupConfirmationValue(value);
+                      setPasswordSetupConfirmationError('');
+                    }}
+                    onPasswordConfirmationTouched={() => setPasswordSetupConfirmationTouched(true)}
                     onPasswordChange={(value) => {
                       setPasswordSetupValue(value);
                       setPasswordSetupError('');
                     }}
                     onPasswordTouched={() => setPasswordSetupTouched(true)}
                     onSubmit={handlePasswordSetupSubmit}
+                    passwordSetupConfirmationError={passwordSetupConfirmationError}
+                    passwordSetupConfirmationValue={passwordSetupConfirmationValue}
                     passwordSetupError={passwordSetupError}
                     passwordSetupLoading={passwordSetupLoading}
                     passwordSetupState={passwordSetupState}
                     passwordSetupValue={passwordSetupValue}
+                    showPasswordSetupConfirmation={showPasswordSetupConfirmation}
                     showPasswordSetup={showPasswordSetup}
+                    togglePasswordSetupConfirmationVisibility={() => setShowPasswordSetupConfirmation((visible) => !visible)}
                     togglePasswordSetupVisibility={() => setShowPasswordSetup((visible) => !visible)}
                   />
                 )}
