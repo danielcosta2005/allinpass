@@ -629,17 +629,8 @@ async function handleEnqueue() {
     sendMode === "schedule" && isRecurringWeekly && (weeklyDays.length === 0 || !recurrenceTimeOfDay);
   const schedulingStatusLabel =
     sendMode === "now" ? "Imediato" : isScheduledRecurring ? "Semanal" : "Data específica";
-  const reviewActionLabel = isScheduledRecurring
-    ? "Revisar e Ativar recorrência"
-    : sendMode === "schedule"
-      ? "Revisar e Agendar"
-      : "Revisar e Enfileirar";
-  const confirmActionLabel = isScheduledRecurring
-    ? "Confirmar e Ativar recorrência"
-    : sendMode === "schedule"
-      ? "Confirmar e Agendar"
-      : "Confirmar e Enfileirar";
-
+  const reviewActionLabel = "Revisar" 
+  const confirmActionLabel = "Confirmar"
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -1155,23 +1146,6 @@ async function handleEnqueue() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                const suggested = buildSuggestedMessage(segmentPreset);
-                if (suggested) setMessage(suggested);
-                else
-                  toast({
-                    title: "Sem sugestão",
-                    description: "Selecione um filtro para sugerir uma mensagem.",
-                  });
-              }}
-              disabled={segmentPreset === "none"}
-            >
-              Usar mensagem sugerida
-            </Button>
           </div>
         </div>
       </div>
