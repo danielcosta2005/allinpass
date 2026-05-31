@@ -49,7 +49,7 @@ function readProviderId(value: unknown) {
   return null;
 }
 
-type SupabaseAdmin = ReturnType<typeof createClient>;
+type SupabaseAdmin = any;
 
 async function handleSignupCheckoutWebhook(
   supabaseAdmin: SupabaseAdmin,
@@ -168,7 +168,7 @@ async function handleSubscriptionWebhook(
   payload: unknown,
 ) {
   if (event === "SUBSCRIPTION_UPDATED") {
-    // Keep handling below; the explicit branch documents the Asaas upgrade sync event.
+    // Keep handling below; the explicit branch documents the Asaas plan-change sync event.
   }
   if (!event.startsWith("SUBSCRIPTION_")) return false;
 

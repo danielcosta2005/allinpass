@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
+type SupabaseAdmin = any;
+
 type PlanChangeSession = {
   id: string;
   project_id: string;
@@ -47,7 +49,7 @@ function requiredEnv(name: string) {
 }
 
 async function requireOwnerMembership(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   projectId: string,
   userId: string,
 ) {
@@ -70,7 +72,7 @@ async function requireOwnerMembership(
   if (data.role !== "owner") {
     throw new BillingPlanFinalizeError(
       "BILLING_PLAN_FINALIZE_OWNER_REQUIRED",
-      "Apenas o proprietario do projeto pode finalizar upgrade.",
+      "Apenas o proprietario do projeto pode finalizar a mudanca de plano.",
       403,
     );
   }
@@ -99,7 +101,7 @@ Deno.serve(async (req) => {
     if (!authHeader.startsWith("Bearer ")) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_MISSING_AUTHORIZATION",
-        "Sessao obrigatoria para finalizar upgrade.",
+        "Sessao obrigatoria para finalizar a mudanca de plano.",
         401,
       );
     }
@@ -128,7 +130,7 @@ Deno.serve(async (req) => {
     if (!planChangeSessionId) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_MISSING_SESSION",
-        "Informe a sessao de upgrade.",
+        "Informe a sessao de mudanca de plano.",
         400,
       );
     }
@@ -148,7 +150,7 @@ Deno.serve(async (req) => {
     if (!session) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_SESSION_NOT_FOUND",
-        "Sessao de upgrade nao encontrada.",
+        "Sessao de mudanca de plano nao encontrada.",
         404,
       );
     }
@@ -166,7 +168,7 @@ Deno.serve(async (req) => {
     if (session.status !== "paid") {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_PAYMENT_NOT_CONFIRMED",
-        "Pagamento do upgrade ainda nao confirmado pelo Asaas.",
+        "Pagamento da mudanca de plano ainda nao confirmado pelo Asaas.",
         409,
       );
     }
@@ -198,7 +200,7 @@ Deno.serve(async (req) => {
       origin,
       new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_INTERNAL_ERROR",
-        "Erro interno ao finalizar upgrade.",
+        "Erro interno ao finalizar a mudanca de plano.",
         500,
       ),
     );

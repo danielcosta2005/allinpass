@@ -1,8 +1,8 @@
--- Suporte ao fluxo de upgrade de plano dentro do painel do estabelecimento.
+-- Suporte ao fluxo de mudanca de plano dentro do painel do estabelecimento.
 --
 -- A assinatura atual continua em public.billing_subscriptions e o historico
 -- comercial continua em public.billing_subscription_changes. Esta tabela guarda
--- apenas a intencao operacional do upgrade, incluindo checkout/assinatura Asaas.
+-- apenas a intencao operacional da mudanca, incluindo checkout/assinatura Asaas.
 
 create table if not exists public.billing_plan_change_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -12,7 +12,7 @@ create table if not exists public.billing_plan_change_sessions (
   new_plan_id uuid not null references public.billing_plans(id) on delete restrict,
   requested_by uuid references public.profiles(id) on delete set null,
   change_type text not null default 'upgrade'
-    check (change_type in ('upgrade', 'trial_conversion')),
+    check (change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change')),
   effective_mode text not null default 'immediate'
     check (effective_mode in ('immediate', 'next_cycle')),
   provider text not null default 'asaas'
@@ -48,6 +48,13 @@ create table if not exists public.billing_plan_change_sessions (
     )
 );
 
+alter table public.billing_plan_change_sessions
+  drop constraint if exists billing_plan_change_sessions_change_type_check;
+
+alter table public.billing_plan_change_sessions
+  add constraint billing_plan_change_sessions_change_type_check
+  check (change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change'));
+
 create unique index if not exists billing_plan_change_sessions_external_reference_uidx
   on public.billing_plan_change_sessions (external_reference);
 
@@ -82,6 +89,13 @@ grant select, insert, update on table public.billing_plan_change_sessions to ser
 drop policy if exists billing_subscriptions_member_insert on public.billing_subscriptions;
 drop policy if exists billing_subscriptions_member_update on public.billing_subscriptions;
 drop policy if exists billing_subscription_changes_member_insert on public.billing_subscription_changes;
+
+alter table public.billing_subscription_changes
+  drop constraint if exists billing_subscription_changes_change_type_check;
+
+alter table public.billing_subscription_changes
+  add constraint billing_subscription_changes_change_type_check
+  check (change_type in ('upgrade', 'downgrade', 'renewal', 'cancellation', 'reactivation', 'trial_conversion', 'plan_change'));
 
 create or replace function public.apply_billing_plan_change(
   p_session_id uuid,
@@ -187,7 +201,13 @@ begin
     status = 'active',
     trial_started_at = null,
     trial_ends_at = null,
-    gateway_provider = 'asaas',
+    gateway_provider = case
+      when v_new_plan.base_price_cents > 0
+        or nullif(p_provider_subscription_id, '') is not null
+        or nullif(v_session.provider_subscription_id, '') is not null
+      then 'asaas'
+      else gateway_provider
+    end,
     gateway_subscription_id = coalesce(
       nullif(p_provider_subscription_id, ''),
       nullif(v_session.provider_subscription_id, ''),
@@ -208,7 +228,13 @@ begin
 
   update public.billing_accounts
   set
-    gateway_provider = 'asaas',
+    gateway_provider = case
+      when v_new_plan.base_price_cents > 0
+        or nullif(p_provider_customer_id, '') is not null
+        or nullif(v_session.provider_customer_id, '') is not null
+      then 'asaas'
+      else gateway_provider
+    end,
     gateway_customer_id = coalesce(
       nullif(p_provider_customer_id, ''),
       nullif(v_session.provider_customer_id, ''),
@@ -264,7 +290,7 @@ begin
     v_subscription.id,
     'update',
     jsonb_build_object(
-      'origin', 'plan_upgrade',
+      'origin', 'plan_change',
       'previous_plan_id', v_session.previous_plan_id,
       'new_plan_id', v_session.new_plan_id,
       'billing_subscription_change_id', v_change_id,

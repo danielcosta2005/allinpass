@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { fetchSubscriptionPlans } from '@/lib/subscriptionPlans';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused'];
+const FREE_PLAN_CODE = 'free_trial';
 
 async function readFunctionError(error) {
   const context = error?.context;
@@ -68,6 +69,18 @@ function normalizeSubscription(row) {
   };
 }
 
+function normalizePlanCode(value) {
+  return String(value || '').trim().toLowerCase().replace(/-/g, '_');
+}
+
+function getPlanPriceCents(plan) {
+  if (!plan) return 0;
+  if (Number.isFinite(Number(plan.basePriceCents))) {
+    return Number(plan.basePriceCents || 0);
+  }
+  return Math.round(Number(plan.price || 0) * 100);
+}
+
 export async function getCurrentBillingSubscription(projectId) {
   const normalizedProjectId = String(projectId || '').trim();
   if (!normalizedProjectId) return null;
@@ -100,19 +113,59 @@ export async function getCurrentBillingSubscription(projectId) {
   return normalizeSubscription(data);
 }
 
-export async function getUpgradeablePlans(currentSubscription, planList) {
+export function getPlanChangeKind(currentSubscription, targetPlan) {
+  if (!currentSubscription || !targetPlan) return 'unavailable';
+
+  const currentPlanCode = normalizePlanCode(currentSubscription.plan?.code);
+  const targetPlanCode = normalizePlanCode(targetPlan.code);
+  if (!targetPlanCode) return 'unavailable';
+  if (targetPlanCode === currentPlanCode) return 'current';
+  if (targetPlanCode === FREE_PLAN_CODE) return 'unavailable';
+
+  const currentPriceCents = getPlanPriceCents(currentSubscription) || getPlanPriceCents(currentSubscription.plan);
+  const targetPriceCents = getPlanPriceCents(targetPlan);
+
+  if (currentPlanCode === FREE_PLAN_CODE || currentPriceCents <= 0) {
+    return targetPriceCents > 0 ? 'trial_conversion' : 'current';
+  }
+
+  if (targetPriceCents > currentPriceCents) return 'upgrade';
+  if (targetPriceCents < currentPriceCents) return 'downgrade';
+  return 'plan_change';
+}
+
+export function getPlanChangeActionLabel(changeKind) {
+  if (changeKind === 'current') return 'Plano atual';
+  if (changeKind === 'trial_conversion') return 'Assinar plano';
+  if (changeKind === 'upgrade') return 'Fazer upgrade';
+  if (changeKind === 'downgrade') return 'Fazer downgrade';
+  if (changeKind === 'plan_change') return 'Trocar plano';
+  return 'Indisponivel';
+}
+
+export async function getPlanChangeOptions(currentSubscription, planList) {
   if (!currentSubscription) return [];
 
   const plans = Array.isArray(planList) ? planList : await fetchSubscriptionPlans();
-  const currentPlanCode = String(currentSubscription.plan?.code || '').trim().toLowerCase();
-  const currentPrice = Number(currentSubscription.basePriceCents || currentSubscription.plan?.basePriceCents || 0);
 
   return plans
-    .filter((plan) => plan?.type === 'paid')
-    .filter((plan) => String(plan.code || '').trim().toLowerCase() !== currentPlanCode)
-    .filter((plan) => Number(plan.price || 0) * 100 > currentPrice)
-    .sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+    .filter(Boolean)
+    .map((plan) => {
+      const changeKind = getPlanChangeKind(currentSubscription, plan);
+      const isCurrent = changeKind === 'current';
+
+      return {
+        ...plan,
+        changeKind,
+        isCurrent,
+        isSelectable: !isCurrent && changeKind !== 'unavailable',
+        actionLabel: getPlanChangeActionLabel(changeKind),
+      };
+    })
+    .filter((plan) => plan.changeKind !== 'unavailable');
 }
+
+export const getUpgradeablePlans = getPlanChangeOptions;
 
 export function getBillingPlanName(subscription) {
   return subscription?.plan?.name || 'Plano atual';

@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
+type SupabaseAdmin = any;
+
 const FREE_PLAN_CODE = "free_trial";
 const DEFAULT_CHECKOUT_EXPIRATION_MINUTES = 60;
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "paused"];
@@ -182,7 +184,7 @@ function readProviderId(value: unknown) {
 }
 
 async function requireOwnerMembership(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   projectId: string,
   userId: string,
 ) {
@@ -212,7 +214,7 @@ async function requireOwnerMembership(
 }
 
 async function getCurrentSubscription(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   projectId: string,
 ): Promise<BillingSubscription> {
   const { data, error } = await supabaseAdmin
@@ -255,7 +257,7 @@ async function getCurrentSubscription(
 }
 
 async function getTargetPlan(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   planCode: string,
 ): Promise<BillingPlan> {
   const { data, error } = await supabaseAdmin
@@ -280,10 +282,10 @@ async function getTargetPlan(
 
   if (error) throw error;
   const plan = data as BillingPlan | null;
-  if (!plan || plan.base_price_cents <= 0) {
+  if (!plan) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_TARGET_PLAN_NOT_FOUND",
-      "Plano de upgrade ativo nao encontrado.",
+      "Plano ativo nao encontrado.",
       404,
     );
   }
@@ -292,7 +294,7 @@ async function getTargetPlan(
 }
 
 async function applyBillingPlanChange(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   sessionId: string,
   actorUserId: string,
   providerIds: {
@@ -315,7 +317,7 @@ async function applyBillingPlanChange(
 }
 
 async function findReusableSession(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: SupabaseAdmin,
   subscription: BillingSubscription,
   targetPlan: BillingPlan,
 ) {
@@ -334,7 +336,21 @@ async function findReusableSession(
   return data as PlanChangeSession | null;
 }
 
-async function createUpgradeCheckout({
+function getPlanChangeType(
+  subscription: BillingSubscription,
+  targetPlan: BillingPlan,
+) {
+  const currentPlanCode = String(subscription.billing_plans?.code || "").trim().toLowerCase();
+  const currentPriceCents = Number(subscription.base_price_cents || subscription.billing_plans?.base_price_cents || 0);
+  const targetPriceCents = Number(targetPlan.base_price_cents || 0);
+
+  if (currentPlanCode === FREE_PLAN_CODE || currentPriceCents <= 0) return "trial_conversion";
+  if (targetPriceCents < currentPriceCents) return "downgrade";
+  if (targetPriceCents > currentPriceCents) return "upgrade";
+  return "plan_change";
+}
+
+async function createPlanChangeCheckout({
   supabaseAdmin,
   asaasApiKey,
   origin,
@@ -344,7 +360,7 @@ async function createUpgradeCheckout({
   targetPlan,
   changeType,
 }: {
-  supabaseAdmin: ReturnType<typeof createClient>;
+  supabaseAdmin: SupabaseAdmin;
   asaasApiKey: string;
   origin: string | null;
   userId: string;
@@ -395,15 +411,15 @@ async function createUpgradeCheckout({
 
   const callbackUrls = {
     success_url: buildOrgRedirectUrl(appBaseUrl, {
-      upgrade: "success",
+      planChange: "success",
       planChangeSessionId: session.id,
     }),
     cancel_url: buildOrgRedirectUrl(appBaseUrl, {
-      upgrade: "cancel",
+      planChange: "cancel",
       planChangeSessionId: session.id,
     }),
     expired_url: buildOrgRedirectUrl(appBaseUrl, {
-      upgrade: "expired",
+      planChange: "expired",
       planChangeSessionId: session.id,
     }),
   };
@@ -452,7 +468,7 @@ async function createUpgradeCheckout({
 
   const asaasBody = await asaasResponse.json().catch(() => ({}));
   if (!asaasResponse.ok) {
-    const message = getAsaasErrorMessage(asaasBody) || "Nao foi possivel criar o checkout de upgrade.";
+    const message = getAsaasErrorMessage(asaasBody) || "Nao foi possivel criar o checkout de mudanca de plano.";
     await supabaseAdmin
       .from("billing_plan_change_sessions")
       .update({
@@ -520,7 +536,7 @@ async function updateAsaasSubscription({
   targetPlan,
   changeType,
 }: {
-  supabaseAdmin: ReturnType<typeof createClient>;
+  supabaseAdmin: SupabaseAdmin;
   asaasApiKey: string;
   userId: string;
   subscription: BillingSubscription;
@@ -528,12 +544,19 @@ async function updateAsaasSubscription({
   changeType: string;
 }) {
   const externalReference = crypto.randomUUID();
-  const asaasPayload = {
-    value: targetPlan.base_price_cents / 100,
-    cycle: "MONTHLY",
-    description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
-    updatePendingPayments: true,
-  };
+  const isNoChargePlan = Number(targetPlan.base_price_cents || 0) <= 0;
+  const asaasPayload = isNoChargePlan
+    ? {
+      status: "INACTIVE",
+      description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
+      updatePendingPayments: true,
+    }
+    : {
+      value: targetPlan.base_price_cents / 100,
+      cycle: "MONTHLY",
+      description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
+      updatePendingPayments: true,
+    };
 
   const asaasResponse = await fetch(
     `${getAsaasApiBaseUrl()}/subscriptions/${encodeURIComponent(subscription.gateway_subscription_id ?? "")}`,
@@ -578,7 +601,7 @@ async function updateAsaasSubscription({
       paid_at: new Date().toISOString(),
       metadata: {
         origin: "billing_start_plan_change",
-        mode: "subscription_update",
+        mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
         target_plan_code: targetPlan.code,
         asaas_request: asaasPayload,
         asaas_response: asaasBody,
@@ -597,7 +620,58 @@ async function updateAsaasSubscription({
 
   return {
     success: true,
-    mode: "subscription_update",
+    mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
+    plan_change_session_id: session.id,
+    applied: true,
+    result: applied,
+  };
+}
+
+async function applyNoChargePlanChange({
+  supabaseAdmin,
+  userId,
+  subscription,
+  targetPlan,
+  changeType,
+}: {
+  supabaseAdmin: SupabaseAdmin;
+  userId: string;
+  subscription: BillingSubscription;
+  targetPlan: BillingPlan;
+  changeType: string;
+}) {
+  const { data: sessionData, error: sessionError } = await supabaseAdmin
+    .from("billing_plan_change_sessions")
+    .insert({
+      project_id: subscription.project_id,
+      subscription_id: subscription.id,
+      previous_plan_id: subscription.plan_id,
+      new_plan_id: targetPlan.id,
+      requested_by: userId,
+      change_type: changeType,
+      effective_mode: "immediate",
+      provider: "asaas",
+      external_reference: crypto.randomUUID(),
+      status: "paid",
+      amount_cents: 0,
+      currency: "BRL",
+      paid_at: new Date().toISOString(),
+      metadata: {
+        origin: "billing_start_plan_change",
+        mode: "no_charge_plan_change",
+        target_plan_code: targetPlan.code,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (sessionError) throw sessionError;
+  const session = sessionData as { id: string };
+  const applied = await applyBillingPlanChange(supabaseAdmin, session.id, userId);
+
+  return {
+    success: true,
+    mode: "no_charge_plan_change",
     plan_change_session_id: session.id,
     applied: true,
     result: applied,
@@ -662,10 +736,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (!planCode || planCode === FREE_PLAN_CODE) {
+    if (!planCode) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_UNSUPPORTED_PLAN",
-        "Selecione um plano pago para upgrade.",
+        "Selecione um plano para alterar.",
+        400,
+      );
+    }
+
+    if (planCode === FREE_PLAN_CODE) {
+      throw new BillingPlanChangeError(
+        "BILLING_PLAN_CHANGE_UNSUPPORTED_PLAN",
+        "Free trial nao pode ser destino de mudanca de plano.",
         400,
       );
     }
@@ -689,20 +771,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const currentPlanCode = String(subscription.billing_plans?.code || "").trim().toLowerCase();
     const currentPriceCents = Number(subscription.base_price_cents || subscription.billing_plans?.base_price_cents || 0);
-
-    if (targetPlan.base_price_cents <= currentPriceCents) {
-      throw new BillingPlanChangeError(
-        "BILLING_PLAN_CHANGE_NOT_AN_UPGRADE",
-        "Por enquanto, este fluxo aceita apenas upgrade para plano superior.",
-        400,
-      );
-    }
-
-    const changeType = currentPlanCode === FREE_PLAN_CODE || currentPriceCents <= 0
-      ? "trial_conversion"
-      : "upgrade";
+    const targetPriceCents = Number(targetPlan.base_price_cents || 0);
+    const changeType = getPlanChangeType(subscription, targetPlan);
 
     const reusableSession = await findReusableSession(supabaseAdmin, subscription, targetPlan);
     if (reusableSession?.status === "paid") {
@@ -733,12 +804,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    const asaasApiKey = requiredEnv("ASAAS_API_KEY");
     const email = String(user.email ?? "").trim().toLowerCase();
     const hasExistingAsaasSubscription =
       subscription.gateway_provider === "asaas"
       && Boolean(subscription.gateway_subscription_id)
       && currentPriceCents > 0;
+    const asaasApiKey = hasExistingAsaasSubscription || targetPriceCents > 0
+      ? requiredEnv("ASAAS_API_KEY")
+      : "";
 
     const result = hasExistingAsaasSubscription
       ? await updateAsaasSubscription({
@@ -749,16 +822,24 @@ Deno.serve(async (req) => {
         targetPlan,
         changeType,
       })
-      : await createUpgradeCheckout({
-        supabaseAdmin,
-        asaasApiKey,
-        origin,
-        userId: user.id,
-        email,
-        subscription,
-        targetPlan,
-        changeType,
-      });
+      : targetPriceCents <= 0
+        ? await applyNoChargePlanChange({
+          supabaseAdmin,
+          userId: user.id,
+          subscription,
+          targetPlan,
+          changeType,
+        })
+        : await createPlanChangeCheckout({
+          supabaseAdmin,
+          asaasApiKey,
+          origin,
+          userId: user.id,
+          email,
+          subscription,
+          targetPlan,
+          changeType,
+        });
 
     return jsonResponse(origin, result);
   } catch (error) {

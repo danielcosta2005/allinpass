@@ -5,6 +5,7 @@ import {
   AlertCircle,
   BarChart3,
   Bell,
+  Check,
   CheckCircle2,
   CreditCard,
   ExternalLink,
@@ -15,6 +16,7 @@ import {
   MessageCircle,
   RefreshCw,
   ScanLine,
+  Star,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -39,7 +41,7 @@ import {
   finalizeBillingPlanChange,
   getBillingPlanName,
   getCurrentBillingSubscription,
-  getUpgradeablePlans,
+  getPlanChangeOptions,
   startBillingPlanChange,
 } from '@/lib/billing';
 import { finalizeSignup, getSignupStatus, startPaidSignupCheckout } from '@/lib/signup';
@@ -72,8 +74,8 @@ const formatCurrencyBRL = (value) =>
 
 const loadBillingData = async (projectId) => {
   const subscription = await getCurrentBillingSubscription(projectId);
-  const upgradeablePlans = await getUpgradeablePlans(subscription);
-  return { subscription, upgradeablePlans };
+  const planChangeOptions = await getPlanChangeOptions(subscription);
+  return { subscription, planChangeOptions };
 };
 
 const getPaidSignupCardCopy = (signupState) => {
@@ -250,6 +252,146 @@ const NoProjectSignupState = ({
   );
 };
 
+const getPlanCardTone = (plan) => {
+  if (plan?.isCurrent) {
+    return {
+      wrapper: 'border-purple-300 bg-gradient-to-br from-purple-50 via-white to-indigo-50 shadow-lg shadow-purple-100/70',
+      title: 'text-purple-950',
+      description: 'text-purple-800/80',
+      price: 'text-purple-950',
+      muted: 'text-purple-700',
+      checkBg: 'bg-purple-100',
+      check: 'text-purple-700',
+      button: 'border-purple-200 bg-white text-purple-700',
+      badge: 'bg-purple-600 text-white',
+      feature: 'text-gray-700',
+    };
+  }
+
+  if (plan?.type === 'trial') {
+    return {
+      wrapper: 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-lg shadow-emerald-100/70',
+      title: 'text-emerald-950',
+      description: 'text-emerald-800/80',
+      price: 'text-emerald-950',
+      muted: 'text-emerald-700',
+      checkBg: 'bg-emerald-100',
+      check: 'text-emerald-700',
+      button: 'bg-emerald-600 text-white hover:bg-emerald-700',
+      badge: 'bg-emerald-500 text-white',
+      feature: 'text-gray-700',
+    };
+  }
+
+  if (plan?.highlighted) {
+    return {
+      wrapper: 'border-transparent bg-gradient-to-br from-purple-600 to-indigo-700 text-white shadow-2xl shadow-purple-500/30',
+      title: 'text-white',
+      description: 'text-purple-100',
+      price: 'text-white',
+      muted: 'text-purple-200',
+      checkBg: 'bg-white/20',
+      check: 'text-white',
+      button: 'bg-white text-purple-700 hover:bg-purple-50',
+      badge: 'bg-gradient-to-r from-yellow-400 to-orange-400 text-yellow-950',
+      feature: 'text-purple-50',
+    };
+  }
+
+  return {
+    wrapper: 'border-gray-200 bg-white shadow-sm hover:border-purple-200 hover:shadow-xl hover:shadow-purple-500/5',
+    title: 'text-gray-900',
+    description: 'text-gray-500',
+    price: 'text-gray-900',
+    muted: 'text-gray-500',
+    checkBg: 'bg-purple-100',
+    check: 'text-purple-600',
+    button: 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700',
+    badge: 'bg-gradient-to-r from-yellow-400 to-orange-400 text-yellow-950',
+    feature: 'text-gray-700',
+  };
+};
+
+const getPlanChangeHint = (plan) => {
+  if (plan?.isCurrent) return 'Ativo agora';
+  if (plan?.changeKind === 'downgrade') return 'Menor mensalidade';
+  if (plan?.changeKind === 'upgrade') return 'Mais capacidade';
+  if (plan?.changeKind === 'trial_conversion') return 'Ativacao paga';
+  return 'Troca disponivel';
+};
+
+const BillingPlanChoiceCard = ({
+  plan,
+  busy,
+  disabled,
+  onSelect,
+}) => {
+  const tone = getPlanCardTone(plan);
+  const badgeText = plan.isCurrent ? 'Plano atual' : plan.badge || plan.highlight;
+  const isActionDisabled = disabled || !plan.isSelectable;
+  const actionLabel = plan.actionLabel || (plan.changeKind === 'downgrade' ? 'Fazer downgrade' : 'Trocar plano');
+  const hasZeroTrialPrice = plan.type === 'trial' && Number(plan.price || 0) <= 0;
+  const priceLabel = hasZeroTrialPrice
+    ? `${plan.trialDays || 7} dias`
+    : formatCurrencyBRL(plan.price).replace(/^R\$\s?/, '');
+  const suffixLabel = hasZeroTrialPrice ? 'gratis' : '/mes';
+
+  return (
+    <div className={`relative flex h-full min-h-[520px] flex-col rounded-2xl border p-6 transition-all duration-300 ${tone.wrapper}`}>
+      {badgeText && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+          <div className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold shadow-lg ${tone.badge}`}>
+            {!plan.isCurrent && plan.badge ? <Star className="h-3 w-3 fill-current" /> : null}
+            {badgeText}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-5">
+        <p className={`mb-2 text-xs font-semibold uppercase ${tone.muted}`}>{getPlanChangeHint(plan)}</p>
+        <h3 className={`text-xl font-bold ${tone.title}`}>{plan.name}</h3>
+        <p className={`mt-2 min-h-[40px] text-sm ${tone.description}`}>{plan.description}</p>
+      </div>
+
+      <div className="mb-6">
+        <div className="flex items-baseline gap-1">
+          {!hasZeroTrialPrice ? <span className={`text-sm ${tone.muted}`}>R$</span> : null}
+          <span className={`text-4xl font-bold ${tone.price}`}>{priceLabel}</span>
+          <span className={`text-sm ${tone.muted}`}>{suffixLabel}</span>
+        </div>
+      </div>
+
+      <ul className="mb-6 flex-1 space-y-3">
+        {(plan.features || []).slice(0, 6).map((feature) => (
+          <li key={feature} className="flex items-start gap-2.5">
+            <div className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${tone.checkBg}`}>
+              <Check className={`h-3 w-3 ${tone.check}`} strokeWidth={3} />
+            </div>
+            <span className={`text-sm ${tone.feature}`}>{feature}</span>
+          </li>
+        ))}
+      </ul>
+
+      <Button
+        type="button"
+        onClick={() => onSelect(plan)}
+        disabled={isActionDisabled}
+        className={`min-h-12 w-full gap-2 whitespace-normal px-4 text-sm font-semibold ${tone.button}`}
+        variant={plan.isCurrent ? 'outline' : 'default'}
+      >
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : plan.isCurrent ? (
+          <CheckCircle2 className="h-4 w-4" />
+        ) : (
+          <CreditCard className="h-4 w-4" />
+        )}
+        {actionLabel}
+      </Button>
+    </div>
+  );
+};
+
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
   const { toast } = useToast();
@@ -259,10 +401,10 @@ const RestaurantDashboard = () => {
   const [signupStatusError, setSignupStatusError] = useState('');
   const [signupActionLoading, setSignupActionLoading] = useState(false);
   const [billingSubscription, setBillingSubscription] = useState(null);
-  const [upgradeablePlans, setUpgradeablePlans] = useState([]);
+  const [planChangeOptions, setPlanChangeOptions] = useState([]);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingError, setBillingError] = useState('');
-  const [planUpgradeOpen, setPlanUpgradeOpen] = useState(false);
+  const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
   const userMetadataPlanCode = user?.user_metadata?.plan_code || '';
   const userMetadataEstablishmentName = user?.user_metadata?.establishment_name || '';
@@ -298,7 +440,7 @@ const RestaurantDashboard = () => {
   const refreshBillingState = useCallback(async () => {
     if (!projectId) {
       setBillingSubscription(null);
-      setUpgradeablePlans([]);
+      setPlanChangeOptions([]);
       setBillingError('');
       setBillingLoading(false);
       return null;
@@ -310,12 +452,12 @@ const RestaurantDashboard = () => {
     try {
       const data = await loadBillingData(projectId);
       setBillingSubscription(data.subscription);
-      setUpgradeablePlans(data.upgradeablePlans);
+      setPlanChangeOptions(data.planChangeOptions);
       return data.subscription;
     } catch (error) {
       const message = error?.message || 'Nao foi possivel carregar o plano atual.';
       setBillingSubscription(null);
-      setUpgradeablePlans([]);
+      setPlanChangeOptions([]);
       setBillingError(message);
       return null;
     } finally {
@@ -326,7 +468,7 @@ const RestaurantDashboard = () => {
   useEffect(() => {
     if (!projectId) {
       setBillingSubscription(null);
-      setUpgradeablePlans([]);
+      setPlanChangeOptions([]);
       setBillingError('');
       setBillingLoading(false);
       return undefined;
@@ -340,12 +482,12 @@ const RestaurantDashboard = () => {
       .then((data) => {
         if (cancelled) return;
         setBillingSubscription(data.subscription);
-        setUpgradeablePlans(data.upgradeablePlans);
+        setPlanChangeOptions(data.planChangeOptions);
       })
       .catch((error) => {
         if (cancelled) return;
         setBillingSubscription(null);
-        setUpgradeablePlans([]);
+        setPlanChangeOptions([]);
         setBillingError(error?.message || 'Nao foi possivel carregar o plano atual.');
       })
       .finally(() => {
@@ -361,13 +503,14 @@ const RestaurantDashboard = () => {
     if (!projectId || typeof window === 'undefined') return undefined;
 
     const params = new URLSearchParams(window.location.search || '');
-    const upgradeStatus = params.get('upgrade');
+    const planChangeStatus = params.get('planChange') || params.get('upgrade');
     const planChangeSessionId = String(params.get('planChangeSessionId') || '').trim();
 
-    if (!upgradeStatus || !planChangeSessionId) return undefined;
+    if (!planChangeStatus || !planChangeSessionId) return undefined;
 
-    const clearUpgradeParams = () => {
+    const clearPlanChangeParams = () => {
       const nextParams = new URLSearchParams(window.location.search || '');
+      nextParams.delete('planChange');
       nextParams.delete('upgrade');
       nextParams.delete('planChangeSessionId');
       const nextSearch = nextParams.toString();
@@ -375,13 +518,13 @@ const RestaurantDashboard = () => {
       window.history.replaceState({}, '', nextUrl);
     };
 
-    if (upgradeStatus !== 'success') {
+    if (planChangeStatus !== 'success') {
       toast({
-        title: upgradeStatus === 'expired' ? 'Checkout expirado' : 'Upgrade nao concluido',
+        title: planChangeStatus === 'expired' ? 'Checkout expirado' : 'Mudanca nao concluida',
         description: 'Voce pode abrir a selecao de planos e tentar novamente.',
-        variant: upgradeStatus === 'expired' ? 'destructive' : undefined,
+        variant: planChangeStatus === 'expired' ? 'destructive' : undefined,
       });
-      clearUpgradeParams();
+      clearPlanChangeParams();
       return undefined;
     }
 
@@ -394,21 +537,21 @@ const RestaurantDashboard = () => {
         await refreshBillingState();
         toast({
           title: 'Plano atualizado',
-          description: 'Seu upgrade foi aplicado ao projeto.',
+          description: 'A mudanca de plano foi aplicada ao projeto.',
         });
       })
       .catch((error) => {
         if (cancelled) return;
-        setBillingError(error?.message || 'Nao foi possivel finalizar o upgrade.');
+        setBillingError(error?.message || 'Nao foi possivel finalizar a mudanca de plano.');
         toast({
-          title: 'Upgrade pendente',
+          title: 'Mudanca pendente',
           description: error?.message || 'Aguarde a confirmacao do pagamento e atualize o painel.',
           variant: 'destructive',
         });
       })
       .finally(() => {
         if (!cancelled) setBillingActionPlanCode('');
-        clearUpgradeParams();
+        clearPlanChangeParams();
       });
 
     return () => {
@@ -552,8 +695,8 @@ const RestaurantDashboard = () => {
     }
   }, [resolvePendingSignupData, signupActionLoading, signupStatus?.checkoutSessionId, toast]);
 
-  const handleStartPlanUpgrade = useCallback(async (plan) => {
-    if (!projectId || !plan?.code || billingActionPlanCode) return;
+  const handleStartPlanChange = useCallback(async (plan) => {
+    if (!projectId || !plan?.code || !plan?.isSelectable || billingActionPlanCode) return;
 
     setBillingActionPlanCode(plan.code);
     setBillingError('');
@@ -570,16 +713,16 @@ const RestaurantDashboard = () => {
       }
 
       await refreshBillingState();
-      setPlanUpgradeOpen(false);
+      setPlanChangeOpen(false);
       toast({
         title: 'Plano atualizado',
         description: `Seu projeto agora usa o plano ${plan.name}.`,
       });
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar o upgrade.';
+      const message = error?.message || 'Nao foi possivel iniciar a mudanca de plano.';
       setBillingError(message);
       toast({
-        title: 'Erro ao fazer upgrade',
+        title: 'Erro ao alterar plano',
         description: message,
         variant: 'destructive',
       });
@@ -635,7 +778,7 @@ const RestaurantDashboard = () => {
                   <p className="truncate text-sm text-gray-600">{user?.email}</p>
                   <button
                     type="button"
-                    onClick={() => setPlanUpgradeOpen(true)}
+                    onClick={() => setPlanChangeOpen(true)}
                     disabled={!projectId || billingLoading}
                     className="max-w-[180px] truncate text-xs font-medium text-purple-600 transition-colors hover:text-purple-800 disabled:cursor-default disabled:text-purple-400"
                   >
@@ -661,70 +804,55 @@ const RestaurantDashboard = () => {
           </div>
         </nav>
 
-        <Dialog open={planUpgradeOpen} onOpenChange={setPlanUpgradeOpen}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Plano atual</DialogTitle>
+        <Dialog open={planChangeOpen} onOpenChange={setPlanChangeOpen}>
+          <DialogContent className="max-h-[92vh] overflow-y-auto p-0 sm:max-w-6xl">
+            <div className="bg-gradient-to-b from-white to-purple-50/40 px-5 py-8 sm:px-8">
+              <DialogHeader className="mx-auto max-w-2xl text-center">
+                <span className="mx-auto inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold uppercase text-purple-700">
+                  Planos
+                </span>
+                <DialogTitle className="mt-3 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+                  Escolha seu plano
+                </DialogTitle>
               <DialogDescription>
                 {billingSubscription
-                  ? `${billingPlanName} - ${formatCurrencyBRL(billingSubscription.basePriceCents / 100)}/mes`
-                  : 'Carregando dados do plano.'}
+                    ? `${billingPlanName} - ${formatCurrencyBRL(billingSubscription.basePriceCents / 100)}/mes`
+                    : 'Carregando dados do plano.'}
               </DialogDescription>
-            </DialogHeader>
+              </DialogHeader>
 
-            <div className="space-y-4">
-              {billingError && (
-                <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                  <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
-                  <span>{billingError}</span>
-                </div>
-              )}
+              <div className="mt-8 space-y-6">
+                {billingError && (
+                  <div className="mx-auto flex max-w-3xl gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
+                    <span>{billingError}</span>
+                  </div>
+                )}
 
-              {billingLoading ? (
-                <div className="flex items-center gap-2 rounded-md border border-purple-100 bg-purple-50 p-4 text-sm text-purple-700">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Carregando opcoes de upgrade
-                </div>
-              ) : upgradeablePlans.length > 0 ? (
-                <div className="space-y-3">
-                  {upgradeablePlans.map((plan) => {
-                    const isLoading = billingActionPlanCode === plan.code;
-                    return (
-                      <div
-                        key={plan.code}
-                        className="flex flex-col gap-3 rounded-md border border-purple-100 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">{plan.name}</p>
-                          <p className="mt-1 text-sm text-gray-600">
-                            {formatCurrencyBRL(plan.price)}/mes
-                          </p>
-                          <p className="mt-2 text-xs text-gray-500">
-                            {plan.limits.passInstalls} instalacoes de passe e {plan.limits.notifications} notificacoes inclusas
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          onClick={() => handleStartPlanUpgrade(plan)}
+                {billingLoading ? (
+                  <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-md border border-purple-100 bg-purple-50 p-4 text-sm text-purple-700">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando planos
+                  </div>
+                ) : planChangeOptions.length > 0 ? (
+                  <div className="flex flex-wrap justify-center gap-5">
+                    {planChangeOptions.map((plan) => (
+                      <div key={plan.code} className="w-full sm:w-[300px] xl:w-[260px]">
+                        <BillingPlanChoiceCard
+                          plan={plan}
+                          busy={billingActionPlanCode === plan.code}
                           disabled={Boolean(billingActionPlanCode)}
-                          className="gap-2 sm:w-auto"
-                        >
-                          {isLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <CreditCard className="h-4 w-4" />
-                          )}
-                          Fazer upgrade
-                        </Button>
+                          onSelect={handleStartPlanChange}
+                        />
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                  Nao ha upgrades disponiveis para o plano atual.
-                </div>
-              )}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mx-auto max-w-3xl rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                    Nao foi possivel carregar os planos disponiveis.
+                  </div>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>
