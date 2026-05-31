@@ -4,6 +4,7 @@ Este documento descreve o estado atual do modulo considerando:
 - `supabase/migrations/20260430120220_schema_mod3.sql`
 - `supabase/migrations/20260507143000_mod3_usage_installs_notifications_and_plan_changes.sql`
 - `supabase/migrations/20260527120000_signup_paid_asaas_checkout.sql`
+- `supabase/migrations/20260529191832_billing_plan_upgrades.sql`
 
 O objetivo aqui e explicar a logica do modelo de cobranca em alto nivel.
 
@@ -37,6 +38,24 @@ Fluxo esperado:
 - `signup-start-checkout` cria a linha e chama o Asaas.
 - `asaas-webhook` muda `status` para `paid`, `canceled` ou `expired`.
 - `signup-finalize` so provisiona plano pago quando essa linha esta `paid`; depois marca como `finalized`.
+
+### `public.billing_plan_change_sessions`
+Registra a intencao operacional de mudanca de plano criada dentro do painel do estabelecimento, depois que o projeto e a assinatura ja existem.
+
+Colunas principais:
+- vinculo: `project_id`, `subscription_id`, `previous_plan_id`, `new_plan_id`, `requested_by`
+- mudanca: `change_type` (`upgrade`, `downgrade`, `trial_conversion` ou `plan_change`), `effective_mode`
+- gateway: `provider`, `provider_checkout_id`, `provider_subscription_id`, `provider_customer_id`, `provider_payment_id`
+- controle: `external_reference`, `status`, `amount_cents`, `currency`
+- retorno: `checkout_url`, `success_url`, `cancel_url`, `expired_url`
+- datas: `paid_at`, `expires_at`, `applied_at`
+
+Fluxo esperado:
+- `billing-start-plan-change` valida o usuario owner, a assinatura atual e o plano destino.
+- Para trial/free sem assinatura Asaas, cria checkout recorrente e registra a sessao.
+- Para assinatura paga existente no Asaas, atualiza a assinatura no gateway e aplica a troca localmente.
+- `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional.
+- `billing-finalize-plan-change` permite finalizar pelo retorno do `/org` quando o webhook ja confirmou o pagamento.
 
 ## 1) Catalogo comercial
 
@@ -285,13 +304,30 @@ Regras:
  - trial_days = 0 nao entra nesse fluxo (normalmente nao fica como trialing)
  - Registra historico em billing_subscription_changes
 
+## F) Aplicacao transacional de mudanca de plano
+### Funcao `apply_billing_plan_change(...)`
+Aplica uma sessao paga de `billing_plan_change_sessions` em uma unica transacao.
+
+Responsabilidades:
+- bloquear a sessao e a assinatura atual para evitar aplicacao duplicada;
+- inserir `billing_subscription_changes`;
+- atualizar `billing_subscriptions` com `plan_id`, status `active`, snapshots comerciais e IDs Asaas;
+- atualizar `billing_accounts.gateway_customer_id` quando o Asaas informar cliente;
+- atualizar `projects_notifications.notifications_limit` para manter compatibilidade com telas legadas;
+- marcar a sessao como `applied`;
+- registrar `project_billing_audit_logs`.
+
+Resultado pratico: o frontend e o webhook nao atualizam tabelas sensiveis diretamente; eles chamam a RPC via service role depois de validar o fluxo.
+
 ## Regras de negocio principais
 
 1. Instalacao de passe so conta 1 vez por `user_passes.id`.
 2. Notificacao enviada so conta 1 vez por `notification_jobs.id`.
 3. Excedente por recurso = `max(consumo - franquia, 0)`.
-4. Upgrade preferencialmente imediato com prorrata; downgrade no proximo ciclo.
+4. Upgrade, downgrade e conversao de trial usam o mesmo fluxo de mudanca de plano; a aplicacao atual e imediata.
 5. Fatura final combina assinatura base + excedentes + prorrata (quando houver).
+6. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
+7. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
 
 ## Fluxo de negocio (fim a fim)
 
