@@ -6,6 +6,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   CreditCard,
+  Eye,
+  EyeOff,
   Loader2,
   Lock,
   Wallet,
@@ -384,6 +386,9 @@ function SignupPage() {
   const [passwordSetupTouched, setPasswordSetupTouched] = useState(false);
   const [passwordSetupLoading, setPasswordSetupLoading] = useState(false);
   const [passwordSetupError, setPasswordSetupError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
   const turnstileResetRef = useRef(null);
   const [formData, setFormData] = useState({
@@ -391,6 +396,7 @@ function SignupPage() {
     email: '',
     emailConfirmation: '',
     password: '',
+    passwordConfirmation: '',
   });
 
   const turnstileSiteKey = useMemo(() => getTurnstileSiteKey(import.meta.env), []);
@@ -573,9 +579,20 @@ function SignupPage() {
     setAttemptedSubmit(true);
     setSignupError('');
 
+    const nextErrors = {};
     const passwordError = getPasswordError(formData.password, passwordState);
     if (passwordError) {
-      setErrors((previous) => ({ ...previous, password: passwordError }));
+      nextErrors.password = passwordError;
+    }
+
+    if (!formData.passwordConfirmation) {
+      nextErrors.passwordConfirmation = 'Confirme a senha para evitar erros de acesso.';
+    } else if (formData.passwordConfirmation !== formData.password) {
+      nextErrors.passwordConfirmation = 'As senhas não conferem. Ajuste para continuar.';
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors((previous) => ({ ...previous, ...nextErrors }));
       return;
     }
 
@@ -737,9 +754,10 @@ function SignupPage() {
         email: normalizedEmail,
         emailConfirmation: normalizedEmail,
         password: '',
+        passwordConfirmation: '',
       }));
-      setTouched((previous) => ({ ...previous, password: false }));
-      setErrors((previous) => ({ ...previous, password: '' }));
+      setTouched((previous) => ({ ...previous, password: false, passwordConfirmation: false }));
+      setErrors((previous) => ({ ...previous, password: '', passwordConfirmation: '' }));
       setAttemptedSubmit(false);
       setFinishedFlow('create-password');
     } catch (error) {
@@ -1425,19 +1443,71 @@ function SignupPage() {
 
                     <div className="space-y-3">
                       <Label htmlFor="password">Senha</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        className="h-12"
-                        value={formData.password}
-                        onChange={(event) => setField('password', event.target.value)}
-                        onBlur={() => setFieldTouched('password')}
-                        placeholder="Crie uma senha forte"
-                        autoComplete="new-password"
-                        aria-invalid={shouldShowError('password')}
-                      />
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? 'text' : 'password'}
+                          className="h-12 pr-12"
+                          value={formData.password}
+                          onChange={(event) => setField('password', event.target.value)}
+                          onBlur={() => setFieldTouched('password')}
+                          placeholder="Crie uma senha forte"
+                          autoComplete="new-password"
+                          aria-invalid={shouldShowError('password')}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
+                          onClick={() => setShowPassword((visible) => !visible)}
+                          aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                        >
+                          {showPassword ? (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </div>
                       {shouldShowError('password') && (
                         <p className="text-sm text-rose-600">{errors.password}</p>
+                      )}
+
+                      <Label htmlFor="password-confirmation">Confirmação de senha</Label>
+                      <div className="relative">
+                        <Input
+                          id="password-confirmation"
+                          type={showPasswordConfirmation ? 'text' : 'password'}
+                          className="h-12 pr-12"
+                          value={formData.passwordConfirmation}
+                          onChange={(event) => setField('passwordConfirmation', event.target.value)}
+                          onBlur={() => setFieldTouched('passwordConfirmation')}
+                          placeholder="Digite a senha novamente"
+                          autoComplete="new-password"
+                          aria-invalid={shouldShowError('passwordConfirmation')}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
+                          onClick={() => setShowPasswordConfirmation((visible) => !visible)}
+                          aria-label={
+                            showPasswordConfirmation
+                              ? 'Ocultar confirmação de senha'
+                              : 'Mostrar confirmação de senha'
+                          }
+                        >
+                          {showPasswordConfirmation ? (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </div>
+                      {shouldShowError('passwordConfirmation') && (
+                        <p className="text-sm text-rose-600">{errors.passwordConfirmation}</p>
                       )}
 
                       <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
@@ -1483,7 +1553,23 @@ function SignupPage() {
                           setStep(1);
                           setAttemptedSubmit(false);
                           setSignupError('');
-                          setFormData((previous) => ({ ...previous, password: '' }));
+                          setTouched((previous) => ({
+                            ...previous,
+                            password: false,
+                            passwordConfirmation: false,
+                          }));
+                          setErrors((previous) => ({
+                            ...previous,
+                            password: '',
+                            passwordConfirmation: '',
+                          }));
+                          setShowPassword(false);
+                          setShowPasswordConfirmation(false);
+                          setFormData((previous) => ({
+                            ...previous,
+                            password: '',
+                            passwordConfirmation: '',
+                          }));
                         }}
                         className="h-12 sm:w-40"
                       >
@@ -1556,20 +1642,36 @@ function SignupPage() {
 
                     <div className="space-y-3">
                       <Label htmlFor="password-setup">Senha</Label>
-                      <Input
-                        id="password-setup"
-                        type="password"
-                        className="h-12"
-                        autoComplete="new-password"
-                        value={passwordSetupValue}
-                        onChange={(event) => {
-                          setPasswordSetupValue(event.target.value);
-                          setPasswordSetupError('');
-                        }}
-                        onBlur={() => setPasswordSetupTouched(true)}
-                        aria-invalid={Boolean(passwordSetupError)}
-                        placeholder="Crie uma senha forte"
-                      />
+                      <div className="relative">
+                        <Input
+                          id="password-setup"
+                          type={showPasswordSetup ? 'text' : 'password'}
+                          className="h-12 pr-12"
+                          autoComplete="new-password"
+                          value={passwordSetupValue}
+                          onChange={(event) => {
+                            setPasswordSetupValue(event.target.value);
+                            setPasswordSetupError('');
+                          }}
+                          onBlur={() => setPasswordSetupTouched(true)}
+                          aria-invalid={Boolean(passwordSetupError)}
+                          placeholder="Crie uma senha forte"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-10 w-10 text-slate-500 hover:text-slate-800"
+                          onClick={() => setShowPasswordSetup((visible) => !visible)}
+                          aria-label={showPasswordSetup ? 'Ocultar senha' : 'Mostrar senha'}
+                        >
+                          {showPasswordSetup ? (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </div>
                       {passwordSetupError && (
                         <p className="text-sm text-rose-600">{passwordSetupError}</p>
                       )}

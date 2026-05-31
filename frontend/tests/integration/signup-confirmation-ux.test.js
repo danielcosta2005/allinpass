@@ -137,6 +137,30 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("supabase.auth.signUp");
   });
 
+  test("create password step confirms matching passwords and can reveal typed passwords", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const createPasswordStart = signupPageSource.indexOf("finishedFlow === 'create-password'");
+    const createPasswordEnd = signupPageSource.indexOf("finishedFlow === 'trial'", createPasswordStart);
+    const createPasswordBlock = signupPageSource.slice(createPasswordStart, createPasswordEnd);
+    const submitStart = signupPageSource.indexOf("const handleCreatePasswordSubmit");
+    const submitEnd = signupPageSource.indexOf("const handleSignupSubmit", submitStart);
+    const submitBlock = signupPageSource.slice(submitStart, submitEnd);
+
+    expect(signupPageSource).toContain("passwordConfirmation: ''");
+    expect(submitBlock).toContain("formData.passwordConfirmation !== formData.password");
+    expect(submitBlock).toContain("passwordConfirmation:");
+    expect(submitBlock).toContain("As senhas não conferem. Ajuste para continuar.");
+    expect(createPasswordBlock).toContain('htmlFor="password-confirmation"');
+    expect(createPasswordBlock).toContain('id="password-confirmation"');
+    expect(createPasswordBlock).toContain("autoComplete=\"new-password\"");
+    expect(createPasswordBlock).toContain("showPassword");
+    expect(createPasswordBlock).toContain("EyeOff");
+    expect(createPasswordBlock).toContain("Eye");
+  });
+
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {
     const appSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/App.jsx"),
