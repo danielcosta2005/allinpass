@@ -53,11 +53,189 @@ type EnqueueBody = {
   message: string;
   sendMode?: string | null; // now | schedule
   scheduledFor?: string | null; // ISO
+  recurrence?: unknown | null;
   segment?: unknown | null;
   user_pass_ids: string[];
   channels?: { apple?: boolean; google?: boolean } | null;
   data?: Record<string, unknown> | null;
 };
+
+type WeeklyRecurrence = {
+  type: "weekly";
+  timezone: string;
+  daysOfWeek: number[];
+  timeOfDay: string;
+};
+
+const VALID_RECURRENCE_TIMEZONE = "America/Sao_Paulo";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function isValidTimeOfDay(v: unknown): v is string {
+  return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v.trim());
+}
+
+function getTimeZoneParts(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const values: Record<string, string> = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") values[part.type] = part.value;
+  }
+
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second),
+  };
+}
+
+function getTimeZoneOffsetMs(date: Date, timeZone: string) {
+  const parts = getTimeZoneParts(date, timeZone);
+  const localAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second
+  );
+  return localAsUtc - date.getTime();
+}
+
+function timeZoneDateTimeToUtc(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string
+) {
+  const targetUtc = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+  let guess = targetUtc;
+
+  for (let i = 0; i < 4; i += 1) {
+    const offset = getTimeZoneOffsetMs(new Date(guess), timeZone);
+    const corrected = targetUtc - offset;
+    if (Math.abs(corrected - guess) < 1000) {
+      guess = corrected;
+      break;
+    }
+    guess = corrected;
+  }
+
+  return new Date(guess);
+}
+
+function addDaysToDateParts(year: number, month: number, day: number, days: number) {
+  const utc = Date.UTC(year, month - 1, day) + days * DAY_MS;
+  const d = new Date(utc);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  };
+}
+
+function getIsoWeekday(year: number, month: number, day: number) {
+  const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return dow === 0 ? 7 : dow;
+}
+
+function parseWeeklyRecurrence(raw: unknown): WeeklyRecurrence | null {
+  if (raw == null) return null;
+  if (!isPlainObject(raw)) throw new Error("recurrence inválido (esperado objeto)");
+
+  const type = cleanString(raw.type);
+  if (type !== "weekly") throw new Error("recurrence.type inválido (use 'weekly')");
+
+  const timezone = cleanString(raw.timezone);
+  if (!timezone || timezone !== VALID_RECURRENCE_TIMEZONE) {
+    throw new Error(`recurrence.timezone inválido (use '${VALID_RECURRENCE_TIMEZONE}')`);
+  }
+
+  const daysRaw = Array.isArray(raw.daysOfWeek) ? raw.daysOfWeek : [];
+  const daysOfWeek = Array.from(
+    new Set(
+      daysRaw
+        .map((v) => Number(v))
+        .filter((v) => Number.isInteger(v) && v >= 1 && v <= 7)
+    )
+  ).sort((a, b) => a - b);
+
+  if (daysOfWeek.length === 0) {
+    throw new Error("recurrence.daysOfWeek inválido (mínimo 1 dia entre 1 e 7)");
+  }
+
+  const timeOfDayRaw = cleanString(raw.timeOfDay);
+  if (!isValidTimeOfDay(timeOfDayRaw)) {
+    throw new Error("recurrence.timeOfDay inválido (esperado HH:mm)");
+  }
+
+  return {
+    type: "weekly",
+    timezone,
+    daysOfWeek,
+    timeOfDay: timeOfDayRaw,
+  };
+}
+
+function computeFirstWeeklyOccurrence(startIso: string, recurrence: WeeklyRecurrence) {
+  const start = new Date(startIso);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error("scheduledFor inválido para recorrência");
+  }
+
+  const startLocal = getTimeZoneParts(start, recurrence.timezone);
+  const [hourStr, minuteStr] = recurrence.timeOfDay.split(":");
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  const startMinutes = startLocal.hour * 60 + startLocal.minute;
+  const selectedDays = new Set(recurrence.daysOfWeek);
+
+  for (let offset = 0; offset < 21; offset += 1) {
+    const candidateDate = addDaysToDateParts(
+      startLocal.year,
+      startLocal.month,
+      startLocal.day,
+      offset
+    );
+    const weekday = getIsoWeekday(candidateDate.year, candidateDate.month, candidateDate.day);
+    if (!selectedDays.has(weekday)) continue;
+
+    const candidateMinutes = hour * 60 + minute;
+    if (offset === 0 && candidateMinutes < startMinutes) continue;
+
+    const candidateUtc = timeZoneDateTimeToUtc(
+      candidateDate.year,
+      candidateDate.month,
+      candidateDate.day,
+      hour,
+      minute,
+      recurrence.timezone
+    );
+
+    if (candidateUtc.getTime() < start.getTime()) continue;
+    return candidateUtc.toISOString();
+  }
+
+  throw new Error("Não foi possível calcular a primeira ocorrência semanal");
+}
 
 serve(async (req) => {
   const origin = req.headers.get("origin") || undefined;
@@ -110,6 +288,17 @@ serve(async (req) => {
     const title = cleanString(body.title) || "Envio manual";
     const sendMode = cleanString(body.sendMode) || "now";
     const scheduledFor = cleanString(body.scheduledFor);
+    let recurrence: WeeklyRecurrence | null = null;
+    try {
+      recurrence = parseWeeklyRecurrence(body.recurrence);
+    } catch (error) {
+      return jsonResponse(
+        400,
+        { error: (error as Error)?.message || "recurrence inválido" },
+        origin
+      );
+    }
+    const isRecurringWeekly = recurrence?.type === "weekly";
 
     if (!projectId || !isUuid(projectId)) {
       return jsonResponse(400, { error: "projectId inválido" }, origin);
@@ -146,6 +335,14 @@ serve(async (req) => {
       }
     }
 
+    if (isRecurringWeekly && sendMode !== "schedule") {
+      return jsonResponse(
+        400,
+        { error: "recurrence só é permitido quando sendMode='schedule'" },
+        origin
+      );
+    }
+
     // 🧑‍🤝‍🧑 3) Autorização
     const { data: membership, error: memErr } = await userClient
       .from("project_members")
@@ -171,14 +368,43 @@ serve(async (req) => {
     };
 
     // 🧾 5) Criar notification
-    const trigger_type = sendMode === "schedule" ? "scheduled" : "manual";
-    const status = sendMode === "schedule" ? "scheduled" : "running";
+    let effectiveScheduledFor = scheduledFor ?? null;
+    if (isRecurringWeekly && scheduledFor) {
+      try {
+        effectiveScheduledFor = computeFirstWeeklyOccurrence(
+          scheduledFor,
+          recurrence as WeeklyRecurrence
+        );
+      } catch (error) {
+        return jsonResponse(
+          400,
+          {
+            error:
+              (error as Error)?.message ||
+              "Não foi possível calcular a primeira ocorrência da recorrência",
+          },
+          origin
+        );
+      }
+    }
+
+    const trigger_type = isRecurringWeekly
+      ? "recurring_weekly"
+      : sendMode === "schedule"
+        ? "scheduled"
+        : "manual";
+    const status = isRecurringWeekly
+      ? "active"
+      : sendMode === "schedule"
+        ? "scheduled"
+        : "running";
 
     const trigger_config = {
       source: "NotificationsTab",
       segment: body.segment ?? null,
       user_pass_ids: body.user_pass_ids,
       requested_by: userId,
+      recurrence: recurrence ?? null,
     };
 
     const { data: notif, error: notifErr } = await admin
@@ -191,7 +417,7 @@ serve(async (req) => {
         trigger_type,
         trigger_config,
         status,
-        scheduled_for: scheduledFor ?? null,
+        scheduled_for: effectiveScheduledFor,
         sent_at: null,
       })
       .select("id")
@@ -199,6 +425,22 @@ serve(async (req) => {
 
     if (notifErr) throw notifErr;
     const notificationId = notif.id as string;
+
+    if (isRecurringWeekly) {
+      return jsonResponse(
+        200,
+        {
+          ok: true,
+          recurring: true,
+          notification_id: notificationId,
+          jobs_created: 0,
+          scheduled_for: effectiveScheduledFor,
+          note:
+            "Campanha recorrente ativada. Os jobs serão materializados automaticamente pelo notifications-runner.",
+        },
+        origin
+      );
+    }
 
     // 🎟️ 6) Buscar passes
     const passIds = body.user_pass_ids.filter(isUuid);
@@ -248,29 +490,19 @@ serve(async (req) => {
       }
     }
 
-    // ⚙️ 8) Criar jobs (AGORA com rate limit via RPC)
+    // ⚙️ 8) Criar jobs
     let skipped_removed = 0;
     let skipped_no_platform = 0;
-    let skipped_limit = 0;
-    let limit_reached = false;
+    const skipped_limit = 0;
+    const limit_reached = false;
 
     const nowIso = new Date().toISOString();
-    const scheduleIso = scheduledFor ?? null;
+    const scheduleIso = effectiveScheduledFor ?? null;
     const contentHash = await sha256Hex(
       `${title}::${message}::${scheduleIso ?? "now"}`
     );
 
     const jobs: any[] = [];
-
-    // Helper: consome 1 unidade do limite com RPC
-    async function tryConsumeNotificationSlot(): Promise<boolean> {
-      const { data, error } = await admin.rpc("check_and_increment_notifications", {
-        p_project_id: projectId,
-      });
-
-      if (error) throw error;
-      return data === true;
-    }
 
     for (const p of userPasses || []) {
       const user_pass_id = p.id as string;
@@ -324,39 +556,27 @@ serve(async (req) => {
         max_attempts: 8,
       };
 
-      // 🍎 Apple job consome 1 slot
+      // 🍎 Apple job
       if (canApple) {
-        const ok = await tryConsumeNotificationSlot();
-        if (!ok) {
-          skipped_limit += 1;
-          limit_reached = true;
-        } else {
-          jobs.push({
-            ...baseJob,
-            platform: "apple",
-            idempotency_key: `notif:${notificationId}:apple:${user_pass_id}:${contentHash}`,
-          });
-        }
+        jobs.push({
+          ...baseJob,
+          platform: "apple",
+          idempotency_key: `notif:${notificationId}:apple:${user_pass_id}:${contentHash}`,
+        });
       }
 
-      // 🤖 Google job consome 1 slot
+      // 🤖 Google job
       if (canGoogle) {
-        const ok = await tryConsumeNotificationSlot();
-        if (!ok) {
-          skipped_limit += 1;
-          limit_reached = true;
-        } else {
-          jobs.push({
-            ...baseJob,
-            platform: "google",
-            idempotency_key: `notif:${notificationId}:google:${user_pass_id}:${contentHash}`,
-          });
-        }
+        jobs.push({
+          ...baseJob,
+          platform: "google",
+          idempotency_key: `notif:${notificationId}:google:${user_pass_id}:${contentHash}`,
+        });
       }
     }
 
     if (jobs.length === 0) {
-      // Não tem nenhum job elegível (ou limite estourou em tudo)
+      // Não tem nenhum job elegível.
       return jsonResponse(
         200,
         {
@@ -369,9 +589,7 @@ serve(async (req) => {
             limit: skipped_limit,
           },
           limit_reached,
-          note: limit_reached
-            ? "Limite de notificações atingido: nenhum job foi enfileirado."
-            : "Nenhum job elegível foi criado.",
+          note: "Nenhum job elegível foi criado.",
         },
         origin
       );
