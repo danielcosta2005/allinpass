@@ -34,6 +34,42 @@ function cleanUuid(v: unknown): string | null {
   return s;
 }
 
+type WalletPlatform = "apple" | "google";
+
+function normalizeWalletPlatform(v: unknown): WalletPlatform | null {
+  const s = cleanString(v)?.toLowerCase();
+  return s === "apple" || s === "google" ? s : null;
+}
+
+function getEligiblePlatforms(params: {
+  channels: { apple?: boolean; google?: boolean };
+  installPlatform: WalletPlatform | null;
+  passType: string | null;
+  deviceKey: unknown;
+  googleObjectId: unknown;
+}): WalletPlatform[] {
+  const hasGoogleObjectId = Boolean(cleanString(params.googleObjectId));
+  const hasDeviceKey = Boolean(cleanString(params.deviceKey));
+
+  if (params.installPlatform === "google") {
+    return params.channels.google && hasGoogleObjectId ? ["google"] : [];
+  }
+
+  if (params.installPlatform === "apple") {
+    return params.channels.apple ? ["apple"] : [];
+  }
+
+  if (hasGoogleObjectId) {
+    return params.channels.google ? ["google"] : [];
+  }
+
+  if (params.channels.apple && (params.passType === "apple" || hasDeviceKey)) {
+    return ["apple"];
+  }
+
+  return [];
+}
+
 function computeBackoffSeconds(attempts: number) {
   const table = [60, 300, 900, 3600, 21600]; // 1m, 5m, 15m, 1h, 6h
   return table[Math.min(Math.max(attempts - 1, 0), table.length - 1)];
@@ -318,6 +354,7 @@ async function materializeRecurringWeeklyNotifications(
             "metadata",
             "expires_at",
             "install_status",
+            "install_platform",
             "device_key",
             "google_object_id",
             "google_class_id",
@@ -367,13 +404,7 @@ async function materializeRecurringWeeklyNotifications(
           : {};
       const appleEnabled = channels.apple !== false;
       const googleEnabled = channels.google !== false;
-
-      const shouldSendToPlatform = (platform: "apple" | "google", pass: any, passType: string | null) => {
-        if (platform === "apple") {
-          return appleEnabled && (passType === "apple" || Boolean(pass.device_key));
-        }
-        return googleEnabled && (passType === "google" || Boolean(pass.google_object_id));
-      };
+      const enabledChannels = { apple: appleEnabled, google: googleEnabled };
 
       for (const pass of userPasses || []) {
         const userPassId = cleanUuid(pass.id);
@@ -385,20 +416,22 @@ async function materializeRecurringWeeklyNotifications(
           continue;
         }
 
-        const passType = cleanString(pass.pass_type);
-        const canApple = shouldSendToPlatform("apple", pass, passType);
-        const canGoogle = shouldSendToPlatform("google", pass, passType);
+        const passType = cleanString(pass.pass_type)?.toLowerCase() ?? null;
+        const installPlatform = normalizeWalletPlatform(pass.install_platform);
+        const platforms = getEligiblePlatforms({
+          channels: enabledChannels,
+          installPlatform,
+          passType,
+          deviceKey: pass.device_key,
+          googleObjectId: pass.google_object_id,
+        });
 
-        if (!canApple && !canGoogle) {
+        if (platforms.length === 0) {
           stats.jobs_skipped_no_platform += 1;
           continue;
         }
 
         const customerId = customerByUserPass.get(userPassId) ?? null;
-
-        const platforms: Array<"apple" | "google"> = [];
-        if (canApple) platforms.push("apple");
-        if (canGoogle) platforms.push("google");
 
         for (const platform of platforms) {
           const idempotencyKey = `recurring:${notificationId}:${platform}:${userPassId}:${occurrenceIso}`;
@@ -427,6 +460,7 @@ async function materializeRecurringWeeklyNotifications(
                 google_class_id: pass.google_class_id ?? null,
                 expires_at: pass.expires_at ?? null,
                 install_status: installStatus,
+                install_platform: installPlatform,
               },
               notify: true,
             },
