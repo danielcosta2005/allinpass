@@ -22,6 +22,21 @@ describe("signup paid checkout recovery", () => {
     expect(statusFunctionSource).toContain("payment_confirmed_finalization_pending");
   });
 
+  test("signup-status can recover existing-customer paid intent before checkout exists", () => {
+    const statusFunctionSource = fs.readFileSync(
+      path.join(repoRoot, "supabase/functions/signup-status/index.ts"),
+      "utf8"
+    );
+
+    expect(statusFunctionSource).toContain("signup_existing_customer_intents");
+    expect(statusFunctionSource).toContain("getExistingCustomerSignupIntent");
+    expect(statusFunctionSource).toContain("intentPlanCode");
+    expect(statusFunctionSource).toContain("intentEstablishmentName");
+    expect(statusFunctionSource).toContain(
+      "const paidSignupContextPlanCode = sessionPlanCode || intentPlanCode || metadataPlanCode;"
+    );
+  });
+
   test("frontend has a signup status client helper", () => {
     const signupClientSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/lib/signup.js"),
@@ -42,12 +57,22 @@ describe("signup paid checkout recovery", () => {
       path.join(repoRoot, "frontend/src/pages/RestaurantDashboard.jsx"),
       "utf8"
     );
+    const recoveryHookSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/hooks/usePaidSignupRecovery.js"),
+      "utf8"
+    );
+    const noProjectStateSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/components/restaurant/dashboard/NoProjectSignupState.jsx"),
+      "utf8"
+    );
 
-    expect(dashboardSource).toContain("getSignupStatus");
-    expect(dashboardSource).toContain("startPaidSignupCheckout");
-    expect(dashboardSource).toContain("finalizeSignup");
-    expect(dashboardSource).toContain("payment_pending");
-    expect(dashboardSource).toContain("Continuar pagamento");
-    expect(dashboardSource).toContain("Finalizar ativação");
+    expect(dashboardSource).toContain("usePaidSignupRecovery");
+    expect(dashboardSource).toContain("NoProjectSignupState");
+    expect(recoveryHookSource).toContain("getSignupStatus");
+    expect(recoveryHookSource).toContain("startPaidSignupCheckout");
+    expect(recoveryHookSource).toContain("finalizeSignup");
+    expect(noProjectStateSource).toContain("payment_pending");
+    expect(noProjectStateSource).toContain("Continuar pagamento");
+    expect(noProjectStateSource).toContain("Finalizar ativacao");
   });
 });

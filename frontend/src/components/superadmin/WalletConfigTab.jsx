@@ -530,14 +530,14 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
     <section className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Meus passes</h1>
+          <h1 className="text-3xl font-bold">Meus cartões</h1>
           <p className="mt-1 text-sm text-slate-500">
             {passes.length > 0 ? `${activeIndex + 1} de ${passes.length} passes emitidos` : 'Nenhum passe emitido para este projeto.'}
           </p>
         </div>
         <Button onClick={onCreateNewPass} className="gap-2">
           <PlusCircle className="h-4 w-4" />
-          Novo passe
+          Novo cartão
         </Button>
       </div>
 
@@ -549,7 +549,7 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
 
       {!loading && passes.length === 0 && (
         <div className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center">
-          <p className="text-sm text-slate-500">Crie o primeiro passe para ele aparecer neste inventario.</p>
+          <p className="text-sm text-slate-500">Crie o primeiro cartão para ele aparecer neste inventario.</p>
           <Button onClick={onCreateNewPass} className="mt-4 gap-2">
             <PlusCircle className="h-4 w-4" />
             Novo passe

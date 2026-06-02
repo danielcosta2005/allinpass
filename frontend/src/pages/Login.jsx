@@ -116,7 +116,7 @@ const Login = () => {
         type: 'signup',
         email: normalizedEmail,
         options: {
-          emailRedirectTo: `${window.location.origin}/cadastro?plano=free-trial&finalizar=1`,
+          emailRedirectTo: `${window.location.origin}/login`,
         },
       });
 

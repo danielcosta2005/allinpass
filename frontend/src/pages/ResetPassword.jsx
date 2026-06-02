@@ -4,11 +4,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CheckCircle2, KeyRound, Loader2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import PasswordInput from './signup/PasswordInput';
+import PasswordStrengthMeter from './signup/PasswordStrengthMeter';
 
 const PASSWORD_RULES = [
   { id: 'length', label: 'Pelo menos 10 caracteres', test: (value) => value.length >= 10 },
@@ -59,19 +60,36 @@ export default function ResetPassword() {
   const { session, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [password, setPassword] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [touched, setTouched] = useState(false);
+  const [confirmationTouched, setConfirmationTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [confirmationErrorMessage, setConfirmationErrorMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordConfirmation, setShowPasswordConfirmation] = useState(false);
   const passwordState = useMemo(() => evaluatePassword(password), [password]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setTouched(true);
+    setConfirmationTouched(true);
     setErrorMessage('');
+    setConfirmationErrorMessage('');
 
     const passwordError = getPasswordError(password, passwordState);
     if (passwordError) {
       setErrorMessage(passwordError);
+      return;
+    }
+
+    if (!passwordConfirmation) {
+      setConfirmationErrorMessage('Confirme a senha para evitar erros de acesso.');
+      return;
+    }
+
+    if (passwordConfirmation !== password) {
+      setConfirmationErrorMessage('As senhas não conferem. Ajuste para continuar.');
       return;
     }
 
@@ -151,57 +169,46 @@ export default function ResetPassword() {
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Label htmlFor="new-password">Nova senha</Label>
-                  <Input
+                  <PasswordInput
                     id="new-password"
-                    type="password"
-                    placeholder="Crie uma senha forte"
                     value={password}
+                    visible={showPassword}
                     onChange={(event) => {
                       setPassword(event.target.value);
                       setErrorMessage('');
                     }}
                     onBlur={() => setTouched(true)}
-                    autoComplete="new-password"
-                    className="h-12"
-                    aria-invalid={Boolean(errorMessage)}
+                    onToggleVisibility={() => setShowPassword((visible) => !visible)}
+                    placeholder="Crie uma senha forte"
+                    ariaInvalid={Boolean(errorMessage)}
                   />
                   {errorMessage && touched && (
                     <p className="text-sm text-rose-600">{errorMessage}</p>
                   )}
-                </div>
 
-                <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-semibold text-slate-700">Força da senha</p>
-                    <p className={`text-sm font-semibold ${passwordState.textColor}`}>
-                      {passwordState.label}
-                    </p>
-                  </div>
+                  <Label htmlFor="new-password-confirmation">Confirmação de senha</Label>
+                  <PasswordInput
+                    id="new-password-confirmation"
+                    value={passwordConfirmation}
+                    visible={showPasswordConfirmation}
+                    onChange={(event) => {
+                      setPasswordConfirmation(event.target.value);
+                      setConfirmationErrorMessage('');
+                    }}
+                    onBlur={() => setConfirmationTouched(true)}
+                    onToggleVisibility={() => setShowPasswordConfirmation((visible) => !visible)}
+                    placeholder="Digite a senha novamente"
+                    ariaInvalid={Boolean(confirmationErrorMessage)}
+                    showLabel="Mostrar confirmação de senha"
+                    hideLabel="Ocultar confirmação de senha"
+                  />
+                  {confirmationErrorMessage && confirmationTouched && (
+                    <p className="text-sm text-rose-600">{confirmationErrorMessage}</p>
+                  )}
 
-                  <div className="h-2 rounded-full bg-slate-200 overflow-hidden">
-                    <motion.div
-                      className={`h-full ${passwordState.barColor}`}
-                      initial={false}
-                      animate={{ width: `${passwordState.progress}%` }}
-                      transition={{ duration: 0.35, ease: 'easeOut' }}
-                    />
-                  </div>
-
-                  <ul className="mt-3 grid sm:grid-cols-2 gap-2">
-                    {passwordState.checks.map((rule) => (
-                      <li
-                        key={rule.id}
-                        className={`text-xs flex items-center gap-2 ${
-                          rule.met ? 'text-emerald-700' : 'text-slate-500'
-                        }`}
-                      >
-                        <span className={`h-1.5 w-1.5 rounded-full ${rule.met ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                        {rule.label}
-                      </li>
-                    ))}
-                  </ul>
+                  <PasswordStrengthMeter passwordState={passwordState} />
                 </div>
 
                 <Button
