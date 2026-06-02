@@ -26,6 +26,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogTrigger,
+  DialogClose,
 } from "@/components/ui/dialog";
 
 const RECURRENCE_TIMEZONE = "America/Sao_Paulo";
@@ -77,6 +78,7 @@ const NotificationsTab = ({ projectId }) => {
   const [recurrenceTimeLocal, setRecurrenceTimeLocal] = useState("");
 
   const [isSending, setIsSending] = useState(false);
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
 
   // =========================
   // Helpers
@@ -569,6 +571,8 @@ async function handleEnqueue() {
           : `Criados ${json?.jobs_created ?? 0} job(s).`,
     });
 
+    setIsReviewOpen(false);
+
     if (sendMode === "schedule") {
       setScheduledLocal("");
       setRecurrenceTimeLocal("");
@@ -584,6 +588,11 @@ async function handleEnqueue() {
   } finally {
     setIsSending(false);
   }
+}
+
+function handleConfirmEnqueue() {
+  setIsReviewOpen(false);
+  handleEnqueue();
 }
 
   // =========================
@@ -1010,7 +1019,7 @@ async function handleEnqueue() {
               )}
             </div>
 
-            <Dialog>
+            <Dialog open={isReviewOpen} onOpenChange={setIsReviewOpen}>
               <DialogTrigger asChild>
                 <Button
                   size="lg"
@@ -1135,14 +1144,16 @@ async function handleEnqueue() {
                 </div>
 
                 <DialogFooter>
-                  <Button onClick={handleEnqueue} disabled={isSending} className="w-full">
-                    {isSending ? (
-                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                    ) : (
-                      <Bell className="w-4 h-4 mr-2" />
-                    )}
-                    {confirmActionLabel}
-                  </Button>
+                  <DialogClose asChild>
+                    <Button onClick={handleConfirmEnqueue} disabled={isSending} className="w-full">
+                      {isSending ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                      ) : (
+                        <Bell className="w-4 h-4 mr-2" />
+                      )}
+                      {confirmActionLabel}
+                    </Button>
+                  </DialogClose>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
