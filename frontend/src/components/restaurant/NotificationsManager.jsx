@@ -151,6 +151,8 @@ function BoxContent({ className, children }) {
 
 export default function NotificationsManager({
   projectId,
+  canCancelCampaigns = true,
+  sentOnly = false,
 }) {
   const { toast } = useToast();
 
@@ -163,6 +165,7 @@ export default function NotificationsManager({
   const [expandedId, setExpandedId] = useState(null);
   const [jobsByCampaign, setJobsByCampaign] = useState({});
   const [loadingJobsId, setLoadingJobsId] = useState(null);
+  const [cancelingId, setCancelingId] = useState(null);
 
   // =========================
   // Derived KPIs (usa coluna gerada do banco quando existe)
@@ -224,13 +227,20 @@ export default function NotificationsManager({
 
     // Schema real:
     // notifications: id, project_id, title, message, channels, trigger_type, trigger_config, status, created_at, scheduled_for, sent_at
-    const { data, error } = await supabase
-      .from("notifications")
-      .select(
-        "id, project_id, title, message, channels, trigger_type, trigger_config, status, created_at, scheduled_for, sent_at",
-      )
-      .eq("project_id", projectId)
-      .order("created_at", { ascending: false });
+    const { data, error } = await (() => {
+      let campaignsQuery = supabase
+        .from("notifications")
+        .select(
+          "id, project_id, title, message, channels, trigger_type, trigger_config, status, created_at, scheduled_for, sent_at",
+        )
+        .eq("project_id", projectId);
+
+      if (sentOnly) {
+        campaignsQuery = campaignsQuery.eq("status", "sent");
+      }
+
+      return campaignsQuery.order("created_at", { ascending: false });
+    })();
 
     setLoadingCampaigns(false);
 
@@ -294,10 +304,18 @@ export default function NotificationsManager({
   // =========================
   // Cancel campaign: atualiza notification_jobs -> canceled
   // =========================
- async function cancelCampaign(campaign) {
- if (!projectId) return;
+   async function cancelCampaign(campaign) {
+    if (!projectId) return;
+    if (!canCancelCampaigns) {
+      toast({
+        title: "Ação não permitida",
+        description: "Apenas gestores podem cancelar campanhas.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-  const campaignId = campaign.id;
+    const campaignId = campaign.id;
   const isRecurring = campaign.trigger_type === "recurring_weekly";
 
   // Regra para one-shot: "ainda não foi enviada" -> sent_at null
@@ -568,6 +586,7 @@ export default function NotificationsManager({
                     <th className="py-2 pr-2">Criada em</th>
                     <th className="py-2 pr-2">Agendada para</th>
                     <th className="py-2 pr-2">Enviada em</th>
+                    {canCancelCampaigns && <th className="py-2 pr-2 text-right">Ações</th>}
                   </tr>
                 </thead>
 
@@ -611,26 +630,28 @@ export default function NotificationsManager({
                           <td className="py-2 pr-2">{formatDateTimeBR(c.scheduled_for)}</td>
                           <td className="py-2 pr-2">{formatDateTimeBR(c.sent_at)}</td>
 
-                          <td className="py-2 pr-2 text-right">
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={!isCancelable || cancelingId === c.id}
-                              onClick={() => cancelCampaign(c)}
-                            >
-                              {cancelingId === c.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                              ) : (
-                                <Ban className="w-4 h-4 mr-2" />
-                              )}
-                              {isRecurring ? "Cancelar recorrência" : "Cancelar"}
-                            </Button>
-                          </td>
+                          {canCancelCampaigns && (
+                            <td className="py-2 pr-2 text-right">
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={!isCancelable || cancelingId === c.id}
+                                onClick={() => cancelCampaign(c)}
+                              >
+                                {cancelingId === c.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                ) : (
+                                  <Ban className="w-4 h-4 mr-2" />
+                                )}
+                                {isRecurring ? "Cancelar recorrência" : "Cancelar"}
+                              </Button>
+                            </td>
+                          )}
                         </tr>
 
                         {isExpanded && (
                           <tr className="border-b">
-                            <td colSpan={6} className="py-3">
+                            <td colSpan={canCancelCampaigns ? 7 : 6} className="py-3">
                               <motion.div
                                 initial={{ opacity: 0, y: -4 }}
                                 animate={{ opacity: 1, y: 0 }}
@@ -736,3 +757,6 @@ export default function NotificationsManager({
     </motion.div>
   );
 }
+
+
+
