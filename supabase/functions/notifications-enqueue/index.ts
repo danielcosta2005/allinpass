@@ -60,6 +60,42 @@ type EnqueueBody = {
   data?: Record<string, unknown> | null;
 };
 
+type WalletPlatform = "apple" | "google";
+
+function normalizeWalletPlatform(v: unknown): WalletPlatform | null {
+  const s = cleanString(v)?.toLowerCase();
+  return s === "apple" || s === "google" ? s : null;
+}
+
+function getEligiblePlatforms(params: {
+  channels: { apple?: boolean; google?: boolean };
+  installPlatform: WalletPlatform | null;
+  passType: string | null;
+  deviceKey: unknown;
+  googleObjectId: unknown;
+}): WalletPlatform[] {
+  const hasGoogleObjectId = Boolean(cleanString(params.googleObjectId));
+  const hasDeviceKey = Boolean(cleanString(params.deviceKey));
+
+  if (params.installPlatform === "google") {
+    return params.channels.google && hasGoogleObjectId ? ["google"] : [];
+  }
+
+  if (params.installPlatform === "apple") {
+    return params.channels.apple ? ["apple"] : [];
+  }
+
+  if (hasGoogleObjectId) {
+    return params.channels.google ? ["google"] : [];
+  }
+
+  if (params.channels.apple && (params.passType === "apple" || hasDeviceKey)) {
+    return ["apple"];
+  }
+
+  return [];
+}
+
 type WeeklyRecurrence = {
   type: "weekly";
   timezone: string;
@@ -462,6 +498,7 @@ serve(async (req) => {
           "metadata",
           "expires_at",
           "install_status",
+          "install_platform",
           "device_key",
           "google_object_id",
           "google_class_id",
@@ -513,13 +550,17 @@ serve(async (req) => {
         continue;
       }
 
-      const passType = (p.pass_type as string | null) ?? null;
+      const passType = cleanString(p.pass_type)?.toLowerCase() ?? null;
+      const installPlatform = normalizeWalletPlatform(p.install_platform);
+      const platforms = getEligiblePlatforms({
+        channels,
+        installPlatform,
+        passType,
+        deviceKey: p.device_key,
+        googleObjectId: p.google_object_id,
+      });
 
-      const canApple = channels.apple && (passType === "apple" || !!p.device_key);
-      const canGoogle =
-        channels.google && (passType === "google" || !!p.google_object_id);
-
-      if (!canApple && !canGoogle) {
+      if (platforms.length === 0) {
         skipped_no_platform += 1;
         continue;
       }
@@ -546,6 +587,7 @@ serve(async (req) => {
             google_class_id: p.google_class_id ?? null,
             expires_at: p.expires_at ?? null,
             install_status: installStatus,
+            install_platform: installPlatform,
           },
           notify: true,
         },
@@ -557,7 +599,7 @@ serve(async (req) => {
       };
 
       // 🍎 Apple job
-      if (canApple) {
+      if (platforms.includes("apple")) {
         jobs.push({
           ...baseJob,
           platform: "apple",
@@ -566,7 +608,7 @@ serve(async (req) => {
       }
 
       // 🤖 Google job
-      if (canGoogle) {
+      if (platforms.includes("google")) {
         jobs.push({
           ...baseJob,
           platform: "google",
