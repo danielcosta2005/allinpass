@@ -55,6 +55,8 @@ Fluxo esperado:
 - Para trial/free sem assinatura Asaas, cria checkout recorrente e registra a sessao.
 - Para assinatura paga existente no Asaas, atualiza a assinatura no gateway. Upgrade aplica localmente na hora; downgrade fica `paid` + `next_cycle`.
 - Downgrade nao altera cobrancas pendentes no Asaas (`updatePendingPayments = false`) e mantem o snapshot local do plano atual ate `current_period_end`.
+- So existe uma mudanca `next_cycle` ativa por assinatura. Uma nova mudanca agendada marca a anterior como `superseded`.
+- Uma mudanca imediata aplicada tambem marca qualquer `next_cycle` pendente da mesma assinatura como `superseded`.
 - `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional; se for `next_cycle` antes do fim do ciclo, a RPC retorna `scheduled`.
 - `billing-finalize-plan-change` permite finalizar pelo retorno do `/org` quando o webhook ja confirmou o pagamento.
 - `apply_due_billing_plan_changes()` roda via cron e aplica sessoes `paid` + `next_cycle` quando `current_period_end <= now()`.
@@ -325,14 +327,26 @@ Aplica uma sessao paga de `billing_plan_change_sessions` em uma unica transacao.
 Responsabilidades:
 - bloquear a sessao e a assinatura atual para evitar aplicacao duplicada;
 - retornar `scheduled` sem alterar a assinatura quando a sessao for `next_cycle` e o ciclo atual ainda nao terminou;
+- marcar a sessao como `superseded` quando o plano atual da assinatura ja nao bate com `previous_plan_id`;
 - inserir `billing_subscription_changes`;
 - atualizar `billing_subscriptions` com `plan_id`, status `active`, snapshots comerciais e IDs Asaas;
 - atualizar `billing_accounts.gateway_customer_id` quando o Asaas informar cliente;
 - atualizar `projects_notifications.notifications_limit` para manter compatibilidade com telas legadas;
 - marcar a sessao como `applied`;
+- marcar outras sessoes `next_cycle` ativas da mesma assinatura como `superseded`;
 - registrar `project_billing_audit_logs`.
 
 Resultado pratico: o frontend e o webhook nao atualizam tabelas sensiveis diretamente; eles chamam a RPC via service role depois de validar o fluxo. Upgrade aplica imediatamente; downgrade so aplica no proximo ciclo.
+
+### Funcao `supersede_pending_next_cycle_plan_changes(...)`
+Invalida mudancas agendadas antigas da mesma assinatura.
+
+Responsabilidades:
+- localizar sessoes `effective_mode = 'next_cycle'` com `status` em `pending`, `created` ou `paid`;
+- mudar essas sessoes para `superseded`;
+- preservar `metadata` existente e adicionar `superseded_at`, `superseded_reason` e, quando houver, `superseded_by_session_id`.
+
+Resultado pratico: o sistema mantem historico das decisoes antigas, mas so a mudanca agendada mais recente continua ativa.
 
 ### Funcao `apply_due_billing_plan_changes()`
 Aplica downgrades agendados para o proximo ciclo.
@@ -351,9 +365,11 @@ Responsabilidades:
 4. Upgrade e conversao de trial aplicam imediatamente; downgrade fica agendado para o proximo ciclo.
 5. Upgrade imediato recebe franquia cheia do novo plano no ciclo atual.
 6. Downgrade mantem franquia e preco de excedente do plano atual ate o fim do ciclo ja pago; no ciclo seguinte usa franquia cheia e preco de excedente do novo plano menor.
-7. Fatura final combina assinatura base + excedentes + ajustes de plano (quando houver).
-8. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
-9. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
+7. Apenas uma mudanca `next_cycle` pode ficar ativa por assinatura; novas decisoes substituem a pendente anterior.
+8. Uma sessao antiga nao pode aplicar se `billing_subscriptions.plan_id` for diferente de `billing_plan_change_sessions.previous_plan_id`.
+9. Fatura final combina assinatura base + excedentes + ajustes de plano (quando houver).
+10. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
+11. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
 
 ## Fluxo de negocio (fim a fim)
 

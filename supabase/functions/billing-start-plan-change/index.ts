@@ -429,6 +429,20 @@ async function applyBillingPlanChange(
   return data;
 }
 
+async function supersedePendingNextCyclePlanChanges(
+  supabaseAdmin: SupabaseAdmin,
+  subscriptionId: string,
+  supersededBySessionId: string,
+) {
+  const { error } = await supabaseAdmin.rpc("supersede_pending_next_cycle_plan_changes", {
+    p_subscription_id: subscriptionId,
+    p_superseded_by_session_id: supersededBySessionId,
+    p_reason: "replaced_by_new_plan_change",
+  });
+
+  if (error) throw error;
+}
+
 async function findReusableSession(
   supabaseAdmin: SupabaseAdmin,
   subscription: BillingSubscription,
@@ -497,11 +511,18 @@ async function createPlanChangeCheckout({
   assertPublicHttpsAppBaseUrl(appBaseUrl);
 
   const expiresAt = addMinutes(new Date(), DEFAULT_CHECKOUT_EXPIRATION_MINUTES);
+  const sessionId = crypto.randomUUID();
   const externalReference = crypto.randomUUID();
   const effectiveMode = getPlanChangeEffectiveMode(changeType);
+
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
+
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,
@@ -663,6 +684,7 @@ async function updateAsaasSubscription({
   targetPlan: BillingPlan;
   changeType: string;
 }) {
+  const sessionId = crypto.randomUUID();
   const externalReference = crypto.randomUUID();
   const isNoChargePlan = Number(targetPlan.base_price_cents || 0) <= 0;
   const effectiveMode = getPlanChangeEffectiveMode(changeType);
@@ -706,9 +728,14 @@ async function updateAsaasSubscription({
   const providerSubscriptionId = readProviderId(asaasBody) ?? currentProviderSubscriptionId;
   const providerCustomerId = readProviderId((asaasBody as { customer?: unknown }).customer);
 
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
+
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,
@@ -779,9 +806,16 @@ async function applyNoChargePlanChange({
   changeType: string;
 }) {
   const effectiveMode = getPlanChangeEffectiveMode(changeType);
+  const sessionId = crypto.randomUUID();
+
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
+
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,

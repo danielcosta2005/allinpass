@@ -168,4 +168,29 @@ describe("billing plan changes", () => {
     expect(migrationSources).toContain("cron.schedule(");
     expect(migrationSources).toContain("billing-apply-due-plan-changes");
   });
+
+  test("keeps only one pending next-cycle plan change per subscription", () => {
+    const functionSource = readIfExists("supabase/functions/billing-start-plan-change/index.ts");
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(migrationSources).toContain("superseded");
+    expect(migrationSources).toContain("billing_plan_change_sessions_one_active_next_cycle_idx");
+    expect(migrationSources).toContain("where effective_mode = 'next_cycle'");
+    expect(migrationSources).toContain("and status in ('pending', 'created', 'paid')");
+    expect(migrationSources).toContain("create or replace function public.supersede_pending_next_cycle_plan_changes");
+    expect(migrationSources).toContain("v_subscription.plan_id <> v_session.previous_plan_id");
+    expect(migrationSources).toContain("'stale_plan_change_session'");
+    expect(migrationSources).toContain("status = 'superseded'");
+    expect(migrationSources).toContain("metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('superseded_by_session_id'");
+
+    expect(functionSource).toContain("async function supersedePendingNextCyclePlanChanges");
+    expect(functionSource).toContain("supersede_pending_next_cycle_plan_changes");
+    expect(functionSource).toContain("p_superseded_by_session_id");
+    expect(functionSource).toContain("supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId)");
+  });
 });
