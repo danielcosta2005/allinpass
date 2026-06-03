@@ -46,14 +46,24 @@ describe("billing plan changes", () => {
     expect(functionSource).toContain("createPlanChangeCheckout");
     expect(functionSource).toContain("updateAsaasSubscription");
     expect(functionSource).toContain("updatePendingPayments");
+    expect(functionSource).toContain("resolveAsaasSubscriptionId");
+    expect(functionSource).toContain("isAsaasSubscriptionId");
     expect(functionSource).toContain("downgrade");
     expect(functionSource).toContain("planCode === FREE_PLAN_CODE");
     expect(functionSource).toContain("Free trial nao pode ser destino de mudanca de plano.");
     expect(functionSource).not.toContain("BILLING_PLAN_CHANGE_NOT_AN_UPGRADE");
 
     expect(webhookSource).toContain("handlePlanChangeCheckoutWebhook");
+    expect(webhookSource).toContain("handlePaymentWebhook");
+    expect(webhookSource).toContain("PAYMENT_CONFIRMED");
+    expect(webhookSource).toContain("last_asaas_payment_webhook");
+    expect(webhookSource).toContain("provider_checkout_id");
     expect(webhookSource).toContain("billing_plan_change_sessions");
     expect(webhookSource).toContain("SUBSCRIPTION_UPDATED");
+    expect(webhookSource).toContain("gateway_customer_id");
+    expect(readIfExists("supabase/functions/signup-finalize/index.ts")).toContain("provider_customer_id || !checkoutSession.provider_subscription_id");
+    expect(readIfExists("supabase/functions/billing-finalize-plan-change/index.ts")).toContain("provider_subscription_id || !session.provider_customer_id");
+    expect(readIfExists("supabase/functions/signup-finalize/index.ts")).not.toContain("?? paidCheckoutSession?.provider_checkout_id");
   });
 
   test("/org shows the current billing plan and can start any paid plan change", () => {

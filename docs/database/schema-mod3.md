@@ -102,6 +102,8 @@ Colunas principais:
 - preco de excedente snapshot: `overage_pass_install_cents`, `overage_notification_sent_cents`
 - gateway: `gateway_provider`, `gateway_subscription_id`
 
+Para Asaas, `gateway_subscription_id` deve conter somente o ID real da assinatura (`sub_...`). IDs UUID de checkout pertencem a `signup_checkout_sessions.provider_checkout_id` ou `billing_plan_change_sessions.provider_checkout_id` e nao devem ser usados em `/subscriptions/{id}`.
+
 ### `public.billing_subscription_changes`
 Historico de troca de plano e base para prorrata.
 

@@ -30,7 +30,7 @@ Quando o `signup-precheck` identifica que o email ja existe em `auth.users` com 
 - `frontend/src/contexts/SupabaseAuthContext.jsx`: sessao, papel do usuario e `refreshAuthProfile`.
 - `supabase/functions/signup-finalize/index.ts`: provisionamento do Free Trial ou assinatura paga confirmada.
 - `supabase/functions/signup-start-checkout/index.ts`: cria a sessao de checkout recorrente no Asaas.
-- `supabase/functions/asaas-webhook/index.ts`: recebe eventos `CHECKOUT_*` do Asaas e marca o checkout como pago/cancelado/expirado.
+- `supabase/functions/asaas-webhook/index.ts`: recebe eventos `CHECKOUT_*`, `PAYMENT_*` e `SUBSCRIPTION_*` do Asaas. O `CHECKOUT_PAID` confirma o pagamento, mas os IDs definitivos `customer`/`subscription` podem chegar depois por `PAYMENT_*` ou `SUBSCRIPTION_*`.
 - `frontend/src/lib/subscriptionPlans.js`: leitura dos planos em `billing_plans`.
 
 ## Fluxo Sem Confirmacao de Email
@@ -194,6 +194,7 @@ Asaas retorna checkout_url
 Usuário paga no Asaas
 Asaas chama asaas-webhook
 asaas-webhook marca signup_checkout_sessions.status = paid
+asaas-webhook preenche provider_customer_id/provider_subscription_id via PAYMENT_* ou SUBSCRIPTION_* quando o CHECKOUT_PAID nao trouxer esses IDs
 Frontend volta para /cadastro
 Frontend chama signup-finalize
 signup-finalize valida checkout paid
