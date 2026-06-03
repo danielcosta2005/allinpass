@@ -38,6 +38,13 @@ function isPaidPaymentEvent(event: string, paymentStatus: string) {
     paymentStatus === "PAID";
 }
 
+const SUBSCRIPTION_EVENTS = new Set([
+  "SUBSCRIPTION_CREATED",
+  "SUBSCRIPTION_UPDATED",
+  "SUBSCRIPTION_INACTIVATED",
+  "SUBSCRIPTION_DELETED",
+]);
+
 function getDate(value: unknown) {
   const text = String(value ?? "").trim();
   if (!text) return new Date().toISOString();
@@ -481,7 +488,7 @@ async function handleSubscriptionWebhook(
   event: string,
   payload: unknown,
 ) {
-  if (!event.startsWith("SUBSCRIPTION_")) return false;
+  if (!SUBSCRIPTION_EVENTS.has(event)) return false;
 
   const subscription = asRecord((payload as { subscription?: unknown }).subscription);
   const providerSubscriptionId = readProviderId(subscription);

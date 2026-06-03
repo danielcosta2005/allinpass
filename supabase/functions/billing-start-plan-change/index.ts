@@ -463,6 +463,10 @@ function getPlanChangeType(
   return "plan_change";
 }
 
+function getPlanChangeEffectiveMode(changeType: string) {
+  return changeType === "downgrade" ? "next_cycle" : "immediate";
+}
+
 async function createPlanChangeCheckout({
   supabaseAdmin,
   asaasApiKey,
@@ -494,6 +498,7 @@ async function createPlanChangeCheckout({
 
   const expiresAt = addMinutes(new Date(), DEFAULT_CHECKOUT_EXPIRATION_MINUTES);
   const externalReference = crypto.randomUUID();
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
@@ -503,7 +508,7 @@ async function createPlanChangeCheckout({
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       external_reference: externalReference,
       status: "pending",
@@ -638,6 +643,8 @@ async function createPlanChangeCheckout({
     checkout_url: checkoutUrl,
     expires_at: session.expires_at,
     applied: false,
+    scheduled: effectiveMode === "next_cycle",
+    effective_mode: effectiveMode,
   };
 }
 
@@ -658,6 +665,7 @@ async function updateAsaasSubscription({
 }) {
   const externalReference = crypto.randomUUID();
   const isNoChargePlan = Number(targetPlan.base_price_cents || 0) <= 0;
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
   const currentProviderSubscriptionId = await resolveAsaasSubscriptionId({
     asaasApiKey,
     subscription,
@@ -666,13 +674,13 @@ async function updateAsaasSubscription({
     ? {
       status: "INACTIVE",
       description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
-      updatePendingPayments: true,
+      updatePendingPayments: effectiveMode === "immediate",
     }
     : {
       value: targetPlan.base_price_cents / 100,
       cycle: "MONTHLY",
       description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
-      updatePendingPayments: true,
+      updatePendingPayments: effectiveMode === "immediate",
     };
 
   const asaasResponse = await fetch(
@@ -707,7 +715,7 @@ async function updateAsaasSubscription({
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       provider_subscription_id: providerSubscriptionId,
       provider_customer_id: providerCustomerId,
@@ -730,6 +738,17 @@ async function updateAsaasSubscription({
   if (sessionError) throw sessionError;
   const session = sessionData as { id: string };
 
+  if (effectiveMode === "next_cycle") {
+    return {
+      success: true,
+      mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
+      plan_change_session_id: session.id,
+      applied: false,
+      scheduled: effectiveMode === "next_cycle",
+      effective_mode: effectiveMode,
+    };
+  }
+
   const applied = await applyBillingPlanChange(supabaseAdmin, session.id, userId, {
     providerSubscriptionId,
     providerCustomerId,
@@ -740,6 +759,8 @@ async function updateAsaasSubscription({
     mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
     plan_change_session_id: session.id,
     applied: true,
+    scheduled: false,
+    effective_mode: effectiveMode,
     result: applied,
   };
 }
@@ -757,6 +778,7 @@ async function applyNoChargePlanChange({
   targetPlan: BillingPlan;
   changeType: string;
 }) {
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
@@ -766,7 +788,7 @@ async function applyNoChargePlanChange({
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       external_reference: crypto.randomUUID(),
       status: "paid",
@@ -784,6 +806,18 @@ async function applyNoChargePlanChange({
 
   if (sessionError) throw sessionError;
   const session = sessionData as { id: string };
+
+  if (effectiveMode === "next_cycle") {
+    return {
+      success: true,
+      mode: "no_charge_plan_change",
+      plan_change_session_id: session.id,
+      applied: false,
+      scheduled: effectiveMode === "next_cycle",
+      effective_mode: effectiveMode,
+    };
+  }
+
   const applied = await applyBillingPlanChange(supabaseAdmin, session.id, userId);
 
   return {
@@ -791,6 +825,8 @@ async function applyNoChargePlanChange({
     mode: "no_charge_plan_change",
     plan_change_session_id: session.id,
     applied: true,
+    scheduled: false,
+    effective_mode: effectiveMode,
     result: applied,
   };
 }
@@ -895,11 +931,13 @@ Deno.serve(async (req) => {
     const reusableSession = await findReusableSession(supabaseAdmin, subscription, targetPlan);
     if (reusableSession?.status === "paid") {
       const applied = await applyBillingPlanChange(supabaseAdmin, reusableSession.id, user.id);
+      const scheduled = Boolean((applied as { scheduled?: unknown } | null)?.scheduled);
       return jsonResponse(origin, {
         success: true,
         mode: "reused_paid_session",
         plan_change_session_id: reusableSession.id,
-        applied: true,
+        applied: !scheduled,
+        scheduled,
         result: applied,
       });
     }

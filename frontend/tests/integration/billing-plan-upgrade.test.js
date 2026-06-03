@@ -107,4 +107,52 @@ describe("billing plan changes", () => {
     expect(dashboardSource).not.toContain("const BillingPlanChoiceCard");
     expect(dashboardSource).not.toContain("const NoProjectSignupState");
   });
+
+  test("codifies full upgrade allowance and new-plan overage prices for cycle billing", () => {
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(migrationSources).toContain("full_new_plan");
+    expect(migrationSources).toContain("effective_overage_pass_install_cents");
+    expect(migrationSources).toContain("effective_overage_notification_sent_cents");
+    expect(migrationSources).toContain("new.change_type in ('upgrade', 'trial_conversion', 'plan_change')");
+    expect(migrationSources).toContain("new.prorated_install_allowance := coalesce(new.new_included_pass_installs, 0)");
+    expect(migrationSources).toContain("new.prorated_notification_allowance := coalesce(new.new_included_notification_sends, 0)");
+    expect(migrationSources).toContain("new.effective_overage_pass_install_cents := coalesce(new.new_overage_pass_install_cents, 0)");
+    expect(migrationSources).toContain("new.effective_overage_notification_sent_cents := coalesce(new.new_overage_notification_sent_cents, 0)");
+    expect(migrationSources).toContain("create or replace function public.get_billing_cycle_entitlements");
+    expect(migrationSources).toContain("create or replace function public.calculate_billing_cycle_overage");
+    expect(migrationSources).toContain("ceil(coalesce(");
+    expect(migrationSources).toContain("v_change.prorated_notification_allowance");
+  });
+
+  test("schedules downgrades for the next cycle instead of applying them immediately", () => {
+    const functionSource = readIfExists("supabase/functions/billing-start-plan-change/index.ts");
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(functionSource).toContain("function getPlanChangeEffectiveMode");
+    expect(functionSource).toContain('return changeType === "downgrade" ? "next_cycle" : "immediate";');
+    expect(functionSource).toContain("effective_mode: effectiveMode");
+    expect(functionSource).toContain("updatePendingPayments: effectiveMode === \"immediate\"");
+    expect(functionSource).toContain("scheduled: effectiveMode === \"next_cycle\"");
+
+    expect(migrationSources).toContain("v_session.effective_mode = 'next_cycle'");
+    expect(migrationSources).toContain("v_subscription.current_period_end > now()");
+    expect(migrationSources).toContain("'scheduled', true");
+    expect(migrationSources).toContain("create or replace function public.apply_due_billing_plan_changes");
+    expect(migrationSources).toContain("where status = 'paid'");
+    expect(migrationSources).toContain("and effective_mode = 'next_cycle'");
+    expect(migrationSources).toContain("perform public.apply_billing_plan_change");
+    expect(migrationSources).toContain("cron.schedule(");
+    expect(migrationSources).toContain("billing-apply-due-plan-changes");
+  });
 });
