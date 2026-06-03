@@ -91,6 +91,19 @@ describe("billing plan changes", () => {
     expect(dashboardSource).toContain("billingPlanName");
   });
 
+  test("requires an explicit confirmation before starting a paid plan change", () => {
+    const billingDialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanDialog.jsx");
+
+    expect(billingDialogSource).toContain("pendingPlanChange");
+    expect(billingDialogSource).toContain("setPendingPlanChange(plan)");
+    expect(billingDialogSource).toContain("Confirmar operação");
+    expect(billingDialogSource).toContain("dá franquia cheia do novo plano no ciclo atual");
+    expect(billingDialogSource).toContain("cobra excedente usando o preço de excedente do novo plano");
+    expect(billingDialogSource).toContain("só vale no próximo ciclo");
+    expect(billingDialogSource).toContain("até lá mantém franquia e preço do plano atual");
+    expect(billingDialogSource).toContain("onClick={() => onStartPlanChange(pendingPlanChange)}");
+  });
+
   test("keeps the restaurant dashboard modular after adding billing flows", () => {
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
 
