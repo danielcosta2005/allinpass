@@ -8,6 +8,17 @@ const pendingSignupStatusRequests = new Map();
 const completedSignupStatusRequests = new Map();
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY = '__allinpass_existing_customer_signup_context_v1';
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
+export const PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS = 3_500;
+export const PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS = [3_000, 5_000];
+
+function wait(ms) {
+  const delay = Number(ms || 0);
+  if (!Number.isFinite(delay) || delay <= 0) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, delay);
+  });
+}
 
 async function readFunctionError(error) {
   if (error?.context && typeof error.context.clone === 'function') {
@@ -34,6 +45,10 @@ function buildSignupError(message, code = null) {
   const nextError = new Error(message);
   if (code) nextError.code = code;
   return nextError;
+}
+
+function isFinalizePaymentNotConfirmed(error) {
+  return error?.code === 'SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED';
 }
 
 function safeReadExistingCustomerSignupContextRaw() {
@@ -152,6 +167,8 @@ export async function finalizeSignup({
   planCode = 'free_trial',
   checkoutSessionId = '',
   dedupeKey = '',
+  initialDelayMs = 0,
+  retryDelaysMs = [],
 }) {
   const requestKey = buildFinalizeDedupeKey({
     dedupeKey,
@@ -171,29 +188,51 @@ export async function finalizeSignup({
   }
 
   const request = (async () => {
-    const { data, error } = await supabase.functions.invoke('signup-finalize', {
-      body: {
-        establishmentName,
-        planCode,
-        checkoutSessionId,
-      },
-    });
+    const retryDelays = Array.isArray(retryDelaysMs)
+      ? retryDelaysMs
+        .map((delay) => Number(delay || 0))
+        .filter((delay) => Number.isFinite(delay) && delay > 0)
+      : [];
 
-    if (error) {
-      const parsedError = await readFunctionError(error);
-      throw buildSignupError(parsedError.message, parsedError.code);
+    await wait(initialDelayMs);
+
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const { data, error } = await supabase.functions.invoke('signup-finalize', {
+          body: {
+            establishmentName,
+            planCode,
+            checkoutSessionId,
+          },
+        });
+
+        if (error) {
+          const parsedError = await readFunctionError(error);
+          throw buildSignupError(parsedError.message, parsedError.code);
+        }
+
+        if (data?.error) {
+          throw buildSignupError(data.error, data.code || null);
+        }
+
+        completedFinalizeRequests.set(requestKey, {
+          data,
+          expiresAt: Date.now() + FINALIZE_DEDUPE_TTL_MS,
+        });
+
+        return data;
+      } catch (error) {
+        const retryDelay = retryDelays[attempt];
+        if (!retryDelay || !isFinalizePaymentNotConfirmed(error)) {
+          throw error;
+        }
+
+        attempt += 1;
+        await wait(retryDelay);
+      }
     }
-
-    if (data?.error) {
-      throw buildSignupError(data.error, data.code || null);
-    }
-
-    completedFinalizeRequests.set(requestKey, {
-      data,
-      expiresAt: Date.now() + FINALIZE_DEDUPE_TTL_MS,
-    });
-
-    return data;
   })();
 
   pendingFinalizeRequests.set(requestKey, request);

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { finalizeSignup, getSignupStatus, startPaidSignupCheckout } from '@/lib/signup';
+import {
+  PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
+  finalizeSignup,
+  getSignupStatus,
+  startPaidSignupCheckout,
+} from '@/lib/signup';
 
 export function usePaidSignupRecovery({
   projectId,
@@ -131,6 +136,7 @@ export function usePaidSignupRecovery({
         planCode,
         checkoutSessionId,
         dedupeKey: `org-finalize:${planCode}:${checkoutSessionId}`,
+        retryDelaysMs: PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
       });
 
       toast({

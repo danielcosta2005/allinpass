@@ -27,6 +27,9 @@ describe("signup finalize auth redirect", () => {
     expect(signupPageSource).toContain("provisionSignup");
     expect(signupPageSource).toContain("checkoutSessionIdFromRedirect");
     expect(signupPageSource).toContain("checkoutStatusFromRedirect");
+    expect(signupPageSource).toContain("PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS");
+    expect(signupPageSource).toContain("PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS");
+    expect(signupPageSource).toContain("finalizeInitialDelayMs: isPaidFinalize");
   });
 
   test("pending free trial signups are auto-finalized before redirecting to /org", () => {
@@ -91,5 +94,7 @@ describe("signup finalize auth redirect", () => {
     expect(signupClientSource).toContain("pendingFinalizeRequests");
     expect(signupClientSource).toContain("completedFinalizeRequests");
     expect(signupClientSource).toContain("dedupeKey");
+    expect(signupClientSource).toContain("SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED");
+    expect(signupClientSource).toContain("retryDelaysMs");
   });
 });
