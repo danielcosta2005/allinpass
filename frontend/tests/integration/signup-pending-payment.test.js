@@ -52,7 +52,7 @@ describe("signup paid checkout recovery", () => {
     expect(signupClientSource).toContain("cacheKey = ''");
   });
 
-  test("/org replaces the generic no-project state with paid signup recovery actions", () => {
+  test("/org keeps paid signup recovery helpers but hides paid recovery actions from the public UI", () => {
     const dashboardSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/pages/RestaurantDashboard.jsx"),
       "utf8"
@@ -72,8 +72,9 @@ describe("signup paid checkout recovery", () => {
     expect(recoveryHookSource).toContain("startPaidSignupCheckout");
     expect(recoveryHookSource).toContain("finalizeSignup");
     expect(recoveryHookSource).toContain("PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS");
-    expect(noProjectStateSource).toContain("payment_pending");
-    expect(noProjectStateSource).toContain("Continuar pagamento");
-    expect(noProjectStateSource).toContain("Finalizar ativacao");
+    expect(noProjectStateSource).not.toContain("payment_pending");
+    expect(noProjectStateSource).not.toContain("Continuar pagamento");
+    expect(noProjectStateSource).not.toContain("Finalizar ativacao");
+    expect(noProjectStateSource).toContain("Seu usuario nao esta associado a nenhum projeto");
   });
 });

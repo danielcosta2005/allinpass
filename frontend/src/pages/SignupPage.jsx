@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import {
   DEFAULT_PLAN_KEY,
-  fetchSubscriptionPlans,
+  PAID_SIGNUP_PUBLIC_ENABLED,
+  fetchPublicSignupPlans,
   findPlanByKey,
+  isPublicSignupPlan,
   isPaidPlan,
-  subscriptionPlans,
+  publicSignupPlans,
 } from '@/lib/subscriptionPlans';
 import {
   PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS,
@@ -62,7 +64,7 @@ function SignupPage() {
   const { refreshAuthProfile, session: authSession } = useAuth();
   const { toast } = useToast();
   const finalizeFromRedirectRef = useRef(false);
-  const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
+  const [availablePlans, setAvailablePlans] = useState(publicSignupPlans);
   const [resolvedPlanCode, setResolvedPlanCode] = useState(
     () => String(searchParams.get('planCode') || '').trim().toLowerCase()
   );
@@ -71,13 +73,19 @@ function SignupPage() {
   const contextPlanCode = String(existingCustomerSignupContext?.planCode || '').trim().toLowerCase();
   const selectedPlanKey = useMemo(() => {
     const explicitPlanKey = String(searchParams.get('plano') || '').trim();
-    if (explicitPlanKey) return explicitPlanKey;
+    if (explicitPlanKey) {
+      const plan = findPlanByKey(explicitPlanKey, availablePlans);
+      return isPublicSignupPlan(plan) ? plan.key : DEFAULT_PLAN_KEY;
+    }
 
     const planCodeFromUrl = String(searchParams.get('planCode') || '').trim().toLowerCase();
     const planKeyFromUrlCode = findPlanKeyByCode(planCodeFromUrl, availablePlans);
     if (planKeyFromUrlCode) return planKeyFromUrlCode;
 
-    if (contextPlanKey) return contextPlanKey;
+    if (contextPlanKey) {
+      const plan = findPlanByKey(contextPlanKey, availablePlans);
+      return isPublicSignupPlan(plan) ? plan.key : DEFAULT_PLAN_KEY;
+    }
 
     const planKeyFromContextCode = findPlanKeyByCode(contextPlanCode, availablePlans);
     if (planKeyFromContextCode) return planKeyFromContextCode;
@@ -93,10 +101,10 @@ function SignupPage() {
   }, [searchParams, availablePlans, contextPlanKey, contextPlanCode, resolvedPlanCode, authSession]);
   const shouldFinalizeFromRedirect = searchParams.get('finalizar') === '1';
   const shouldSetupPasswordFromRedirect = searchParams.get('passwordSetup') === '1';
-  const selectedPlan = useMemo(
-    () => findPlanByKey(selectedPlanKey, availablePlans),
-    [availablePlans, selectedPlanKey]
-  );
+  const selectedPlan = useMemo(() => {
+    const plan = findPlanByKey(selectedPlanKey, availablePlans);
+    return isPublicSignupPlan(plan) ? plan : findPlanByKey(DEFAULT_PLAN_KEY, publicSignupPlans);
+  }, [availablePlans, selectedPlanKey]);
   const paidPlan = isPaidPlan(selectedPlan);
   const totalSteps = paidPlan ? 3 : 2;
   const checkoutStatusFromRedirect = String(searchParams.get('checkout') || '').trim().toLowerCase();
@@ -711,7 +719,7 @@ function SignupPage() {
     let mounted = true;
 
     const loadPlans = async () => {
-      const remotePlans = await fetchSubscriptionPlans();
+      const remotePlans = await fetchPublicSignupPlans();
       if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
         setAvailablePlans(remotePlans);
       }
@@ -727,6 +735,7 @@ function SignupPage() {
   useEffect(() => {
     const user = authSession?.user ?? null;
     if (!user || shouldFinalizeFromRedirect) return;
+    if (!PAID_SIGNUP_PUBLIC_ENABLED) return;
     if (finishedFlow === 'paid' || finishedFlow === 'set-password') return;
     if (Boolean(user?.app_metadata?.signup_project_id)) return;
 
@@ -836,12 +845,13 @@ function SignupPage() {
             || existingCustomerContext?.establishmentName
             || '',
         ).trim();
-        const planCode = String(
+        const requestedPlanCode = String(
           redirectPlanCode
             || contextPlanCode
             || metadataPlanCode
             || 'free_trial',
         ).trim().toLowerCase();
+        const planCode = isPublicSignupPlan({ code: requestedPlanCode }) ? requestedPlanCode : 'free_trial';
         const isPaidFinalize = planCode && planCode !== 'free_trial';
 
         setResolvedPlanCode(planCode);

@@ -14,6 +14,7 @@ import {
   finalizeFreeTrialSignup,
   readExistingCustomerSignupContext,
 } from '@/lib/signup';
+import { PAID_SIGNUP_PUBLIC_ENABLED } from '@/lib/subscriptionPlans';
 import { useToast } from '@/components/ui/use-toast';
 
 const AuthContext = createContext(null);
@@ -74,6 +75,7 @@ function getSignupPlanCodeFromCurrentUrl() {
 
 function isPaidSignupReturnUrl() {
   if (typeof window === 'undefined') return false;
+  if (!PAID_SIGNUP_PUBLIC_ENABLED) return false;
 
   const p = window.location.pathname || '';
   if (p !== '/cadastro') return false;

@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabaseClient';
 
-export const DEFAULT_PLAN_KEY = 'starter';
+export const PAID_SIGNUP_PUBLIC_ENABLED = false;
+export const PLAN_CHANGES_PUBLIC_ENABLED = false;
+export const PUBLIC_SIGNUP_PLAN_CODES = new Set(['free_trial']);
+export const DEFAULT_PLAN_KEY = 'free-trial';
 
 const PLAN_ORDER = ['free_trial', 'starter', 'pro', 'premium'];
 
@@ -302,6 +305,25 @@ export const fetchSubscriptionPlans = async () => {
     return subscriptionPlans;
   }
 };
+
+export const filterPublicSignupPlans = (plans = subscriptionPlans) => {
+  const source = Array.isArray(plans) ? plans : [];
+  const filtered = source.filter((plan) => PUBLIC_SIGNUP_PLAN_CODES.has(String(plan?.code || '').trim().toLowerCase()));
+
+  if (filtered.length > 0) return filtered;
+
+  return subscriptionPlans.filter((plan) => PUBLIC_SIGNUP_PLAN_CODES.has(plan.code));
+};
+
+export const publicSignupPlans = filterPublicSignupPlans(subscriptionPlans);
+
+export const fetchPublicSignupPlans = async () => {
+  const plans = await fetchSubscriptionPlans();
+  return filterPublicSignupPlans(plans);
+};
+
+export const isPublicSignupPlan = (plan) =>
+  PUBLIC_SIGNUP_PLAN_CODES.has(String(plan?.code || '').trim().toLowerCase());
 
 export const findPlanByKey = (planKey, plans = subscriptionPlans) =>
   plans.find((plan) => plan.key === planKey) ||

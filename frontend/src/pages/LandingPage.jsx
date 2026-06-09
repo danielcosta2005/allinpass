@@ -33,8 +33,8 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   buildSignupPath,
-  fetchSubscriptionPlans,
-  subscriptionPlans,
+  fetchPublicSignupPlans,
+  publicSignupPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
 
@@ -128,11 +128,7 @@ const faqs = [
   },
   {
     q: 'Preciso de cartão de crédito para começar?',
-    a: 'Você pode começar gratuitamente para testar a plataforma. O cartão só é solicitado quando você decidir ativar um plano pago.',
-  },
-  {
-    q: 'Posso mudar de plano quando quiser?',
-    a: 'Com certeza. Faça upgrade ou downgrade a qualquer momento direto no painel administrativo, sem multas ou burocracia.',
+    a: 'Não. O Free Trial liberado para produção permite testar a plataforma sem informar cartão de crédito.',
   },
   {
     q: 'Como funcionam as notificações?',
@@ -929,7 +925,7 @@ const Footer = ({ onOpenPrivacy, onResetCookies }) => {
 };
 
 const LandingPage = () => {
-  const [plans, setPlans] = useState(subscriptionPlans);
+  const [plans, setPlans] = useState(publicSignupPlans);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const viewContentFiredRef = useRef(false);
   const scrollMilestonesRef = useRef(new Set());
@@ -951,7 +947,7 @@ const LandingPage = () => {
     let mounted = true;
 
     const loadPlans = async () => {
-      const remotePlans = await fetchSubscriptionPlans();
+      const remotePlans = await fetchPublicSignupPlans();
       if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
         setPlans(remotePlans);
       }

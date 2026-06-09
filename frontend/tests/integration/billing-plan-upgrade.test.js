@@ -66,12 +66,11 @@ describe("billing plan changes", () => {
     expect(readIfExists("supabase/functions/signup-finalize/index.ts")).not.toContain("?? paidCheckoutSession?.provider_checkout_id");
   });
 
-  test("/org shows the current billing plan and can start any paid plan change", () => {
+  test("/org shows the current billing plan without exposing paid plan changes", () => {
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
+    const topBarSource = readIfExists("frontend/src/components/restaurant/dashboard/RestaurantTopBar.jsx");
     const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
-    const billingDialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanDialog.jsx");
-    const billingCardSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanChoiceCard.jsx");
 
     expect(billingClientSource).toContain("getCurrentBillingSubscription");
     expect(billingClientSource).toContain("getPlanChangeOptions");
@@ -83,11 +82,12 @@ describe("billing plan changes", () => {
 
     expect(billingHookSource).toContain("getCurrentBillingSubscription");
     expect(billingHookSource).toContain("startBillingPlanChange");
-    expect(billingDialogSource).toContain("Escolha seu plano");
-    expect(dashboardSource).toContain("handleStartPlanChange");
-    expect(billingCardSource).toContain("Plano atual");
-    expect(billingCardSource).toContain("Fazer downgrade");
-    expect(billingDialogSource).toContain("flex flex-wrap justify-center gap-5");
+    expect(billingHookSource).toContain("PLAN_CHANGES_PUBLIC_ENABLED");
+    expect(billingHookSource).toContain("if (!PLAN_CHANGES_PUBLIC_ENABLED) return undefined;");
+    expect(dashboardSource).not.toContain("BillingPlanDialog");
+    expect(dashboardSource).not.toContain("handleStartPlanChange");
+    expect(topBarSource).not.toContain("onOpenPlanChange");
+    expect(topBarSource).not.toContain("onClick={onOpenPlanChange}");
     expect(dashboardSource).toContain("billingPlanName");
   });
 

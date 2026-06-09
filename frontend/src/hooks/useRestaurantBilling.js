@@ -6,10 +6,11 @@ import {
   getPlanChangeOptions,
   startBillingPlanChange,
 } from '@/lib/billing';
+import { PLAN_CHANGES_PUBLIC_ENABLED } from '@/lib/subscriptionPlans';
 
 const loadBillingData = async (projectId) => {
   const subscription = await getCurrentBillingSubscription(projectId);
-  const planChangeOptions = await getPlanChangeOptions(subscription);
+  const planChangeOptions = PLAN_CHANGES_PUBLIC_ENABLED ? await getPlanChangeOptions(subscription) : [];
   return { subscription, planChangeOptions };
 };
 
@@ -89,6 +90,7 @@ export function useRestaurantBilling({ projectId, toast }) {
 
   useEffect(() => {
     if (!projectId || typeof window === 'undefined') return undefined;
+    if (!PLAN_CHANGES_PUBLIC_ENABLED) return undefined;
 
     const params = new URLSearchParams(window.location.search || '');
     const planChangeStatus = params.get('planChange') || params.get('upgrade');
@@ -148,7 +150,7 @@ export function useRestaurantBilling({ projectId, toast }) {
   }, [projectId, refreshBillingState, toast]);
 
   const handleStartPlanChange = useCallback(async (plan) => {
-    if (!projectId || !plan?.code || !plan?.isSelectable || billingActionPlanCode) return;
+    if (!PLAN_CHANGES_PUBLIC_ENABLED || !projectId || !plan?.code || !plan?.isSelectable || billingActionPlanCode) return;
 
     setBillingActionPlanCode(plan.code);
     setBillingError('');
