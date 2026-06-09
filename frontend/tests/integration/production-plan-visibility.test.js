@@ -28,6 +28,9 @@ describe("production plan visibility", () => {
     expect(landingSource).toContain("publicSignupPlans");
     expect(landingSource).toContain("useState(publicSignupPlans)");
     expect(landingSource).toContain("const remotePlans = await fetchPublicSignupPlans();");
+    expect(landingSource).toContain("plans.length === 1");
+    expect(landingSource).toContain("flex justify-center");
+    expect(landingSource).toContain("max-w-md mx-auto");
     expect(landingSource).not.toContain("fetchSubscriptionPlans");
     expect(landingSource).not.toContain("Faça upgrade ou downgrade");
   });

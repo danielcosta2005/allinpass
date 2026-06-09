@@ -645,6 +645,10 @@ const HowItWorks = () => {
 };
 
 const Pricing = ({ plans }) => {
+  const planGridClassName = plans.length === 1
+    ? 'flex justify-center gap-6 max-w-md mx-auto'
+    : 'grid md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-7xl mx-auto';
+
   return (
     <section id="planos" className="scroll-mt-20 py-24 sm:py-32">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -672,7 +676,7 @@ const Pricing = ({ plans }) => {
           whileInView="show"
           viewport={{ once: true, margin: '-50px' }}
           variants={stagger}
-          className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-7xl mx-auto"
+          className={planGridClassName}
         >
           {plans.map((p, i) => (
             <motion.div
@@ -680,6 +684,7 @@ const Pricing = ({ plans }) => {
               variants={fadeUp}
               custom={i}
               whileHover={{ y: -8, transition: { duration: 0.2 } }}
+              className={plans.length === 1 ? 'w-full' : undefined}
             >
               <PlanCard
                 plan={p}
