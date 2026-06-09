@@ -10,14 +10,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 const TRIGGER_OPTIONS = [
   {
-    id: "points_wallet",
-    label: "Quantidade de pontos na carteira",
-    unit: "pontos",
-    min: 1,
-    defaultValue: 100,
-    template: "Parabens! Voce atingiu {value} pontos. Resgate seu beneficio na proxima visita.",
-  },
-  {
     id: "expiring_soon",
     label: "Prestes a expirar",
     unit: "dias",
@@ -46,7 +38,6 @@ function buildSuggestedMessage(triggerId, value) {
 
 function triggerSummary(triggerId, value) {
   const option = optionById(triggerId);
-  if (triggerId === "points_wallet") return `Quando o cliente atingir ${value} ${option.unit}`;
   if (triggerId === "expiring_soon") return `Quando faltarem ${value} ${option.unit} para expirar`;
   return `Quando o cliente ficar ${value} ${option.unit} sem visitar`;
 }
@@ -152,6 +143,7 @@ export default function AutomationsTab({
         .from("automations")
         .select("id, project_id, type, quantity, message, status, created_at, updated_at")
         .eq("project_id", projectId)
+        .in("type", TRIGGER_OPTIONS.map((option) => option.id))
         .order("created_at", { ascending: false });
 
       if (error) throw error;

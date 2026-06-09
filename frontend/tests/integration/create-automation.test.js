@@ -23,9 +23,9 @@ describe("Edge Function create-automation", () => {
       accessToken: owner.accessToken,
       body: {
         project_id: project.id,
-        type: "points_wallet",
-        quantity: 15,
-        message: "Você atingiu 15 pontos!",
+        type: "expiring_soon",
+        quantity: 7,
+        message: "Seu passe expira em 7 dias.",
         status: "on",
       },
     });
@@ -43,9 +43,27 @@ describe("Edge Function create-automation", () => {
       .maybeSingle();
 
     expect(error).toBeNull();
-    expect(row?.type).toBe("points_wallet");
-    expect(Number(row?.quantity)).toBe(15);
+    expect(row?.type).toBe("expiring_soon");
+    expect(Number(row?.quantity)).toBe(7);
     expect(row?.status).toBe("on");
+  });
+
+  test("rejeita automacao por quantidade de pontos na carteira", async () => {
+    const { project, owner } = context;
+
+    const response = await invokeEdgeFunction("create-automation", {
+      accessToken: owner.accessToken,
+      body: {
+        project_id: project.id,
+        type: "points_wallet",
+        quantity: 15,
+        message: "Voce atingiu 15 pontos!",
+        status: "on",
+      },
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body?.error).toBe("Invalid type");
   });
 
   test("retorna 401 sem Authorization", async () => {
@@ -53,7 +71,7 @@ describe("Edge Function create-automation", () => {
       headers: { Authorization: "" },
       body: {
         project_id: context.project.id,
-        type: "points_wallet",
+        type: "expiring_soon",
         quantity: 10,
         message: "Teste sem auth",
       },
