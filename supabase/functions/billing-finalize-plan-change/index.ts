@@ -173,6 +173,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (!session.provider_subscription_id || !session.provider_customer_id) {
+      throw new BillingPlanFinalizeError(
+        "BILLING_PLAN_FINALIZE_PAYMENT_NOT_CONFIRMED",
+        "Pagamento confirmado, aguardando vinculacao da assinatura no Asaas.",
+        409,
+      );
+    }
+
     const { data, error } = await supabaseAdmin.rpc("apply_billing_plan_change", {
       p_session_id: session.id,
       p_actor_user_id: user.id,

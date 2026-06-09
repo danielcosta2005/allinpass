@@ -29,6 +29,7 @@ type BillingSubscription = {
   current_period_end: string | null;
   gateway_provider: string | null;
   gateway_subscription_id: string | null;
+  billing_accounts?: { gateway_customer_id?: string | null } | Array<{ gateway_customer_id?: string | null }> | null;
   base_price_cents: number;
   included_pass_installs: number;
   included_notification_sends: number;
@@ -183,6 +184,117 @@ function readProviderId(value: unknown) {
   return null;
 }
 
+function readEmbeddedOne<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function isAsaasSubscriptionId(value: unknown) {
+  return /^sub_[a-z0-9]+$/i.test(String(value ?? "").trim());
+}
+
+function getAsaasCustomerId(subscription: BillingSubscription) {
+  const billingAccount = readEmbeddedOne(subscription.billing_accounts);
+  return String(billingAccount?.gateway_customer_id ?? "").trim() || null;
+}
+
+function getAsaasListData(body: unknown) {
+  const data = body && typeof body === "object"
+    ? (body as { data?: unknown }).data
+    : null;
+  return Array.isArray(data) ? data.filter((item) => item && typeof item === "object") as Array<Record<string, unknown>> : [];
+}
+
+function toCents(value: unknown) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  return Math.round(amount * 100);
+}
+
+function pickBestAsaasSubscription(
+  candidates: Array<Record<string, unknown>>,
+  subscription: BillingSubscription,
+) {
+  const currentPriceCents = Number(subscription.base_price_cents || subscription.billing_plans?.base_price_cents || 0);
+  const usable = candidates
+    .map((candidate) => ({
+      candidate,
+      id: readProviderId(candidate),
+      status: String(candidate.status ?? "").trim().toUpperCase(),
+      deleted: Boolean(candidate.deleted),
+      valueCents: toCents(candidate.value),
+      dateCreated: String(candidate.dateCreated ?? "").trim(),
+    }))
+    .filter((entry) => entry.id && isAsaasSubscriptionId(entry.id) && !entry.deleted);
+
+  if (usable.length === 0) return null;
+
+  const active = usable.filter((entry) => entry.status === "ACTIVE");
+  const preferredStatus = active.length > 0 ? active : usable;
+  const sameValue = preferredStatus.filter((entry) => entry.valueCents === currentPriceCents);
+  const preferredValue = sameValue.length > 0 ? sameValue : preferredStatus;
+
+  preferredValue.sort((a, b) => {
+    const aDate = Date.parse(a.dateCreated);
+    const bDate = Date.parse(b.dateCreated);
+    if (Number.isFinite(aDate) && Number.isFinite(bDate)) return bDate - aDate;
+    return 0;
+  });
+
+  return preferredValue[0]?.id ?? null;
+}
+
+async function resolveAsaasSubscriptionId({
+  asaasApiKey,
+  subscription,
+}: {
+  asaasApiKey: string;
+  subscription: BillingSubscription;
+}) {
+  const storedId = String(subscription.gateway_subscription_id ?? "").trim();
+  if (isAsaasSubscriptionId(storedId)) return storedId;
+
+  const customerId = getAsaasCustomerId(subscription);
+  if (!customerId) {
+    throw new BillingPlanChangeError(
+      "BILLING_PLAN_CHANGE_ASAAS_SUBSCRIPTION_NOT_FOUND",
+      "Nao encontramos o cliente da assinatura no Asaas para atualizar o plano.",
+      409,
+    );
+  }
+
+  const url = new URL(`${getAsaasApiBaseUrl()}/subscriptions`);
+  url.searchParams.set("customer", customerId);
+  url.searchParams.set("limit", "20");
+  url.searchParams.set("offset", "0");
+
+  const response = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      "accept": "application/json",
+      "access_token": asaasApiKey,
+      "User-Agent": "AllinPass/1.0",
+    },
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = getAsaasErrorMessage(body) || "Nao foi possivel localizar a assinatura no Asaas.";
+    throw new BillingPlanChangeError("BILLING_PLAN_CHANGE_ASAAS_ERROR", message, 502);
+  }
+
+  const providerSubscriptionId = pickBestAsaasSubscription(getAsaasListData(body), subscription);
+  if (!providerSubscriptionId) {
+    throw new BillingPlanChangeError(
+      "BILLING_PLAN_CHANGE_ASAAS_SUBSCRIPTION_NOT_FOUND",
+      "Nao encontramos uma assinatura ativa no Asaas para atualizar este plano.",
+      409,
+    );
+  }
+
+  return providerSubscriptionId;
+}
+
 async function requireOwnerMembership(
   supabaseAdmin: SupabaseAdmin,
   projectId: string,
@@ -230,6 +342,7 @@ async function getCurrentSubscription(
         "current_period_end",
         "gateway_provider",
         "gateway_subscription_id",
+        "billing_accounts(gateway_customer_id)",
         "base_price_cents",
         "included_pass_installs",
         "included_notification_sends",
@@ -316,6 +429,20 @@ async function applyBillingPlanChange(
   return data;
 }
 
+async function supersedePendingNextCyclePlanChanges(
+  supabaseAdmin: SupabaseAdmin,
+  subscriptionId: string,
+  supersededBySessionId: string,
+) {
+  const { error } = await supabaseAdmin.rpc("supersede_pending_next_cycle_plan_changes", {
+    p_subscription_id: subscriptionId,
+    p_superseded_by_session_id: supersededBySessionId,
+    p_reason: "replaced_by_new_plan_change",
+  });
+
+  if (error) throw error;
+}
+
 async function findReusableSession(
   supabaseAdmin: SupabaseAdmin,
   subscription: BillingSubscription,
@@ -350,6 +477,10 @@ function getPlanChangeType(
   return "plan_change";
 }
 
+function getPlanChangeEffectiveMode(changeType: string) {
+  return changeType === "downgrade" ? "next_cycle" : "immediate";
+}
+
 async function createPlanChangeCheckout({
   supabaseAdmin,
   asaasApiKey,
@@ -380,17 +511,25 @@ async function createPlanChangeCheckout({
   assertPublicHttpsAppBaseUrl(appBaseUrl);
 
   const expiresAt = addMinutes(new Date(), DEFAULT_CHECKOUT_EXPIRATION_MINUTES);
+  const sessionId = crypto.randomUUID();
   const externalReference = crypto.randomUUID();
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
+
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
+
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       external_reference: externalReference,
       status: "pending",
@@ -525,6 +664,8 @@ async function createPlanChangeCheckout({
     checkout_url: checkoutUrl,
     expires_at: session.expires_at,
     applied: false,
+    scheduled: effectiveMode === "next_cycle",
+    effective_mode: effectiveMode,
   };
 }
 
@@ -543,23 +684,29 @@ async function updateAsaasSubscription({
   targetPlan: BillingPlan;
   changeType: string;
 }) {
+  const sessionId = crypto.randomUUID();
   const externalReference = crypto.randomUUID();
   const isNoChargePlan = Number(targetPlan.base_price_cents || 0) <= 0;
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
+  const currentProviderSubscriptionId = await resolveAsaasSubscriptionId({
+    asaasApiKey,
+    subscription,
+  });
   const asaasPayload = isNoChargePlan
     ? {
       status: "INACTIVE",
       description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
-      updatePendingPayments: true,
+      updatePendingPayments: effectiveMode === "immediate",
     }
     : {
       value: targetPlan.base_price_cents / 100,
       cycle: "MONTHLY",
       description: `Assinatura mensal AllinPass - ${targetPlan.name}`,
-      updatePendingPayments: true,
+      updatePendingPayments: effectiveMode === "immediate",
     };
 
   const asaasResponse = await fetch(
-    `${getAsaasApiBaseUrl()}/subscriptions/${encodeURIComponent(subscription.gateway_subscription_id ?? "")}`,
+    `${getAsaasApiBaseUrl()}/subscriptions/${encodeURIComponent(currentProviderSubscriptionId)}`,
     {
       method: "PUT",
       headers: {
@@ -578,19 +725,24 @@ async function updateAsaasSubscription({
     throw new BillingPlanChangeError("BILLING_PLAN_CHANGE_ASAAS_ERROR", message, 502);
   }
 
-  const providerSubscriptionId = readProviderId(asaasBody) ?? subscription.gateway_subscription_id;
+  const providerSubscriptionId = readProviderId(asaasBody) ?? currentProviderSubscriptionId;
   const providerCustomerId = readProviderId((asaasBody as { customer?: unknown }).customer);
+
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
 
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       provider_subscription_id: providerSubscriptionId,
       provider_customer_id: providerCustomerId,
@@ -613,6 +765,17 @@ async function updateAsaasSubscription({
   if (sessionError) throw sessionError;
   const session = sessionData as { id: string };
 
+  if (effectiveMode === "next_cycle") {
+    return {
+      success: true,
+      mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
+      plan_change_session_id: session.id,
+      applied: false,
+      scheduled: effectiveMode === "next_cycle",
+      effective_mode: effectiveMode,
+    };
+  }
+
   const applied = await applyBillingPlanChange(supabaseAdmin, session.id, userId, {
     providerSubscriptionId,
     providerCustomerId,
@@ -623,6 +786,8 @@ async function updateAsaasSubscription({
     mode: isNoChargePlan ? "subscription_deactivation" : "subscription_update",
     plan_change_session_id: session.id,
     applied: true,
+    scheduled: false,
+    effective_mode: effectiveMode,
     result: applied,
   };
 }
@@ -640,16 +805,24 @@ async function applyNoChargePlanChange({
   targetPlan: BillingPlan;
   changeType: string;
 }) {
+  const effectiveMode = getPlanChangeEffectiveMode(changeType);
+  const sessionId = crypto.randomUUID();
+
+  if (effectiveMode === "next_cycle") {
+    await supersedePendingNextCyclePlanChanges(supabaseAdmin, subscription.id, sessionId);
+  }
+
   const { data: sessionData, error: sessionError } = await supabaseAdmin
     .from("billing_plan_change_sessions")
     .insert({
+      id: sessionId,
       project_id: subscription.project_id,
       subscription_id: subscription.id,
       previous_plan_id: subscription.plan_id,
       new_plan_id: targetPlan.id,
       requested_by: userId,
       change_type: changeType,
-      effective_mode: "immediate",
+      effective_mode: effectiveMode,
       provider: "asaas",
       external_reference: crypto.randomUUID(),
       status: "paid",
@@ -667,6 +840,18 @@ async function applyNoChargePlanChange({
 
   if (sessionError) throw sessionError;
   const session = sessionData as { id: string };
+
+  if (effectiveMode === "next_cycle") {
+    return {
+      success: true,
+      mode: "no_charge_plan_change",
+      plan_change_session_id: session.id,
+      applied: false,
+      scheduled: effectiveMode === "next_cycle",
+      effective_mode: effectiveMode,
+    };
+  }
+
   const applied = await applyBillingPlanChange(supabaseAdmin, session.id, userId);
 
   return {
@@ -674,6 +859,8 @@ async function applyNoChargePlanChange({
     mode: "no_charge_plan_change",
     plan_change_session_id: session.id,
     applied: true,
+    scheduled: false,
+    effective_mode: effectiveMode,
     result: applied,
   };
 }
@@ -778,11 +965,13 @@ Deno.serve(async (req) => {
     const reusableSession = await findReusableSession(supabaseAdmin, subscription, targetPlan);
     if (reusableSession?.status === "paid") {
       const applied = await applyBillingPlanChange(supabaseAdmin, reusableSession.id, user.id);
+      const scheduled = Boolean((applied as { scheduled?: unknown } | null)?.scheduled);
       return jsonResponse(origin, {
         success: true,
         mode: "reused_paid_session",
         plan_change_session_id: reusableSession.id,
-        applied: true,
+        applied: !scheduled,
+        scheduled,
         result: applied,
       });
     }
@@ -807,7 +996,6 @@ Deno.serve(async (req) => {
     const email = String(user.email ?? "").trim().toLowerCase();
     const hasExistingAsaasSubscription =
       subscription.gateway_provider === "asaas"
-      && Boolean(subscription.gateway_subscription_id)
       && currentPriceCents > 0;
     const asaasApiKey = hasExistingAsaasSubscription || targetPriceCents > 0
       ? requiredEnv("ASAAS_API_KEY")

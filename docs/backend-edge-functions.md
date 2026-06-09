@@ -495,7 +495,7 @@ Logs futuros uteis: `user.id`, `projectId`, `plan.code`, etapa atual do provisio
 
 ### Observacoes e riscos
 
-- O fluxo pago usa `signup-start-checkout`, `asaas-webhook` e a propria `signup-finalize`; nao existe uma function separada `signup-finalize-paid`.
+- O fluxo pago usa `signup-start-checkout`, `asaas-webhook` e a propria `signup-finalize`; nao existe uma function separada `signup-finalize-paid`. O webhook deve receber `CHECKOUT_*`, `PAYMENT_*` e `SUBSCRIPTION_*`, porque o `CHECKOUT_PAID` pode confirmar o pagamento sem trazer os IDs definitivos `customer`/`subscription`.
 - O provisionamento mistura varias tabelas sem uma transacao Postgres unica.
 - O slug usa sufixo aleatorio e tenta novamente ate 3 vezes em conflito `23505`.
 - O template de Wallet contem identificadores e URLs default hardcoded; revisar quando houver multi-tenant de certificados/assets.
@@ -803,7 +803,7 @@ O payload vem do Asaas. A function usa principalmente:
 | `checkout.id` | `string` | Sim | ID do checkout no Asaas. Usado para encontrar `signup_checkout_sessions.provider_checkout_id`. |
 | `checkout.status` | `string` | Condicional | Status do checkout, usado como fallback para mapear o status local. |
 | `checkout.customer` | `string \| object` | Nao | ID do cliente no Asaas, gravado quando status local vira `paid`. |
-| `checkout.subscription` | `string \| object` | Nao | ID da assinatura no Asaas, gravado quando status local vira `paid`. |
+| `checkout.subscription` | `string \| object` | Nao | Metadados da recorrencia do checkout. Quando o Asaas enviar um ID real (`sub_...`), ele pode ser gravado; UUID de checkout nao deve ser usado como `gateway_subscription_id`. |
 | `checkout.payment` | `string \| object` | Nao | ID do pagamento no Asaas, gravado quando status local vira `paid`. |
 | `dateCreated` | `string` | Nao | Usado como `paid_at`; se ausente ou invalido, usa `now()`. |
 
