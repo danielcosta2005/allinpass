@@ -11,43 +11,18 @@ import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
-import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import NoProjectSignupState from '@/components/restaurant/dashboard/NoProjectSignupState';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { ALLOWED_TABS, DASHBOARD_TABS, SUPPORT_WHATSAPP_URL } from '@/constants/restaurantDashboard';
-import { usePaidSignupRecovery } from '@/hooks/usePaidSignupRecovery';
 import { useProjectName } from '@/hooks/useProjectName';
-import { useRestaurantBilling } from '@/hooks/useRestaurantBilling';
 
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
-
-  const {
-    billingSubscription,
-    planChangeOptions,
-    billingLoading,
-    billingError,
-    planChangeOpen,
-    setPlanChangeOpen,
-    billingActionPlanCode,
-    billingPlanName,
-    handleStartPlanChange,
-  } = useRestaurantBilling({ projectId, toast });
-
-  const {
-    signupStatus,
-    signupStatusLoading,
-    signupStatusError,
-    signupActionLoading,
-    handleRefreshSignupStatus,
-    handleContinuePayment,
-    handleFinalizeActivation,
-  } = usePaidSignupRecovery({ projectId, toast, user });
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -103,38 +78,14 @@ const RestaurantDashboard = () => {
 
       <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-purple-50 via-white to-indigo-50">
         <RestaurantTopBar
-          billingLoading={billingLoading}
-          billingPlanName={billingPlanName}
-          onOpenPlanChange={() => setPlanChangeOpen(true)}
           onSignOut={handleSignOut}
-          projectId={projectId}
           signingOut={signingOut}
           userEmail={user?.email}
         />
 
-        <BillingPlanDialog
-          billingActionPlanCode={billingActionPlanCode}
-          billingError={billingError}
-          billingLoading={billingLoading}
-          billingPlanName={billingPlanName}
-          billingSubscription={billingSubscription}
-          onOpenChange={setPlanChangeOpen}
-          onStartPlanChange={handleStartPlanChange}
-          open={planChangeOpen}
-          planChangeOptions={planChangeOptions}
-        />
-
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
           {!projectId ? (
-            <NoProjectSignupState
-              actionLoading={signupActionLoading}
-              onContinuePayment={handleContinuePayment}
-              onFinalizeActivation={handleFinalizeActivation}
-              onRefreshStatus={handleRefreshSignupStatus}
-              status={signupStatus}
-              statusError={signupStatusError}
-              statusLoading={signupStatusLoading}
-            />
+            <NoProjectSignupState />
           ) : (
             <motion.div
               initial={{ opacity: 0, y: 20 }}

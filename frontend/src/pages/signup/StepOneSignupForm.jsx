@@ -17,7 +17,6 @@ function StepOneSignupForm({
   onFieldTouched,
   onSubmit,
   onTurnstileResetReady,
-  paidPlan,
   shouldShowError,
   signupCaptchaEnabled,
   signupError,
@@ -106,7 +105,7 @@ function StepOneSignupForm({
             <Loader2 className="w-4 h-4 animate-spin" />
             Iniciando...
           </span>
-        ) : paidPlan ? 'Continuar para senha' : 'Continuar'}
+        ) : 'Continuar'}
       </Button>
       {signupError && (
         <p className="text-sm text-rose-600 text-center">{signupError}</p>

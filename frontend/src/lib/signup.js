@@ -1,11 +1,8 @@
 import { supabase } from '@/lib/supabaseClient';
 
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
-const SIGNUP_STATUS_DEDUPE_TTL_MS = 5_000;
 const pendingFinalizeRequests = new Map();
 const completedFinalizeRequests = new Map();
-const pendingSignupStatusRequests = new Map();
-const completedSignupStatusRequests = new Map();
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_KEY = '__allinpass_existing_customer_signup_context_v1';
 const EXISTING_CUSTOMER_SIGNUP_CONTEXT_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -124,13 +121,12 @@ export function rememberExistingCustomerSignupContext({
   }
 }
 
-function buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode, checkoutSessionId }) {
+function buildFinalizeDedupeKey({ dedupeKey, establishmentName, planCode }) {
   if (dedupeKey) return String(dedupeKey);
 
   return [
     'signup-finalize',
     String(planCode || 'free_trial').trim().toLowerCase(),
-    String(checkoutSessionId || '').trim(),
     String(establishmentName || '').trim().toLowerCase(),
   ].join(':');
 }
@@ -150,14 +146,12 @@ function readCompletedFinalizeRequest(requestKey) {
 export async function finalizeSignup({
   establishmentName,
   planCode = 'free_trial',
-  checkoutSessionId = '',
   dedupeKey = '',
 }) {
   const requestKey = buildFinalizeDedupeKey({
     dedupeKey,
     establishmentName,
     planCode,
-    checkoutSessionId,
   });
   const completed = readCompletedFinalizeRequest(requestKey);
 
@@ -175,7 +169,6 @@ export async function finalizeSignup({
       body: {
         establishmentName,
         planCode,
-        checkoutSessionId,
       },
     });
 
@@ -275,112 +268,6 @@ export async function finalizeFreeTrialSignup({
     planCode,
     dedupeKey,
   });
-}
-
-export async function startPaidSignupCheckout({
-  establishmentName,
-  planCode,
-}) {
-  const { data, error } = await supabase.functions.invoke('signup-start-checkout', {
-    body: {
-      establishmentName,
-      planCode,
-    },
-  });
-
-  if (error) {
-    const parsedError = await readFunctionError(error);
-    throw buildSignupError(parsedError.message, parsedError.code);
-  }
-
-  if (data?.error) {
-    throw buildSignupError(data.error, data.code || null);
-  }
-
-  if (!data?.checkout_url) {
-    throw buildSignupError('Não foi possível iniciar o checkout do Asaas.');
-  }
-
-  return data;
-}
-
-function readCompletedSignupStatusRequest(requestKey) {
-  const completedSignupStatusRequest = completedSignupStatusRequests.get(requestKey);
-  if (!completedSignupStatusRequest) return null;
-
-  if (completedSignupStatusRequest.expiresAt <= Date.now()) {
-    completedSignupStatusRequests.delete(requestKey);
-    return null;
-  }
-
-  return completedSignupStatusRequest.data;
-}
-
-function normalizeSignupStatusResponse(data) {
-  return {
-    success: Boolean(data?.success),
-    hasProject: Boolean(data?.has_project),
-    projectId: data?.project_id || null,
-    signupState: data?.signup_state || 'no_project_no_signup_context',
-    planCode: data?.plan_code || null,
-    establishmentName: data?.establishment_name || '',
-    checkoutStatus: data?.checkout_status || null,
-    checkoutSessionId: data?.checkout_session_id || null,
-    checkoutUrl: data?.checkout_url || null,
-    checkoutExpired: Boolean(data?.checkout_expired),
-    expiresAt: data?.expires_at || null,
-    paidAt: data?.paid_at || null,
-    amountCents: data?.amount_cents ?? null,
-    currency: data?.currency || null,
-    updatedAt: data?.updated_at || null,
-  };
-}
-
-export async function getSignupStatus({ force = false, cacheKey = '' } = {}) {
-  const requestKey = String(cacheKey || 'current-user');
-
-  if (!force) {
-    const completed = readCompletedSignupStatusRequest(requestKey);
-    if (completed) return completed;
-
-    const pendingSignupStatusRequest = pendingSignupStatusRequests.get(requestKey);
-    if (pendingSignupStatusRequest) {
-      return pendingSignupStatusRequest;
-    }
-  }
-
-  const request = (async () => {
-    const { data, error } = await supabase.functions.invoke('signup-status', {
-      body: {},
-    });
-
-    if (error) {
-      const parsedError = await readFunctionError(error);
-      throw buildSignupError(parsedError.message, parsedError.code);
-    }
-
-    if (data?.error) {
-      throw buildSignupError(data.error, data.code || null);
-    }
-
-    const normalized = normalizeSignupStatusResponse(data);
-    completedSignupStatusRequests.set(requestKey, {
-      data: normalized,
-      expiresAt: Date.now() + SIGNUP_STATUS_DEDUPE_TTL_MS,
-    });
-
-    return normalized;
-  })();
-
-  pendingSignupStatusRequests.set(requestKey, request);
-
-  try {
-    return await request;
-  } finally {
-    if (pendingSignupStatusRequests.get(requestKey) === request) {
-      pendingSignupStatusRequests.delete(requestKey);
-    }
-  }
 }
 
 export async function sendExistingCustomerSignupLink({

@@ -65,26 +65,6 @@ function normalizePlanCode(value) {
     .replace(/[^a-z0-9_]/g, '');
 }
 
-function getSignupPlanCodeFromCurrentUrl() {
-  if (typeof window === 'undefined') return '';
-
-  const params = new URLSearchParams(window.location.search || '');
-  return normalizePlanCode(params.get('planCode')) || normalizePlanCode(params.get('plano'));
-}
-
-function isPaidSignupReturnUrl() {
-  if (typeof window === 'undefined') return false;
-
-  const p = window.location.pathname || '';
-  if (p !== '/cadastro') return false;
-
-  const params = new URLSearchParams(window.location.search || '');
-  const planCode = getSignupPlanCodeFromCurrentUrl();
-
-  if (params.has('checkout')) return true;
-  return Boolean(planCode && planCode !== FREE_TRIAL_PLAN_CODE);
-}
-
 function isAuthReturnUrl() {
   if (typeof window === 'undefined') return false;
 
@@ -453,13 +433,11 @@ export const AuthProvider = ({ children }) => {
       if (currentUser) {
         const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
         const hasAuthReturn = isAuthReturnUrl();
-        const paidSignupReturn = isPaidSignupReturnUrl();
         const canProbeBackendSignupIntent =
           (hasAuthReturn || event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           canProbeSignupIntentOnPath(currentPath) &&
           !currentPath.startsWith('/claim') &&
-          currentPath !== '/thanks' &&
-          !paidSignupReturn;
+          currentPath !== '/thanks';
         const shouldAllowAutoFinalizeOnCallbackPath =
           (hasPendingSignup || canProbeBackendSignupIntent) &&
           !isSignupFinalizeCallbackPath() &&
@@ -496,7 +474,6 @@ export const AuthProvider = ({ children }) => {
 
           const shouldAutoFinalizeSignup =
             !isSignupFinalizeCallbackPath() &&
-            !paidSignupReturn &&
             (hasPendingSignup || shouldProbeBackendSignupIntent) &&
             (newRole === 'customer' || newRole === 'establishment') &&
             !newProjectId &&
@@ -537,7 +514,7 @@ export const AuthProvider = ({ children }) => {
             if (shouldRedirectToUnauthorized) {
               navigate('/nao-autorizado', { replace: true });
             }
-          } else if ((event === 'SIGNED_IN' || didAutoFinalizeSignup) && !paidSignupReturn) {
+          } else if (event === 'SIGNED_IN' || didAutoFinalizeSignup) {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
 

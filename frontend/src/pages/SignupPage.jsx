@@ -7,21 +7,19 @@ import {
   Wallet,
 } from 'lucide-react';
 import {
-  DEFAULT_PLAN_KEY,
+  FREE_TRIAL_PLAN_CODE,
+  FREE_TRIAL_PLAN_KEY,
   fetchSubscriptionPlans,
-  findPlanByKey,
-  isPaidPlan,
+  getFreeTrialPlan,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import {
   clearExistingCustomerSignupContext,
   finalizeSignup,
   isExistingCustomerSignupPasswordReady,
-  markExistingCustomerSignupPasswordReady,
   precheckFreeTrialSignup,
   readExistingCustomerSignupContext,
   sendExistingCustomerSignupLink,
-  startPaidSignupCheckout,
 } from '@/lib/signup';
 import {
   getTurnstileSiteKey,
@@ -38,15 +36,12 @@ import StepOneSignupForm from './signup/StepOneSignupForm';
 import {
   ConfirmEmailCard,
   FinalizingSignupCard,
-  PaidSuccessCard,
-  PaymentStep,
   TrialSuccessCard,
 } from './signup/SignupStatusCards';
 import {
   EMAIL_REGEX,
   clearSignupPasswordSetupRequired,
   evaluatePassword,
-  findPlanKeyByCode,
   getPasswordError,
   isSignupPasswordSetupRequired,
   markSignupPasswordSetupRequired,
@@ -61,78 +56,22 @@ function SignupPage() {
   const { toast } = useToast();
   const finalizeFromRedirectRef = useRef(false);
   const [availablePlans, setAvailablePlans] = useState(subscriptionPlans);
-  const [resolvedPlanCode, setResolvedPlanCode] = useState(
-    () => String(searchParams.get('planCode') || '').trim().toLowerCase()
-  );
+  const [resolvedPlanCode, setResolvedPlanCode] = useState(FREE_TRIAL_PLAN_CODE);
   const existingCustomerSignupContext = readExistingCustomerSignupContext();
-  const contextPlanKey = String(existingCustomerSignupContext?.planKey || '').trim();
-  const contextPlanCode = String(existingCustomerSignupContext?.planCode || '').trim().toLowerCase();
-  const selectedPlanKey = useMemo(() => {
-    const explicitPlanKey = String(searchParams.get('plano') || '').trim();
-    if (explicitPlanKey) return explicitPlanKey;
-
-    const planCodeFromUrl = String(searchParams.get('planCode') || '').trim().toLowerCase();
-    const planKeyFromUrlCode = findPlanKeyByCode(planCodeFromUrl, availablePlans);
-    if (planKeyFromUrlCode) return planKeyFromUrlCode;
-
-    if (contextPlanKey) return contextPlanKey;
-
-    const planKeyFromContextCode = findPlanKeyByCode(contextPlanCode, availablePlans);
-    if (planKeyFromContextCode) return planKeyFromContextCode;
-
-    const planKeyFromResolvedCode = findPlanKeyByCode(resolvedPlanCode, availablePlans);
-    if (planKeyFromResolvedCode) return planKeyFromResolvedCode;
-
-    const planCodeFromMetadata = String(authSession?.user?.user_metadata?.plan_code || '').trim().toLowerCase();
-    const planKeyFromMetadataCode = findPlanKeyByCode(planCodeFromMetadata, availablePlans);
-    if (planKeyFromMetadataCode) return planKeyFromMetadataCode;
-
-    return DEFAULT_PLAN_KEY;
-  }, [searchParams, availablePlans, contextPlanKey, contextPlanCode, resolvedPlanCode, authSession]);
+  const selectedPlanKey = FREE_TRIAL_PLAN_KEY;
   const shouldFinalizeFromRedirect = searchParams.get('finalizar') === '1';
   const shouldSetupPasswordFromRedirect = searchParams.get('passwordSetup') === '1';
   const selectedPlan = useMemo(
-    () => findPlanByKey(selectedPlanKey, availablePlans),
-    [availablePlans, selectedPlanKey]
+    () => getFreeTrialPlan(availablePlans),
+    [availablePlans]
   );
-  const paidPlan = isPaidPlan(selectedPlan);
-  const totalSteps = paidPlan ? 3 : 2;
-  const checkoutStatusFromRedirect = String(searchParams.get('checkout') || '').trim().toLowerCase();
-  const checkoutSessionIdFromRedirect = String(searchParams.get('checkoutSessionId') || '').trim();
-  const existingCustomerReturnFromRedirect = searchParams.get('existingCustomer') === '1';
-  const authSessionEmail = String(authSession?.user?.email || '').trim().toLowerCase();
-  const signupPlanCodeForCurrentView = String(
-    selectedPlan?.code
-      || resolvedPlanCode
-      || contextPlanCode
-      || searchParams.get('planCode')
-      || 'free_trial',
-  ).trim().toLowerCase();
-  const isExistingCustomerSignupReturn =
-    existingCustomerReturnFromRedirect
-    || (
-      Boolean(existingCustomerSignupContext?.email)
-      && existingCustomerSignupContext.email === authSessionEmail
-    );
-  const shouldSetupExistingCustomerPasswordBeforePaidCheckout =
-    paidPlan
-    && Boolean(authSession?.user)
-    && !shouldFinalizeFromRedirect
-    && !Boolean(authSession?.user?.app_metadata?.signup_project_id)
-    && isExistingCustomerSignupReturn
-    && !isExistingCustomerSignupPasswordReady({
-      email: authSessionEmail,
-      planCode: signupPlanCodeForCurrentView,
-    });
-  const shouldBlockFormForFinalize = shouldFinalizeFromRedirect
-    && (!paidPlan || checkoutStatusFromRedirect === 'success');
+  const totalSteps = 2;
+  const shouldBlockFormForFinalize = shouldFinalizeFromRedirect;
 
   const [step, setStep] = useState(1);
   const [finishedFlow, setFinishedFlow] = useState('');
   const [confirmationFlow, setConfirmationFlow] = useState('signup');
   const [pendingNewSignup, setPendingNewSignup] = useState(null);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState('');
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [touched, setTouched] = useState({});
   const [errors, setErrors] = useState({});
@@ -167,8 +106,8 @@ function SignupPage() {
     [passwordSetupValue]
   );
   const signupCaptchaEnabled = useMemo(
-    () => shouldUseSignupCaptcha({ paidPlan, siteKey: turnstileSiteKey }),
-    [paidPlan, turnstileSiteKey]
+    () => shouldUseSignupCaptcha({ siteKey: turnstileSiteKey }),
+    [turnstileSiteKey]
   );
 
   const activeStep = finishedFlow === 'create-password' || finishedFlow === 'set-password'
@@ -177,7 +116,7 @@ function SignupPage() {
       ? totalSteps
       : step;
 
-  const steps = paidPlan ? ['Cadastro', 'Senha', 'Pagamento'] : ['Cadastro', 'Senha'];
+  const steps = ['Cadastro', 'Senha'];
 
   const setField = (field, value) => {
     setFormData((previous) => ({ ...previous, [field]: value }));
@@ -214,14 +153,12 @@ function SignupPage() {
     establishmentName,
     planCode,
     userId,
-    checkoutSessionId = '',
   }) => {
     const result = await finalizeSignup({
       establishmentName,
       planCode: planCode || 'free_trial',
-      checkoutSessionId,
       dedupeKey: userId
-        ? `signup-finalize:${userId}:${planCode || 'free_trial'}:${checkoutSessionId || 'free'}`
+        ? `signup-finalize:${userId}:${planCode || 'free_trial'}`
         : '',
     });
 
@@ -230,22 +167,19 @@ function SignupPage() {
   }, [refreshAuthProfile]);
 
   const buildSignupEmailRedirectTo = useCallback((metadata = {}) => {
-    const planCode = String(metadata.planCode || selectedPlan?.code || 'free_trial').trim().toLowerCase();
     const params = new URLSearchParams({
-      plano: selectedPlanKey,
-      planCode,
+      plano: FREE_TRIAL_PLAN_KEY,
+      planCode: FREE_TRIAL_PLAN_CODE,
     });
     const establishmentName = String(metadata.establishmentName || '').trim();
-    const isPaidEmailPlan = planCode && planCode !== 'free_trial';
     const isExistingCustomer = metadata.existingCustomer === true;
 
-    if (!isPaidEmailPlan) params.set('finalizar', '1');
-    if (isPaidEmailPlan) params.set('checkout', 'pending');
+    params.set('finalizar', '1');
     if (isExistingCustomer) params.set('existingCustomer', '1');
     if (establishmentName) params.set('establishmentName', establishmentName);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
-  }, [selectedPlan, selectedPlanKey]);
+  }, []);
 
   const handlePasswordSetupSubmit = async (event) => {
     event.preventDefault();
@@ -288,43 +222,12 @@ function SignupPage() {
       return;
     }
 
-    const shouldContinueToPaidCheckoutAfterPasswordSetup =
-      shouldSetupExistingCustomerPasswordBeforePaidCheckout;
-
     setPasswordSetupLoading(true);
 
     try {
       const { error } = await supabase.auth.updateUser({ password: passwordSetupValue });
 
       if (error) throw error;
-
-      if (shouldContinueToPaidCheckoutAfterPasswordSetup) {
-        markExistingCustomerSignupPasswordReady({
-          email: authSession.user.email,
-          establishmentName: formData.establishmentName
-            || existingCustomerSignupContext?.establishmentName
-            || authSession.user.user_metadata?.establishment_name
-            || '',
-          planCode: signupPlanCodeForCurrentView,
-          planKey: selectedPlanKey,
-        });
-        clearSignupPasswordSetupRequired();
-        setPasswordSetupValue('');
-        setPasswordSetupConfirmationValue('');
-        setPasswordSetupTouched(false);
-        setPasswordSetupConfirmationTouched(false);
-        setPasswordSetupError('');
-        setPasswordSetupConfirmationError('');
-        await refreshAuthProfile();
-        setCheckoutError('');
-        setFinishedFlow('');
-        setStep(3);
-        toast({
-          title: 'Senha criada',
-          description: 'Senha criada. Agora siga para o checkout seguro do Asaas.',
-        });
-        return;
-      }
 
       clearSignupPasswordSetupRequired();
       clearExistingCustomerSignupContext();
@@ -392,7 +295,6 @@ function SignupPage() {
     setSignupLoading(true);
 
     try {
-      const signupPlanIsPaid = String(signupContext.planCode || '').trim().toLowerCase() !== 'free_trial';
       const emailRedirectTo = buildSignupEmailRedirectTo({
         establishmentName: signupContext.establishmentName,
         planCode: signupContext.planCode,
@@ -420,21 +322,7 @@ function SignupPage() {
         setFinishedFlow('confirm-email');
         toast({
           title: 'Confirme seu e-mail',
-          description: signupPlanIsPaid
-            ? 'Enviamos um link para continuar sua assinatura.'
-            : 'Enviamos um link para finalizar seu Free Trial.',
-        });
-        return;
-      }
-
-      if (signupPlanIsPaid) {
-        await refreshAuthProfile();
-        setStep(3);
-        setFinishedFlow('');
-        setCheckoutError('');
-        toast({
-          title: 'Conta criada',
-          description: 'Agora siga para o checkout seguro do Asaas para ativar sua assinatura.',
+          description: 'Enviamos um link para finalizar seu Free Trial.',
         });
         return;
       }
@@ -483,7 +371,7 @@ function SignupPage() {
     try {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
-      const planCode = selectedPlan?.code || 'free_trial';
+      const planCode = FREE_TRIAL_PLAN_CODE;
       setResolvedPlanCode(String(planCode).trim().toLowerCase());
       const precheck = await precheckFreeTrialSignup({
         email: normalizedEmail,
@@ -510,9 +398,7 @@ function SignupPage() {
         setFinishedFlow('confirm-email');
         toast({
           title: 'Confira seu e-mail',
-          description: paidPlan
-            ? 'Enviamos um link de acesso para continuar sua assinatura.'
-            : 'Enviamos um link de acesso para finalizar seu Free Trial.',
+          description: 'Enviamos um link de acesso para finalizar seu Free Trial.',
         });
         return;
       }
@@ -577,11 +463,11 @@ function SignupPage() {
           email: normalizedEmail,
           emailRedirectTo: buildSignupEmailRedirectTo({
             establishmentName: formData.establishmentName.trim(),
-            planCode: selectedPlan?.code || 'free_trial',
+            planCode: FREE_TRIAL_PLAN_CODE,
             existingCustomer: true,
           }),
           establishmentName: formData.establishmentName.trim(),
-          planCode: selectedPlan?.code || 'free_trial',
+          planCode: FREE_TRIAL_PLAN_CODE,
           planKey: selectedPlanKey,
         });
       } else {
@@ -591,7 +477,7 @@ function SignupPage() {
           options: {
             emailRedirectTo: buildSignupEmailRedirectTo({
               establishmentName: formData.establishmentName.trim(),
-              planCode: selectedPlan?.code || 'free_trial',
+              planCode: FREE_TRIAL_PLAN_CODE,
             }),
           },
         });
@@ -602,12 +488,8 @@ function SignupPage() {
       toast({
         title: 'E-mail reenviado',
         description: confirmationFlow === 'existing-customer'
-          ? paidPlan
-            ? 'Enviamos um novo link de acesso para continuar sua assinatura.'
-            : 'Enviamos um novo link de acesso para finalizar o Free Trial.'
-          : paidPlan
-            ? 'Se a confirmação ainda estiver pendente, enviamos um novo link para continuar sua assinatura.'
-            : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
+          ? 'Enviamos um novo link de acesso para finalizar o Free Trial.'
+          : 'Se a confirmação ainda estiver pendente, enviamos um novo link para finalizar o Free Trial.',
       });
     } catch (error) {
       const message = normalizeSignupErrorMessage(error);
@@ -619,51 +501,6 @@ function SignupPage() {
       });
     } finally {
       setResendLoading(false);
-    }
-  };
-
-  const handlePaymentContinue = async () => {
-    if (checkoutLoading) return;
-
-    if (!authSession?.user) {
-      setCheckoutError('Crie sua conta e confirme o e-mail antes de iniciar o checkout.');
-      return;
-    }
-
-    setCheckoutError('');
-    setCheckoutLoading(true);
-
-    try {
-      const establishmentName = String(
-        formData.establishmentName
-          || authSession.user.user_metadata?.establishment_name
-          || '',
-      ).trim();
-      const planCode = String(selectedPlan?.code || resolvedPlanCode || '').trim().toLowerCase();
-
-      if (!establishmentName) {
-        throw new Error('Não foi possível identificar o nome do estabelecimento.');
-      }
-
-      if (!planCode || planCode === 'free_trial') {
-        throw new Error('Selecione um plano pago para continuar.');
-      }
-
-      const checkout = await startPaidSignupCheckout({
-        establishmentName,
-        planCode,
-      });
-
-      window.location.assign(checkout.checkout_url);
-    } catch (error) {
-      const message = error?.message || 'Não foi possível iniciar o checkout do Asaas.';
-      setCheckoutError(message);
-      toast({
-        title: 'Erro no checkout',
-        description: message,
-        variant: 'destructive',
-      });
-      setCheckoutLoading(false);
     }
   };
 
@@ -719,79 +556,10 @@ function SignupPage() {
   }, []);
 
   useEffect(() => {
-    const user = authSession?.user ?? null;
-    if (!user || shouldFinalizeFromRedirect) return;
-    if (finishedFlow === 'paid' || finishedFlow === 'set-password') return;
-    if (Boolean(user?.app_metadata?.signup_project_id)) return;
-
-    const existingCustomerContext = readExistingCustomerSignupContext();
-    const sessionEmail = String(user.email || '').trim().toLowerCase();
-    const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
-    const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
-    const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
-    const planCode = String(
-      redirectPlanCode
-        || existingCustomerContext?.planCode
-        || metadataPlanCode
-        || resolvedPlanCode
-        || '',
-    ).trim().toLowerCase();
-
-    if (!planCode || planCode === 'free_trial') return;
-
-    const shouldResumePaidSignup =
-      checkoutStatusFromRedirect === 'pending'
-      || checkoutStatusFromRedirect === 'cancel'
-      || checkoutStatusFromRedirect === 'expired'
-      || existingCustomerContext?.email === sessionEmail
-      || metadataPlanCode === planCode;
-
-    if (!shouldResumePaidSignup) return;
-
-    const establishmentName = String(
-      redirectEstablishmentName
-        || existingCustomerContext?.establishmentName
-        || user.user_metadata?.establishment_name
-        || formData.establishmentName
-        || '',
-    ).trim();
-
-    setResolvedPlanCode(planCode);
-    setFormData((previous) => ({
-      ...previous,
-      establishmentName: establishmentName || previous.establishmentName,
-      email: user.email || previous.email,
-      emailConfirmation: user.email || previous.emailConfirmation,
-    }));
-    setPendingNewSignup(null);
-
-    if (shouldSetupExistingCustomerPasswordBeforePaidCheckout) {
-      setCheckoutError('');
-      setFinishedFlow('set-password');
-      setStep(2);
-      return;
+    if (resolvedPlanCode !== FREE_TRIAL_PLAN_CODE) {
+      setResolvedPlanCode(FREE_TRIAL_PLAN_CODE);
     }
-
-    setFinishedFlow('');
-    setStep(3);
-
-    if (checkoutStatusFromRedirect === 'cancel') {
-      setCheckoutError('Checkout cancelado. Você pode iniciar um novo checkout quando quiser.');
-    } else if (checkoutStatusFromRedirect === 'expired') {
-      setCheckoutError('Checkout expirado. Gere um novo link seguro para continuar.');
-    } else {
-      setCheckoutError('');
-    }
-  }, [
-    authSession,
-    checkoutStatusFromRedirect,
-    finishedFlow,
-    formData.establishmentName,
-    resolvedPlanCode,
-    searchParams,
-    shouldFinalizeFromRedirect,
-    shouldSetupExistingCustomerPasswordBeforePaidCheckout,
-  ]);
+  }, [resolvedPlanCode]);
 
   useEffect(() => {
     const session = authSession;
@@ -821,51 +589,20 @@ function SignupPage() {
     const finalizePendingSignup = async () => {
       try {
         const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
-        const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
-        const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
-        const contextPlanCode = String(existingCustomerContext?.planCode || '').trim().toLowerCase();
         const establishmentName = String(
           redirectEstablishmentName
             || user.user_metadata?.establishment_name
             || existingCustomerContext?.establishmentName
             || '',
         ).trim();
-        const planCode = String(
-          redirectPlanCode
-            || contextPlanCode
-            || metadataPlanCode
-            || 'free_trial',
-        ).trim().toLowerCase();
-        const isPaidFinalize = planCode && planCode !== 'free_trial';
+        const planCode = FREE_TRIAL_PLAN_CODE;
 
         setResolvedPlanCode(planCode);
-
-        if (isPaidFinalize && (!checkoutSessionIdFromRedirect || checkoutStatusFromRedirect !== 'success')) {
-          finalizeFromRedirectRef.current = false;
-          setSignupError('');
-          setCheckoutError(
-            checkoutStatusFromRedirect === 'expired'
-              ? 'Checkout expirado. Gere um novo link seguro para continuar.'
-              : checkoutStatusFromRedirect === 'cancel'
-                ? 'Checkout cancelado. Você pode iniciar um novo checkout quando quiser.'
-                : 'Antes de finalizar sua assinatura, precisamos concluir o checkout seguro do Asaas.',
-          );
-          setFormData((previous) => ({
-            ...previous,
-            establishmentName: establishmentName || previous.establishmentName,
-            email: user.email || previous.email,
-            emailConfirmation: user.email || previous.emailConfirmation,
-          }));
-          setFinishedFlow('');
-          setStep(3);
-          return;
-        }
 
         const result = await provisionSignup({
           establishmentName,
           planCode,
           userId: user.id,
-          checkoutSessionId: checkoutSessionIdFromRedirect,
         });
         const finalizedPlanCode = String(result?.plan?.code || planCode || '').trim().toLowerCase();
         if (finalizedPlanCode) {
@@ -892,7 +629,7 @@ function SignupPage() {
 
         clearExistingCustomerSignupContext();
         clearSignupPasswordSetupRequired();
-        setFinishedFlow(finalizedPlanCode === 'free_trial' ? 'trial' : 'paid');
+        setFinishedFlow('trial');
       } catch (error) {
         const message = error?.message || 'Não foi possível finalizar o cadastro.';
         setSignupError(message);
@@ -909,8 +646,6 @@ function SignupPage() {
     finalizePendingSignup();
   }, [
     authSession,
-    checkoutSessionIdFromRedirect,
-    checkoutStatusFromRedirect,
     provisionSignup,
     searchParams,
     shouldFinalizeFromRedirect,
@@ -936,7 +671,7 @@ function SignupPage() {
         <title>Cadastro - Allin Pass</title>
         <meta
           name="description"
-          content="Crie sua conta Allin Pass e avance no fluxo de contratação do plano escolhido."
+          content="Crie sua conta Allin Pass e ative seu Free Trial."
         />
       </Helmet>
 
@@ -957,7 +692,7 @@ function SignupPage() {
               className="inline-flex items-center gap-2 text-sm font-medium text-purple-700 hover:text-purple-800"
             >
               <ArrowLeft className="w-4 h-4" />
-              Voltar aos planos
+              Voltar ao Free Trial
             </Link>
           </div>
         </header>
@@ -967,10 +702,10 @@ function SignupPage() {
             <section className="bg-white border border-purple-100 rounded-3xl shadow-xl shadow-purple-500/5 p-6 sm:p-8">
               <div className="mb-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-purple-600 mb-2">
-                  Contratação guiada
+                  Cadastro guiado
                 </p>
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-                  {paidPlan ? 'Finalize seu cadastro e assinatura' : 'Ative seu Free Trial em minutos'}
+                  Ative seu Free Trial em minutos
                 </h1>
                 <p className="text-sm sm:text-base text-slate-600 mt-2">
                   Você escolheu o plano <span className="font-semibold text-slate-900">{selectedPlan.name}</span>.
@@ -980,14 +715,12 @@ function SignupPage() {
               <SignupProgressSteps
                 activeStep={activeStep}
                 finishedFlow={finishedFlow}
-                paidPlan={paidPlan}
                 steps={steps}
               />
 
               <AnimatePresence mode="wait">
                 {!finishedFlow && shouldBlockFormForFinalize && (
                   <FinalizingSignupCard
-                    paidPlan={paidPlan}
                     signupError={signupError}
                     signupLoading={signupLoading}
                   />
@@ -1005,21 +738,11 @@ function SignupPage() {
                     onTurnstileResetReady={(resetWidget) => {
                       turnstileResetRef.current = resetWidget;
                     }}
-                    paidPlan={paidPlan}
                     shouldShowError={shouldShowError}
                     signupCaptchaEnabled={signupCaptchaEnabled}
                     signupError={signupError}
                     signupLoading={signupLoading}
                     turnstileSiteKey={turnstileSiteKey}
-                  />
-                )}
-
-                {!finishedFlow && step === 3 && paidPlan && (
-                  <PaymentStep
-                    checkoutError={checkoutError}
-                    checkoutLoading={checkoutLoading}
-                    onContinue={handlePaymentContinue}
-                    selectedPlan={selectedPlan}
                   />
                 )}
 
@@ -1077,13 +800,8 @@ function SignupPage() {
                     confirmationFlow={confirmationFlow}
                     formData={formData}
                     onResendConfirmationEmail={handleResendConfirmationEmail}
-                    paidPlan={paidPlan}
                     resendLoading={resendLoading}
                   />
-                )}
-
-                {finishedFlow === 'paid' && (
-                  <PaidSuccessCard selectedPlan={selectedPlan} />
                 )}
 
               </AnimatePresence>

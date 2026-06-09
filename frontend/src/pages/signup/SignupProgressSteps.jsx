@@ -1,9 +1,9 @@
 import React from 'react';
 
-function SignupProgressSteps({ activeStep, finishedFlow, paidPlan, steps }) {
+function SignupProgressSteps({ activeStep, finishedFlow, steps }) {
   return (
     <div className="mb-8">
-      <ol className={`grid grid-cols-1 ${paidPlan ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
+      <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {steps.map((stepLabel, index) => {
           const position = index + 1;
           const isPasswordStep =

@@ -34,6 +34,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   buildSignupPath,
   fetchSubscriptionPlans,
+  getPublicSignupPlans,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
@@ -128,11 +129,11 @@ const faqs = [
   },
   {
     q: 'Preciso de cartão de crédito para começar?',
-    a: 'Você pode começar gratuitamente para testar a plataforma. O cartão só é solicitado quando você decidir ativar um plano pago.',
+    a: 'Não. O Free Trial pode ser iniciado sem cartão de crédito.',
   },
   {
-    q: 'Posso mudar de plano quando quiser?',
-    a: 'Com certeza. Faça upgrade ou downgrade a qualquer momento direto no painel administrativo, sem multas ou burocracia.',
+    q: 'O que acontece depois do Free Trial?',
+    a: 'Você pode testar a plataforma por 7 dias. Ao final do período, nossa equipe orienta os próximos passos.',
   },
   {
     q: 'Como funcionam as notificações?',
@@ -181,7 +182,7 @@ const Header = () => {
   const links = [
     { href: '#recursos', label: 'Recursos' },
     { href: '#como-funciona', label: 'Como funciona' },
-    { href: '#planos', label: 'Planos' },
+    { href: '#planos', label: 'Free Trial' },
     { href: '#faq', label: 'FAQ' },
   ];
 
@@ -660,14 +661,14 @@ const Pricing = ({ plans }) => {
           className="max-w-2xl mx-auto text-center mb-16"
         >
           <motion.span variants={fadeUp} className="inline-block px-3 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-semibold tracking-wide uppercase mb-4">
-            Planos
+            Free Trial
           </motion.span>
           <motion.h2 variants={fadeUp} className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 tracking-tight">
-            Escolha o plano ideal para
-            <span className="bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent"> seu negócio</span>
+            Comece com o Allin Pass
+            <span className="bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent"> grátis</span>
           </motion.h2>
           <motion.p variants={fadeUp} className="mt-4 text-lg text-gray-600">
-            Comece pequeno, escale quando quiser. Sem fidelidade, sem multas, sem surpresas.
+            Ative seu Free Trial por 7 dias, sem cartão de crédito.
           </motion.p>
         </motion.div>
 
@@ -676,7 +677,7 @@ const Pricing = ({ plans }) => {
           whileInView="show"
           viewport={{ once: true, margin: '-50px' }}
           variants={stagger}
-          className="grid md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-7xl mx-auto"
+          className="grid gap-6 max-w-md mx-auto"
         >
           {plans.map((p, i) => (
             <motion.div
@@ -689,12 +690,7 @@ const Pricing = ({ plans }) => {
                 plan={p}
                 ctaTo={buildSignupPath(p.key)}
                 onCtaClick={() => {
-                  trackStandard('InitiateCheckout', {
-                    value: Number(p.price) || 0,
-                    currency: 'BRL',
-                    content_name: p.name,
-                    content_ids: [p.code],
-                  });
+                  trackStandard('Lead', { source: 'pricing_free_trial' });
                   trackCustom('LP_PlanCardCTA', {
                     plan_key: p.key,
                     plan_code: p.code,
@@ -885,7 +881,7 @@ const Footer = ({ onOpenPrivacy, onResetCookies }) => {
             <h4 className="text-sm font-semibold text-gray-900 mb-4">Produto</h4>
             <ul className="space-y-2 text-sm text-gray-600">
               <li><a href="#recursos" className="hover:text-purple-600 transition-colors">Recursos</a></li>
-              <li><a href="#planos" className="hover:text-purple-600 transition-colors">Planos</a></li>
+              <li><a href="#planos" className="hover:text-purple-600 transition-colors">Free Trial</a></li>
               <li><a href="#como-funciona" className="hover:text-purple-600 transition-colors">Como funciona</a></li>
               <li><a href="#faq" className="hover:text-purple-600 transition-colors">FAQ</a></li>
             </ul>
@@ -895,7 +891,7 @@ const Footer = ({ onOpenPrivacy, onResetCookies }) => {
             <h4 className="text-sm font-semibold text-gray-900 mb-4">Conta</h4>
             <ul className="space-y-2 text-sm text-gray-600">
               <li><Link to="/login" className="hover:text-purple-600 transition-colors">Entrar</Link></li>
-              <li><a href="#planos" className="hover:text-purple-600 transition-colors">Criar conta</a></li>
+              <li><Link to={buildSignupPath()} className="hover:text-purple-600 transition-colors">Criar conta</Link></li>
             </ul>
           </div>
         </div>
@@ -929,7 +925,7 @@ const Footer = ({ onOpenPrivacy, onResetCookies }) => {
 };
 
 const LandingPage = () => {
-  const [plans, setPlans] = useState(subscriptionPlans);
+  const [plans, setPlans] = useState(() => getPublicSignupPlans(subscriptionPlans));
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const viewContentFiredRef = useRef(false);
   const scrollMilestonesRef = useRef(new Set());
@@ -952,8 +948,9 @@ const LandingPage = () => {
 
     const loadPlans = async () => {
       const remotePlans = await fetchSubscriptionPlans();
-      if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
-        setPlans(remotePlans);
+      const publicPlans = getPublicSignupPlans(remotePlans);
+      if (mounted && publicPlans.length > 0) {
+        setPlans(publicPlans);
       }
     };
 

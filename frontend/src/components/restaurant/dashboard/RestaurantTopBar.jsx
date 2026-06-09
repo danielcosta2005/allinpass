@@ -3,11 +3,7 @@ import { Loader2, LogOut, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function RestaurantTopBar({
-  billingLoading,
-  billingPlanName,
-  onOpenPlanChange,
   onSignOut,
-  projectId,
   signingOut,
   userEmail,
 }) {
@@ -30,14 +26,6 @@ function RestaurantTopBar({
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <div className="min-w-0 text-right">
               <p className="hidden max-w-[240px] truncate text-sm text-gray-600 sm:block">{userEmail}</p>
-              <button
-                type="button"
-                onClick={onOpenPlanChange}
-                disabled={!projectId || billingLoading}
-                className="block max-w-[180px] truncate text-xs font-medium text-purple-600 transition-colors hover:text-purple-800 disabled:cursor-default disabled:text-purple-400"
-              >
-                {billingPlanName}
-              </button>
             </div>
             <Button
               variant="outline"
