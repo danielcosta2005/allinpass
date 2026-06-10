@@ -13,6 +13,7 @@ import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import NoProjectSignupState from '@/components/restaurant/dashboard/NoProjectSignupState';
+import TrialExpiredBillingState from '@/components/restaurant/dashboard/TrialExpiredBillingState';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -30,6 +31,9 @@ const RestaurantDashboard = () => {
   const {
     billingSubscription,
     planChangeOptions,
+    isTrialExpired,
+    billingAccessState,
+    canManageBilling,
     billingLoading,
     billingError,
     planChangeOpen,
@@ -37,7 +41,7 @@ const RestaurantDashboard = () => {
     billingActionPlanCode,
     billingPlanName,
     handleStartPlanChange,
-  } = useRestaurantBilling({ projectId, toast });
+  } = useRestaurantBilling({ projectId, toast, user });
 
   const {
     signupStatus,
@@ -62,6 +66,12 @@ const RestaurantDashboard = () => {
     try {
       sessionStorage.setItem('restaurant_active_tab', value);
     } catch (_) {}
+  };
+
+  const billingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
+  const handleOpenPlanChange = () => {
+    if (billingBlocked && !canManageBilling) return;
+    setPlanChangeOpen(true);
   };
 
   useEffect(() => {
@@ -105,7 +115,7 @@ const RestaurantDashboard = () => {
         <RestaurantTopBar
           billingLoading={billingLoading}
           billingPlanName={billingPlanName}
-          onOpenPlanChange={() => setPlanChangeOpen(true)}
+          onOpenPlanChange={handleOpenPlanChange}
           onSignOut={handleSignOut}
           projectId={projectId}
           signingOut={signingOut}
@@ -134,6 +144,14 @@ const RestaurantDashboard = () => {
               status={signupStatus}
               statusError={signupStatusError}
               statusLoading={signupStatusLoading}
+            />
+          ) : billingBlocked ? (
+            <TrialExpiredBillingState
+              billingError={billingError}
+              billingLoading={billingLoading}
+              canManageBilling={canManageBilling}
+              onOpenPlanChange={handleOpenPlanChange}
+              planChangeOptions={planChangeOptions}
             />
           ) : (
             <motion.div

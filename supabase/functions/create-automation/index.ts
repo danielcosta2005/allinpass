@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 // branch
 
 type AutomationType = "points_wallet" | "expiring_soon" | "days_without_visit";
@@ -121,6 +126,8 @@ serve(async (req) => {
       );
     }
 
+    await assertProjectBillingActive(supabase, projectId);
+
     const { data, error } = await supabase
       .from("automations")
       .insert({
@@ -148,6 +155,10 @@ serve(async (req) => {
       automation: data,
     });
   } catch (err) {
+    if (isProjectBillingInactiveError(err)) {
+      return jsonResponse(getProjectBillingInactivePayload(err), 402);
+    }
+
     return jsonResponse(
       {
         error: "Unexpected error",

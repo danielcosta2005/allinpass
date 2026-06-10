@@ -2,25 +2,54 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   finalizeBillingPlanChange,
   getBillingPlanName,
-  getCurrentBillingSubscription,
+  getBillingSubscriptionForAccess,
   getPlanChangeOptions,
+  isTrialExpired as isTrialExpiredSubscription,
   startBillingPlanChange,
 } from '@/lib/billing';
+import { supabase } from '@/lib/supabaseClient';
 
-const loadBillingData = async (projectId) => {
-  const subscription = await getCurrentBillingSubscription(projectId);
-  const planChangeOptions = await getPlanChangeOptions(subscription);
-  return { subscription, planChangeOptions };
+const getBillingAccessState = (subscription) => {
+  if (isTrialExpiredSubscription(subscription)) return 'trial_expired';
+  if (subscription) return 'active';
+  return 'missing';
 };
 
-export function useRestaurantBilling({ projectId, toast }) {
+const loadMemberRole = async ({ projectId, userId }) => {
+  if (!projectId || !userId) return null;
+
+  const { data, error } = await supabase
+    .from('project_members')
+    .select('role')
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.role || null;
+};
+
+const loadBillingData = async ({ projectId, userId }) => {
+  const [subscription, memberRole] = await Promise.all([
+    getBillingSubscriptionForAccess(projectId),
+    loadMemberRole({ projectId, userId }),
+  ]);
+  const planChangeOptions = await getPlanChangeOptions(subscription);
+  return { subscription, planChangeOptions, memberRole };
+};
+
+export function useRestaurantBilling({ projectId, toast, user }) {
   const [billingSubscription, setBillingSubscription] = useState(null);
   const [planChangeOptions, setPlanChangeOptions] = useState([]);
+  const [memberRole, setMemberRole] = useState(null);
   const [billingLoading, setBillingLoading] = useState(false);
   const [billingError, setBillingError] = useState('');
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
 
+  const billingAccessState = getBillingAccessState(billingSubscription);
+  const isTrialExpired = billingAccessState === 'trial_expired';
+  const canManageBilling = memberRole === 'owner';
   const billingPlanName = billingLoading && !billingSubscription
     ? 'Carregando plano'
     : getBillingPlanName(billingSubscription);
@@ -29,6 +58,7 @@ export function useRestaurantBilling({ projectId, toast }) {
     if (!projectId) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
+      setMemberRole(null);
       setBillingError('');
       setBillingLoading(false);
       return null;
@@ -38,25 +68,28 @@ export function useRestaurantBilling({ projectId, toast }) {
     setBillingError('');
 
     try {
-      const data = await loadBillingData(projectId);
+      const data = await loadBillingData({ projectId, userId: user?.id });
       setBillingSubscription(data.subscription);
       setPlanChangeOptions(data.planChangeOptions);
+      setMemberRole(data.memberRole);
       return data.subscription;
     } catch (error) {
       const message = error?.message || 'Nao foi possivel carregar o plano atual.';
       setBillingSubscription(null);
       setPlanChangeOptions([]);
+      setMemberRole(null);
       setBillingError(message);
       return null;
     } finally {
       setBillingLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, user?.id]);
 
   useEffect(() => {
     if (!projectId) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
+      setMemberRole(null);
       setBillingError('');
       setBillingLoading(false);
       return undefined;
@@ -66,16 +99,18 @@ export function useRestaurantBilling({ projectId, toast }) {
     setBillingLoading(true);
     setBillingError('');
 
-    loadBillingData(projectId)
+    loadBillingData({ projectId, userId: user?.id })
       .then((data) => {
         if (cancelled) return;
         setBillingSubscription(data.subscription);
         setPlanChangeOptions(data.planChangeOptions);
+        setMemberRole(data.memberRole);
       })
       .catch((error) => {
         if (cancelled) return;
         setBillingSubscription(null);
         setPlanChangeOptions([]);
+        setMemberRole(null);
         setBillingError(error?.message || 'Nao foi possivel carregar o plano atual.');
       })
       .finally(() => {
@@ -85,7 +120,7 @@ export function useRestaurantBilling({ projectId, toast }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, user?.id]);
 
   useEffect(() => {
     if (!projectId || typeof window === 'undefined') return undefined;
@@ -186,6 +221,10 @@ export function useRestaurantBilling({ projectId, toast }) {
   return {
     billingSubscription,
     planChangeOptions,
+    isTrialExpired,
+    billingAccessState,
+    memberRole,
+    canManageBilling,
     billingLoading,
     billingError,
     planChangeOpen,

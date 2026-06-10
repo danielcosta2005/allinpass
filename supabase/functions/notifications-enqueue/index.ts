@@ -2,6 +2,11 @@
 // branch
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -398,6 +403,8 @@ serve(async (req) => {
     }
 
     // 📡 4) Canais
+    await assertProjectBillingActive(admin, projectId);
+
     const channels = {
       apple: body.channels?.apple ?? true,
       google: body.channels?.google ?? true,
@@ -663,6 +670,10 @@ serve(async (req) => {
       origin
     );
   } catch (err) {
+    if (isProjectBillingInactiveError(err)) {
+      return jsonResponse(402, getProjectBillingInactivePayload(err), origin);
+    }
+
     return jsonResponse(
       500,
       { error: (err as any)?.message || "Erro inesperado" },

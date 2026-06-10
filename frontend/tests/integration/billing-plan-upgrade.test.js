@@ -81,7 +81,7 @@ describe("billing plan changes", () => {
     expect(billingClientSource).toContain("if (targetPlanCode === FREE_PLAN_CODE) return 'unavailable';");
     expect(billingClientSource).toContain(".filter((plan) => plan.changeKind !== 'unavailable')");
 
-    expect(billingHookSource).toContain("getCurrentBillingSubscription");
+    expect(billingHookSource).toContain("getBillingSubscriptionForAccess");
     expect(billingHookSource).toContain("startBillingPlanChange");
     expect(billingDialogSource).toContain("Escolha seu plano");
     expect(dashboardSource).toContain("handleStartPlanChange");

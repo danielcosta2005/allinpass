@@ -1,5 +1,10 @@
 // supabase/functions/scanner-visit/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 
 function corsHeaders(origin?: string) {
   return {
@@ -346,6 +351,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    await assertProjectBillingActive(sbAdmin, projectId);
+
     // ---------- Anti-replay gate ----------
     if (!confirm) {
       const { data: lastRows, error: lastErr } = await sbAdmin
@@ -579,6 +586,13 @@ Deno.serve(async (req) => {
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
     );
   } catch (e) {
+    if (isProjectBillingInactiveError(e)) {
+      return new Response(
+        JSON.stringify(getProjectBillingInactivePayload(e)),
+        { status: 402, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: "unhandled", message: String((e as any)?.message ?? e) }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },

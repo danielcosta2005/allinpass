@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { fetchSubscriptionPlans } from '@/lib/subscriptionPlans';
 
 const ACTIVE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused'];
+const EXPIRED_SUBSCRIPTION_STATUS = 'expired';
 const FREE_PLAN_CODE = 'free_trial';
 
 async function readFunctionError(error) {
@@ -66,6 +67,8 @@ function normalizeSubscription(row) {
     overagePassInstallCents: Number(row.overage_pass_install_cents || 0),
     overageNotificationSentCents: Number(row.overage_notification_sent_cents || 0),
     plan: normalizePlan(joinedPlan),
+    isTrialExpired: row.status === EXPIRED_SUBSCRIPTION_STATUS
+      && normalizePlanCode(joinedPlan?.code) === FREE_PLAN_CODE,
   };
 }
 
@@ -113,14 +116,55 @@ export async function getCurrentBillingSubscription(projectId) {
   return normalizeSubscription(data);
 }
 
+export async function getBillingSubscriptionForAccess(projectId) {
+  const activeSubscription = await getCurrentBillingSubscription(projectId);
+  if (activeSubscription) return activeSubscription;
+
+  const normalizedProjectId = String(projectId || '').trim();
+  if (!normalizedProjectId) return null;
+
+  const { data, error } = await supabase
+    .from('billing_subscriptions')
+    .select([
+      'id',
+      'project_id',
+      'plan_id',
+      'status',
+      'current_period_start',
+      'current_period_end',
+      'gateway_provider',
+      'gateway_subscription_id',
+      'base_price_cents',
+      'included_pass_installs',
+      'included_notification_sends',
+      'overage_pass_install_cents',
+      'overage_notification_sent_cents',
+      'billing_plans!inner(code, name, base_price_cents, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents)',
+    ].join(', '))
+    .eq('project_id', normalizedProjectId)
+    .eq('status', EXPIRED_SUBSCRIPTION_STATUS)
+    .eq('billing_plans.code', FREE_PLAN_CODE)
+    .order('ended_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return normalizeSubscription(data);
+}
+
+export function isTrialExpired(subscription) {
+  return Boolean(subscription?.isTrialExpired);
+}
+
 export function getPlanChangeKind(currentSubscription, targetPlan) {
   if (!currentSubscription || !targetPlan) return 'unavailable';
 
   const currentPlanCode = normalizePlanCode(currentSubscription.plan?.code);
   const targetPlanCode = normalizePlanCode(targetPlan.code);
   if (!targetPlanCode) return 'unavailable';
-  if (targetPlanCode === currentPlanCode) return 'current';
   if (targetPlanCode === FREE_PLAN_CODE) return 'unavailable';
+  if (targetPlanCode === currentPlanCode) return 'current';
 
   const currentPriceCents = getPlanPriceCents(currentSubscription) || getPlanPriceCents(currentSubscription.plan);
   const targetPriceCents = getPlanPriceCents(targetPlan);
@@ -153,12 +197,13 @@ export async function getPlanChangeOptions(currentSubscription, planList) {
     .map((plan) => {
       const changeKind = getPlanChangeKind(currentSubscription, plan);
       const isCurrent = changeKind === 'current';
+      const expiredTrialConversion = isTrialExpired(currentSubscription) && changeKind === 'trial_conversion';
 
       return {
         ...plan,
         changeKind,
         isCurrent,
-        isSelectable: !isCurrent && changeKind !== 'unavailable',
+        isSelectable: expiredTrialConversion || (!isCurrent && changeKind !== 'unavailable'),
         actionLabel: getPlanChangeActionLabel(changeKind),
       };
     })
@@ -168,6 +213,7 @@ export async function getPlanChangeOptions(currentSubscription, planList) {
 export const getUpgradeablePlans = getPlanChangeOptions;
 
 export function getBillingPlanName(subscription) {
+  if (isTrialExpired(subscription)) return 'Trial encerrado';
   return subscription?.plan?.name || 'Plano atual';
 }
 
