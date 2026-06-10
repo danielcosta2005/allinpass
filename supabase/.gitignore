@@ -5,6 +5,7 @@
 # dotenvx
 .env.keys
 .env.local
+.env.secrets
 .env.*.local
 
 obs.txt
