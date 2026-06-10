@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
@@ -95,6 +95,9 @@ const INITIAL_FORM_STATE = {
   sampleValues: {},
   qr_url: '',
 };
+
+const MAX_CAROUSEL_VISIBILITY = 2;
+const HOVER_ACTION_BUTTON_CLASS = 'h-11 min-w-[132px] gap-2 rounded-xl px-4 text-sm font-semibold shadow-lg';
 
 const LEGACY_GLOBAL_TITLE_VALUES = new Set([
   'cartao fidelidade global',
@@ -504,7 +507,15 @@ const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
   );
 };
 
-const PassPreview = ({ formState, qrPreviewUrl, sticky = true, className = '', cardClassName = '', cardOverlay = null }) => {
+const PassPreview = ({
+  formState,
+  qrPreviewUrl,
+  sticky = true,
+  className = '',
+  cardClassName = '',
+  cardOverlay = null,
+  showPlatformControls = true,
+}) => {
   const [platform, setPlatform] = useState('apple');
   const { title = 'Título do Passe', colors = {}, images = {}, dataFields = [], sampleValues = {}, exp_date } = formState;
   const { background = '#6c5ce7', text = '#ffffff', label = '#ffffff' } = colors;
@@ -560,14 +571,16 @@ const PassPreview = ({ formState, qrPreviewUrl, sticky = true, className = '', c
         {cardOverlay}
       </div>
 
-      <div className="mt-4 flex items-center justify-center gap-2">
-        <Button size="sm" variant={platform === 'apple' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('apple')}>
-          <Apple className="w-4 h-4" /> Apple
-        </Button>
-        <Button size="sm" variant={platform === 'google' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('google')}>
-          <Smartphone className="w-4 h-4" /> Google
-        </Button>
-      </div>
+      {showPlatformControls && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button size="sm" variant={platform === 'apple' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('apple')}>
+            <Apple className="w-4 h-4" /> Apple
+          </Button>
+          <Button size="sm" variant={platform === 'google' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('google')}>
+            <Smartphone className="w-4 h-4" /> Google
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
@@ -584,7 +597,6 @@ const PassInventory = ({
 }) => {
   const { toast } = useToast();
   const [activeIndex, setActiveIndex] = useState(0);
-  const [direction, setDirection] = useState(0);
   const qrContainerRef = useRef(null);
 
   useEffect(() => {
@@ -595,14 +607,14 @@ const PassInventory = ({
   }, [passes.length]);
 
   const activePass = passes[activeIndex] || null;
-  const activePassFormState = activePass ? passToFormState(activePass, templateDefaults) : null;
   const hasQrUrl = Boolean(activePass?.qr_url);
+  const canGoToPrevious = activeIndex > 0;
+  const canGoToNext = activeIndex < passes.length - 1;
 
-  const goToPass = (nextIndex, nextDirection = nextIndex > activeIndex ? 1 : -1) => {
+  const goToPass = (nextIndex) => {
     if (passes.length <= 1) return;
-    const normalizedIndex = (nextIndex + passes.length) % passes.length;
-    setDirection(nextDirection);
-    setActiveIndex(normalizedIndex);
+    const boundedIndex = Math.max(0, Math.min(nextIndex, passes.length - 1));
+    setActiveIndex(boundedIndex);
   };
 
   const handleDownloadQr = (pass) => {
@@ -627,9 +639,6 @@ const PassInventory = ({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Meus cartões</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {passes.length > 0 ? `${activeIndex + 1} de ${passes.length} passes ativos` : 'Nenhum passe ativo para este projeto.'}
-          </p>
         </div>
         {canManagePasses && (
           <Button onClick={onCreateNewPass} className="gap-2">
@@ -661,118 +670,156 @@ const PassInventory = ({
         </div>
       )}
 
-      {!loading && activePass && activePassFormState && (
-        <div className="relative flex min-h-[620px] items-center justify-center px-12">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full"
-            onClick={() => goToPass(activeIndex - 1, -1)}
-            disabled={passes.length <= 1}
-            aria-label="Passe anterior"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
+      {!loading && activePass && (
+        <div className="space-y-5">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Passe sem titulo'}</p>
+              <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
+                {translatePassStatus(activePass.status)}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-slate-500">
+              Criado em {formatPassCreatedAt(activePass.created_at)}
+            </p>
+          </div>
 
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={activePass.id}
-              layoutId="wallet-pass-preview"
-              custom={direction}
-              initial={{ opacity: 0, x: direction >= 0 ? 80 : -80, scale: 0.98 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: direction >= 0 ? -80 : 80, scale: 0.98 }}
-              transition={{ duration: 0.28, ease: 'easeOut' }}
-              className="w-full max-w-xl"
-            >
-              <PassPreview
-                formState={activePassFormState}
-                qrPreviewUrl={activePass.qr_url}
-                sticky={false}
-                cardClassName={canManagePasses ? 'transition duration-200 group-hover:grayscale group-hover:brightness-75' : ''}
-                cardOverlay={canManagePasses ? (
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition duration-200 group-hover:opacity-100">
-                    <Button
-                      type="button"
-                      className="pointer-events-auto gap-2 bg-slate-900 text-white hover:bg-slate-800"
-                      onClick={() => onEditPass(activePass)}
-                    >
-                      <Edit3 className="h-4 w-4" />
-                      Editar
-                    </Button>
+          {passes.length > 1 && (
+            <div className="flex justify-center gap-2">
+              {passes.map((pass, index) => (
+                <button
+                  key={pass.id}
+                  type="button"
+                  onClick={() => goToPass(index)}
+                  className={`h-2.5 rounded-full transition-all ${index === activeIndex ? 'w-8 bg-purple-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'}`}
+                  aria-label={`Ir para passe ${index + 1}`}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="relative mx-auto flex min-h-[630px] w-full max-w-4xl items-center justify-center overflow-hidden px-10 sm:px-16">
+            {canGoToPrevious && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute left-0 top-1/2 z-20 h-11 w-11 -translate-y-1/2 rounded-full bg-white/95 shadow-lg hover:bg-white"
+                onClick={() => goToPass(activeIndex - 1)}
+                aria-label="Passe anterior"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Button>
+            )}
+
+            <div className="relative h-[610px] w-full max-w-xl [perspective:900px] [transform-style:preserve-3d]">
+              {passes.map((pass, index) => {
+                const offset = activeIndex - index;
+                const absOffset = Math.abs(offset);
+                if (absOffset > MAX_CAROUSEL_VISIBILITY) return null;
+
+                const normalizedOffset = offset / MAX_CAROUSEL_VISIBILITY;
+                const normalizedAbsOffset = absOffset / MAX_CAROUSEL_VISIBILITY;
+                const offsetDirection = Math.sign(offset);
+                const isActive = index === activeIndex;
+                const passHasQrUrl = Boolean(pass.qr_url);
+                const hasHoverActions = isActive && (canManagePasses || passHasQrUrl);
+                const passFormState = passToFormState(pass, templateDefaults);
+
+                return (
+                  <div
+                    key={pass.id}
+                    className="absolute inset-x-0 top-0 mx-auto w-full max-w-sm [transform-style:preserve-3d] transition-[filter,opacity,transform] duration-300 ease-out motion-reduce:transition-none"
+                    style={{
+                      transform: `rotateY(${normalizedOffset * 50}deg) scaleY(${1 + normalizedAbsOffset * -0.4}) translateZ(${-normalizedAbsOffset * 30}rem) translateX(${offsetDirection * -5}rem)`,
+                      filter: `blur(${normalizedAbsOffset * 0.75}rem)`,
+                      opacity: absOffset >= MAX_CAROUSEL_VISIBILITY ? 0 : 1,
+                      pointerEvents: isActive ? 'auto' : 'none',
+                      zIndex: passes.length - absOffset,
+                    }}
+                  >
+                    <PassPreview
+                      formState={passFormState}
+                      qrPreviewUrl={pass.qr_url}
+                      sticky={false}
+                      showPlatformControls={isActive}
+                      cardClassName={hasHoverActions ? 'transition duration-200 group-hover:grayscale group-hover:brightness-75' : ''}
+                      cardOverlay={hasHoverActions ? (
+                        <div className="pointer-events-none absolute inset-0 opacity-0 transition duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                          <div className="pointer-events-auto absolute inset-x-5 top-1/2 flex -translate-y-1/2 flex-wrap items-center justify-center gap-2">
+                            {passHasQrUrl && (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className={`${HOVER_ACTION_BUTTON_CLASS} bg-white text-slate-900 hover:bg-slate-100`}
+                                  onClick={() => onAction('copy', pass.qr_url)}
+                                >
+                                  <LinkIcon className="h-4 w-4" />
+                                  Copiar link
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  className={`${HOVER_ACTION_BUTTON_CLASS} bg-white text-slate-900 hover:bg-slate-100`}
+                                  onClick={() => handleDownloadQr(pass)}
+                                >
+                                  <Download className="h-4 w-4" />
+                                  Baixar QR
+                                </Button>
+                              </>
+                            )}
+                            {canManagePasses && (
+                              <Button
+                                type="button"
+                                className={`${HOVER_ACTION_BUTTON_CLASS} bg-slate-900 text-white hover:bg-slate-800`}
+                                onClick={() => onEditPass(pass)}
+                              >
+                                <Edit3 className="h-4 w-4" />
+                                Editar
+                              </Button>
+                            )}
+                          </div>
+                          {canManagePasses && (
+                            <div className="pointer-events-auto absolute inset-x-5 bottom-6 flex justify-center">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className={`${HOVER_ACTION_BUTTON_CLASS} border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white`}
+                                onClick={() => onDeletePass(pass)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Excluir
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                    />
                   </div>
-                ) : null}
-              />
+                );
+              })}
+            </div>
 
-              <div className="mt-5 flex flex-col items-center gap-3 text-center">
-                <div>
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Passe sem titulo'}</p>
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
-                      {translatePassStatus(activePass.status)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-500">
-                    Criado em {formatPassCreatedAt(activePass.created_at)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => onAction('copy', activePass.qr_url)} disabled={!hasQrUrl}>
-                    <LinkIcon className="mr-2 h-4 w-4" />
-                    Copiar link
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => handleDownloadQr(activePass)} disabled={!hasQrUrl}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Baixar QR
-                  </Button>
-                  {canManagePasses && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                      onClick={() => onDeletePass(activePass)}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Excluir
-                    </Button>
-                  )}
-                </div>
-              </div>
+            {canGoToNext && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="absolute right-0 top-1/2 z-20 h-11 w-11 -translate-y-1/2 rounded-full bg-white/95 shadow-lg hover:bg-white"
+                onClick={() => goToPass(activeIndex + 1)}
+                aria-label="Proximo passe"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Button>
+            )}
+          </div>
 
-              {hasQrUrl && (
-                <div ref={qrContainerRef} className="absolute -left-[9999px] top-0">
-                  <QRCode value={activePass.qr_url} size={140} quietZone={0} bgColor="transparent" />
-                </div>
-              )}
-            </motion.div>
-          </AnimatePresence>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full"
-            onClick={() => goToPass(activeIndex + 1, 1)}
-            disabled={passes.length <= 1}
-            aria-label="Proximo passe"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
-        </div>
-      )}
-
-      {!loading && passes.length > 1 && (
-        <div className="flex justify-center gap-2">
-          {passes.map((pass, index) => (
-            <button
-              key={pass.id}
-              type="button"
-              onClick={() => goToPass(index)}
-              className={`h-2.5 rounded-full transition-all ${index === activeIndex ? 'w-8 bg-purple-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'}`}
-              aria-label={`Ir para passe ${index + 1}`}
-            />
-          ))}
+          {hasQrUrl && (
+            <div ref={qrContainerRef} className="absolute -left-[9999px] top-0">
+              <QRCode value={activePass.qr_url} size={140} quietZone={0} bgColor="transparent" />
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -1377,7 +1424,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     const deletingPass = passToDelete;
     setIsProcessing(true);
     try {
-      await invokeWalletFunction('delete-pass', {
+      await invokeWalletFunction('delete-pass-teste', {
         project_id: projectId,
         pass_id: deletingPass.id,
       });
