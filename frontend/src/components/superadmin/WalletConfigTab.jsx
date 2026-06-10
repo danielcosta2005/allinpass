@@ -1424,7 +1424,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     const deletingPass = passToDelete;
     setIsProcessing(true);
     try {
-      await invokeWalletFunction('delete-pass-teste', {
+      await invokeWalletFunction('delete-pass', {
         project_id: projectId,
         pass_id: deletingPass.id,
       });
