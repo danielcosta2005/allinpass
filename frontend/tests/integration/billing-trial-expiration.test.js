@@ -92,6 +92,9 @@ describe("billing trial expiration enforcement", () => {
     expect(walletConfigSource).toContain("invokeWalletFunction('update-pass-teste'");
     expect(walletConfigSource).not.toContain("invokeWalletFunction('create-pass'");
     expect(walletConfigSource).not.toContain("invokeWalletFunction('update-pass'");
+    expect(walletConfigSource).toContain("readFunctionErrorPayload");
+    expect(walletConfigSource).toContain("error?.context?.response || error?.context");
+    expect(walletConfigSource).toContain("payload.message || payload.error");
 
     for (const source of [createPassTesteSource, updatePassTesteSource]) {
       expect(source).toContain("../_shared/billingAccess.ts");

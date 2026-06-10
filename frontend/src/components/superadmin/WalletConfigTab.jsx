@@ -120,7 +120,13 @@ async function invokeWalletFunction(functionName, body) {
   const { data, error } = await supabase.functions.invoke(functionName, { body });
 
   if (error) {
-    throw new Error(error.message || `Falha ao chamar ${functionName}.`);
+    const payload = await readFunctionErrorPayload(error);
+    const message = getFunctionErrorMessage(payload) || error.message || `Falha ao chamar ${functionName}.`;
+    const normalizedError = new Error(message);
+    normalizedError.code = payload?.code || null;
+    normalizedError.status = error?.context?.status || null;
+    normalizedError.payload = payload || null;
+    throw normalizedError;
   }
 
   if (data?.ok === false || data?.error) {
@@ -128,6 +134,27 @@ async function invokeWalletFunction(functionName, body) {
   }
 
   return data;
+}
+
+async function readFunctionErrorPayload(error) {
+  const source = error?.context?.response || error?.context;
+  if (!source || typeof source.clone !== 'function') return null;
+
+  try {
+    return await source.clone().json();
+  } catch (_) {
+    try {
+      return await source.clone().text();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function getFunctionErrorMessage(payload) {
+  if (!payload) return '';
+  if (typeof payload === 'string') return payload;
+  return payload.message || payload.error || '';
 }
 
 function toObject(v) {
