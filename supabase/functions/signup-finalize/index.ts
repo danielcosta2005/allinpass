@@ -513,7 +513,7 @@ function buildWalletDefaults(projectName: string) {
   return {
     type: "loyalty",
     title: projectName,
-    description: `Cartao de beneficios ${projectName}`,
+    description: `Cartao de benefícios ${projectName}`,
     organizationName: "Khaos Omni LTDA",
     passTypeIdentifier: "pass.com.khaosomni.carteira49",
     teamIdentifier: "JM2D9G6ZFB",
