@@ -51,6 +51,19 @@ function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function errorPayload(
+  error: string,
+  message: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    ok: false,
+    error,
+    message,
+    ...extra,
+  };
+}
+
 function getBearerToken(req: Request) {
   const authHeader = req.headers.get("Authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -61,9 +74,10 @@ async function getCallerProfile(sbAdmin: any, req: Request) {
   const token = getBearerToken(req);
   if (!token) {
     throw new HttpError(401, {
-      ok: false,
-      error: "unauthorized",
-      message: "Missing Authorization header",
+      ...errorPayload(
+        "unauthorized",
+        "Sessão não encontrada. Faça login novamente.",
+      ),
     });
   }
 
@@ -71,9 +85,7 @@ async function getCallerProfile(sbAdmin: any, req: Request) {
   const user = userData?.user;
   if (userError || !user) {
     throw new HttpError(401, {
-      ok: false,
-      error: "unauthorized",
-      message: "Sessão inválida.",
+      ...errorPayload("unauthorized", "Sessão inválida. Faça login novamente."),
     });
   }
 
@@ -104,10 +116,33 @@ async function ensureCanManageProject(sbAdmin: any, projectId: string, caller: a
     if (project?.created_by === caller.user.id) return;
   }
 
+  const { data: membership, error: membershipError } = await sbAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", caller.user.id)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw new Error(`Erro ao validar membro do projeto: ${membershipError.message}`);
+  }
+
+  if (membership?.role === "owner") return;
+
+  if (membership?.role === "staff") {
+    throw new HttpError(403, {
+      ...errorPayload(
+        "forbidden",
+        "Funcionários podem apenas visualizar passes. Peça a um gestor para editar cartões.",
+      ),
+    });
+  }
+
   throw new HttpError(403, {
-    ok: false,
-    error: "forbidden",
-    message: "Admins só podem atualizar passes de projetos criados por eles.",
+    ...errorPayload(
+      "forbidden",
+      "Você não tem permissão para editar passes neste projeto.",
+    ),
   });
 }
 
@@ -170,9 +205,7 @@ serve(async (req: Request) => {
     if (req.method !== "POST") {
       return jsonResponse(
         {
-          ok: false,
-          error: "method_not_allowed",
-          message: "Use POST.",
+          ...errorPayload("method_not_allowed", "Use POST."),
         },
         405,
         origin,
@@ -182,9 +215,10 @@ serve(async (req: Request) => {
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
       return jsonResponse(
         {
-          ok: false,
-          error: "missing_env",
-          message: "SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios.",
+          ...errorPayload(
+            "missing_env",
+            "SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios.",
+          ),
         },
         500,
         origin,
@@ -206,9 +240,7 @@ serve(async (req: Request) => {
     if (!projectId || !passId) {
       return jsonResponse(
         {
-          ok: false,
-          error: "bad_request",
-          message: "project_id e pass_id são obrigatórios.",
+          ...errorPayload("bad_request", "project_id e pass_id são obrigatórios."),
         },
         400,
         origin,
@@ -224,9 +256,10 @@ serve(async (req: Request) => {
 
     const { data: existingPass, error: passLookupError } = await sbAdmin
       .from("passes")
-      .select("id, project_id, type, title, description, fields, design")
+      .select("id, project_id, type, title, description, fields, design, status, deleted_at")
       .eq("id", passId)
       .eq("project_id", projectId)
+      .is("deleted_at", null)
       .maybeSingle();
 
     if (passLookupError) {
@@ -236,9 +269,7 @@ serve(async (req: Request) => {
     if (!existingPass) {
       return jsonResponse(
         {
-          ok: false,
-          error: "not_found",
-          message: "Passe não encontrado para este projeto.",
+          ...errorPayload("not_found", "Passe não encontrado para este projeto."),
         },
         404,
         origin,
@@ -336,9 +367,10 @@ serve(async (req: Request) => {
         if (invalidIds.length > 0) {
           return jsonResponse(
             {
-              ok: false,
-              error: "invalid_location_ids",
-              message: "Uma ou mais localizações não pertencem ao projeto informado.",
+              ...errorPayload(
+                "invalid_location_ids",
+                "Uma ou mais localizações não pertencem ao projeto informado.",
+              ),
               invalid_ids: invalidIds,
             },
             400,
@@ -353,7 +385,8 @@ serve(async (req: Request) => {
       .update(updatePayload)
       .eq("id", passId)
       .eq("project_id", projectId)
-      .select("id, project_id, type, title, description, fields, design, qr_url, created_at")
+      .is("deleted_at", null)
+      .select("id, project_id, type, title, description, status, fields, design, qr_url, created_at")
       .single();
 
     if (updateError) {
@@ -510,9 +543,10 @@ serve(async (req: Request) => {
       isHttpError
         ? error.payload
         : {
-            ok: false,
-            error: "internal_error",
-            message: String(error?.message ?? error),
+            ...errorPayload(
+              "internal_error",
+              "Não foi possível atualizar o passe. Tente novamente.",
+            ),
           },
       isHttpError ? error.status : 500,
       origin,
