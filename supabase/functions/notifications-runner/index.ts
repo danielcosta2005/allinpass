@@ -2,6 +2,11 @@
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertProjectUsageAllowed,
+  isProjectUsageLimitExceededError,
+  PROJECT_USAGE_LIMIT_EXCEEDED,
+} from "../_shared/billingAccess.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -766,6 +771,36 @@ serve(async (req) => {
 
     const notificationId = cleanUuid(job.notification_id);
     if (notificationId) touchedNotificationIds.push(notificationId);
+
+    try {
+      await assertProjectUsageAllowed(sb, projectId, "notification_sent");
+    } catch (quotaErr) {
+      if (isProjectUsageLimitExceededError(quotaErr)) {
+        console.warn(PROJECT_USAGE_LIMIT_EXCEEDED, {
+          job_id: job.id,
+          project_id: projectId,
+          resource_type: "notification_sent",
+        });
+
+        const { error: cancelErr } = await sb
+          .from("notification_jobs")
+          .update({
+            status: "canceled",
+            last_error: "notifications_limit_reached",
+            last_error_at: new Date().toISOString(),
+            locked_at: null,
+            locked_by: null,
+          })
+          .eq("id", job.id);
+
+        if (cancelErr) throw new Error(`cancel_by_limit_failed:${cancelErr.message}`);
+
+        canceled_by_limit++;
+        continue;
+      }
+
+      throw quotaErr;
+    }
 
     if (platform === "google") {
       if (!googleObjectId) throw new Error("missing_google_object_id");

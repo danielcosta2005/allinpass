@@ -1,5 +1,10 @@
 // supabase/functions/universal-link/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  assertProjectUsageAllowed,
+  getProjectUsageLimitExceededPayload,
+  isProjectUsageLimitExceededError,
+} from "../_shared/billingAccess.ts";
 
 type ApiErrorCategory = "validation" | "config" | "upstream" | "internal";
 
@@ -391,7 +396,7 @@ Deno.serve(async (req) => {
 
     const { data: existingUP, error: upSelErr } = await sbAdmin
       .from("user_passes")
-      .select("id, pass_token, issued_at, expires_at, device_key, user_id, metadata")
+      .select("id, pass_token, issued_at, expires_at, device_key, user_id, metadata, install_status")
       .eq("pass_id", pass.id)
       .eq("device_key", deviceKey)
       .maybeSingle();
@@ -409,6 +414,12 @@ Deno.serve(async (req) => {
     let expiresAt: Date;
 
     const passToken = existingUP?.pass_token ?? base62Random(32);
+    const existingInstallStatus = String(existingUP?.install_status ?? "").trim().toLowerCase();
+    const needsInstallQuota = existingInstallStatus !== "installed";
+
+    if (needsInstallQuota) {
+      await assertProjectUsageAllowed(sbAdmin, pass.project_id, "pass_install");
+    }
 
     const claimMeta = authUser
       ? {
@@ -604,6 +615,10 @@ Deno.serve(async (req) => {
 
     return redirect302(destination, headers);
   } catch (e) {
+    if (isProjectUsageLimitExceededError(e)) {
+      return jsonResponse(getProjectUsageLimitExceededPayload(e), 402, origin);
+    }
+
     console.error("[universal-link] ERROR:", e);
     return errorResponse(e, origin);
   }
