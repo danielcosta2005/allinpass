@@ -53,9 +53,13 @@ Colunas principais:
 Fluxo esperado:
 - `billing-start-plan-change` valida o usuario owner, a assinatura atual e o plano destino.
 - Para trial/free sem assinatura Asaas, cria checkout recorrente e registra a sessao.
-- Para assinatura paga existente no Asaas, atualiza a assinatura no gateway e aplica a troca localmente.
-- `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional.
+- Para assinatura paga existente no Asaas, atualiza a assinatura no gateway. Upgrade aplica localmente na hora; downgrade fica `paid` + `next_cycle`.
+- Downgrade nao altera cobrancas pendentes no Asaas (`updatePendingPayments = false`) e mantem o snapshot local do plano atual ate `current_period_end`.
+- So existe uma mudanca `next_cycle` ativa por assinatura. Uma nova mudanca agendada marca a anterior como `superseded`.
+- Uma mudanca imediata aplicada tambem marca qualquer `next_cycle` pendente da mesma assinatura como `superseded`.
+- `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional; se for `next_cycle` antes do fim do ciclo, a RPC retorna `scheduled`.
 - `billing-finalize-plan-change` permite finalizar pelo retorno do `/org` quando o webhook ja confirmou o pagamento.
+- `apply_due_billing_plan_changes()` roda via cron e aplica sessoes `paid` + `next_cycle` quando `current_period_end <= now()`.
 
 ## 1) Catalogo comercial
 
@@ -102,14 +106,17 @@ Colunas principais:
 - preco de excedente snapshot: `overage_pass_install_cents`, `overage_notification_sent_cents`
 - gateway: `gateway_provider`, `gateway_subscription_id`
 
+Para Asaas, `gateway_subscription_id` deve conter somente o ID real da assinatura (`sub_...`). IDs UUID de checkout pertencem a `signup_checkout_sessions.provider_checkout_id` ou `billing_plan_change_sessions.provider_checkout_id` e nao devem ser usados em `/subscriptions/{id}`.
+
 ### `public.billing_subscription_changes`
-Historico de troca de plano e base para prorrata.
+Historico de troca de plano e base para franquia efetiva do ciclo.
 
 Colunas principais:
 - vinculo: `project_id`, `subscription_id`
 - mudanca: `previous_plan_id`, `new_plan_id`, `change_type`, `effective_at`
 - politica: `effective_mode` (`immediate` ou `next_cycle`)
-- prorrata: `prorated_install_allowance`, `prorated_notification_allowance`
+- franquia efetiva: `prorated_install_allowance`, `prorated_notification_allowance`
+- preco efetivo de excedente: `effective_overage_pass_install_cents`, `effective_overage_notification_sent_cents`
 - rastreio de calculo: snapshots `previous_*` / `new_*`
 
 ## 4) Ciclo, fatura e itens
@@ -276,25 +283,34 @@ Observacao de consolidacao:
 - o trigger legado `trg_passes_log_billing_usage` (em `public.passes`) foi removido
 - o modelo atual mede consumo por instalacao (`user_passes`) e envio (`notification_jobs`)
 
-## D) Enriquecimento de mudanca de plano e prorrata
+## D) Enriquecimento de mudanca de plano, franquia e excedente
 
 ### Trigger `trg_billing_subscription_changes_enrich`
 - tabela/evento: `before insert` em `public.billing_subscription_changes`
 - funcao: `public.trg_enrich_subscription_change_proration()`
 
 Responsabilidades:
-- definir defaults de politica:
-  - `effective_mode`: downgrade tende a `next_cycle`, outros a `immediate`
-  - `allowance_proration_mode`: `prorated_daily` quando nao informado
+- definir/completar politica de ciclo:
+  - `effective_mode`: modo de aplicacao informado pelo fluxo (`immediate` ou `next_cycle`)
+  - `allowance_proration_mode`: `full_new_plan` quando nao informado em mudancas de plano
 - preencher snapshots na linha de mudanca:
   - franquias anteriores/novas (`*_included_pass_installs`, `*_included_notification_sends`)
   - precos de excedente anteriores/novos (`*_overage_*_cents`)
 - completar janela do ciclo (`cycle_started_at`, `cycle_ends_at`) usando `billing_subscriptions` quando faltar
-- calcular `prorated_install_allowance` e `prorated_notification_allowance`:
+- calcular a franquia efetiva do ciclo em `prorated_install_allowance` e `prorated_notification_allowance`:
   - `next_cycle`: usa franquia anterior inteira
+  - `immediate` + `full_new_plan`: usa franquia cheia do novo plano
   - `immediate` + `prorated_daily`: faz media ponderada por tempo dentro do ciclo
+- calcular o preco efetivo de excedente:
+  - `full_new_plan`: usa preco de excedente do novo plano
+  - `next_cycle`: usa preco de excedente do plano anterior
 
-Resultado pratico: fechamento mensal consegue calcular excedente com base no contexto real da troca de plano, sem depender do estado atual do plano no momento da leitura.
+Resultado pratico: upgrade entrega beneficio cheio no ciclo atual, e o fechamento mensal consegue calcular excedente com o preco correto do plano efetivo.
+
+### Funcoes auxiliares de apuracao
+
+- `public.get_billing_cycle_entitlements(subscription_id, period_start, period_end)`: retorna a franquia e os precos de excedente efetivos para um ciclo.
+- `public.calculate_billing_cycle_overage(subscription_id, period_start, period_end)`: soma `billing_usage_events`, compara com a franquia efetiva e retorna quantidades/valores de excedente.
 
 ## E) Rastreio dos free trials (cron que roda a função de 15 em 15 minutos)
 ### Função `expire_trial_subscriptions()`
@@ -310,24 +326,50 @@ Aplica uma sessao paga de `billing_plan_change_sessions` em uma unica transacao.
 
 Responsabilidades:
 - bloquear a sessao e a assinatura atual para evitar aplicacao duplicada;
+- retornar `scheduled` sem alterar a assinatura quando a sessao for `next_cycle` e o ciclo atual ainda nao terminou;
+- marcar a sessao como `superseded` quando o plano atual da assinatura ja nao bate com `previous_plan_id`;
 - inserir `billing_subscription_changes`;
 - atualizar `billing_subscriptions` com `plan_id`, status `active`, snapshots comerciais e IDs Asaas;
 - atualizar `billing_accounts.gateway_customer_id` quando o Asaas informar cliente;
 - atualizar `projects_notifications.notifications_limit` para manter compatibilidade com telas legadas;
 - marcar a sessao como `applied`;
+- marcar outras sessoes `next_cycle` ativas da mesma assinatura como `superseded`;
 - registrar `project_billing_audit_logs`.
 
-Resultado pratico: o frontend e o webhook nao atualizam tabelas sensiveis diretamente; eles chamam a RPC via service role depois de validar o fluxo.
+Resultado pratico: o frontend e o webhook nao atualizam tabelas sensiveis diretamente; eles chamam a RPC via service role depois de validar o fluxo. Upgrade aplica imediatamente; downgrade so aplica no proximo ciclo.
+
+### Funcao `supersede_pending_next_cycle_plan_changes(...)`
+Invalida mudancas agendadas antigas da mesma assinatura.
+
+Responsabilidades:
+- localizar sessoes `effective_mode = 'next_cycle'` com `status` em `pending`, `created` ou `paid`;
+- mudar essas sessoes para `superseded`;
+- preservar `metadata` existente e adicionar `superseded_at`, `superseded_reason` e, quando houver, `superseded_by_session_id`.
+
+Resultado pratico: o sistema mantem historico das decisoes antigas, mas so a mudanca agendada mais recente continua ativa.
+
+### Funcao `apply_due_billing_plan_changes()`
+Aplica downgrades agendados para o proximo ciclo.
+
+Responsabilidades:
+- buscar sessoes em `billing_plan_change_sessions` com `status = 'paid'` e `effective_mode = 'next_cycle'`;
+- filtrar assinaturas cujo `current_period_end <= now()`;
+- chamar `apply_billing_plan_change(...)` para cada sessao vencida;
+- rodar a cada 15 minutos pelo cron `billing-apply-due-plan-changes`.
 
 ## Regras de negocio principais
 
 1. Instalacao de passe so conta 1 vez por `user_passes.id`.
 2. Notificacao enviada so conta 1 vez por `notification_jobs.id`.
-3. Excedente por recurso = `max(consumo - franquia, 0)`.
-4. Upgrade, downgrade e conversao de trial usam o mesmo fluxo de mudanca de plano; a aplicacao atual e imediata.
-5. Fatura final combina assinatura base + excedentes + prorrata (quando houver).
-6. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
-7. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
+3. Excedente por recurso = `max(consumo - franquia efetiva do ciclo, 0)`.
+4. Upgrade e conversao de trial aplicam imediatamente; downgrade fica agendado para o proximo ciclo.
+5. Upgrade imediato recebe franquia cheia do novo plano no ciclo atual.
+6. Downgrade mantem franquia e preco de excedente do plano atual ate o fim do ciclo ja pago; no ciclo seguinte usa franquia cheia e preco de excedente do novo plano menor.
+7. Apenas uma mudanca `next_cycle` pode ficar ativa por assinatura; novas decisoes substituem a pendente anterior.
+8. Uma sessao antiga nao pode aplicar se `billing_subscriptions.plan_id` for diferente de `billing_plan_change_sessions.previous_plan_id`.
+9. Fatura final combina assinatura base + excedentes + ajustes de plano (quando houver).
+10. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
+11. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
 
 ## Fluxo de negocio (fim a fim)
 
@@ -351,15 +393,16 @@ Resultado pratico: o frontend e o webhook nao atualizam tabelas sensiveis direta
 
 1. Sistema define janela em `billing_cycles`.
 2. Soma consumo por recurso em `billing_usage_events`.
-3. Compara com franquias do snapshot da assinatura.
+3. Chama `get_billing_cycle_entitlements` para obter a franquia e o preco de excedente efetivos.
 4. Calcula excedentes e cria `billing_invoices`.
-5. Gera `billing_invoice_items` (base + excedente + prorrata).
+5. Gera `billing_invoice_items` (base + excedente + ajustes).
 
 ## Cenario D - Troca de plano no meio do ciclo
 
 1. Insere em `billing_subscription_changes`.
-2. Trigger enriquece snapshots antigo/novo e calcula franquia prorrateada.
-3. No fechamento, usa franquia prorrateada para calcular excedente corretamente.
+2. Trigger enriquece snapshots antigo/novo e calcula a franquia efetiva.
+3. Para upgrade/conversao imediata, a franquia efetiva e a franquia cheia do novo plano.
+4. No fechamento, usa a franquia efetiva e o preco de excedente efetivo para calcular excedente corretamente.
 
 ## Dependencias operacionais externas ao modulo
 

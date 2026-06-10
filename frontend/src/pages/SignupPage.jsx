@@ -14,6 +14,8 @@ import {
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import {
+  PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS,
+  PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
   clearExistingCustomerSignupContext,
   finalizeSignup,
   isExistingCustomerSignupPasswordReady,
@@ -215,6 +217,8 @@ function SignupPage() {
     planCode,
     userId,
     checkoutSessionId = '',
+    finalizeInitialDelayMs = 0,
+    finalizeRetryDelaysMs = [],
   }) => {
     const result = await finalizeSignup({
       establishmentName,
@@ -223,6 +227,8 @@ function SignupPage() {
       dedupeKey: userId
         ? `signup-finalize:${userId}:${planCode || 'free_trial'}:${checkoutSessionId || 'free'}`
         : '',
+      initialDelayMs: finalizeInitialDelayMs,
+      retryDelaysMs: finalizeRetryDelaysMs,
     });
 
     await refreshAuthProfile();
@@ -866,6 +872,8 @@ function SignupPage() {
           planCode,
           userId: user.id,
           checkoutSessionId: checkoutSessionIdFromRedirect,
+          finalizeInitialDelayMs: isPaidFinalize ? PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS : 0,
+          finalizeRetryDelaysMs: isPaidFinalize ? PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS : [],
         });
         const finalizedPlanCode = String(result?.plan?.code || planCode || '').trim().toLowerCase();
         if (finalizedPlanCode) {

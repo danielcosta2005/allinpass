@@ -506,6 +506,14 @@ async function getPaidCheckoutSession(
     );
   }
 
+  if (!checkoutSession.provider_customer_id || !checkoutSession.provider_subscription_id) {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED",
+      "Pagamento confirmado, aguardando vinculacao da assinatura no Asaas.",
+      409,
+    );
+  }
+
   return checkoutSession;
 }
 
@@ -905,10 +913,7 @@ Deno.serve(async (req) => {
             current_period_start: now.toISOString(),
             current_period_end: periodEnd.toISOString(),
             gateway_provider: isFreeTrial ? "other" : "asaas",
-            gateway_subscription_id:
-              paidCheckoutSession?.provider_subscription_id
-              ?? paidCheckoutSession?.provider_checkout_id
-              ?? null,
+            gateway_subscription_id: paidCheckoutSession?.provider_subscription_id ?? null,
             base_price_cents: plan.base_price_cents,
             included_pass_installs: plan.included_pass_installs ?? 0,
             included_notification_sends: plan.included_notification_sends ?? 0,

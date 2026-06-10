@@ -192,9 +192,8 @@ Estados de job suportados:
 
 Responsavel: `superadmin` ou `establishment`, conforme permissao
 
-O sistema suporta automacoes de negocio em `automations`, com tipos como:
+O sistema suporta automacoes de negocio em `automations`, com os tipos:
 
-- `points_wallet`;
 - `expiring_soon`;
 - `days_without_visit`.
 
