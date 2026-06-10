@@ -1,6 +1,11 @@
 // supabase/functions/update-pass/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -244,6 +249,8 @@ serve(async (req: Request) => {
         origin,
       );
     }
+
+    await assertProjectBillingActive(sbAdmin, projectId);
 
     const updatePayload: Record<string, unknown> = {};
 
@@ -504,6 +511,10 @@ serve(async (req: Request) => {
       origin,
     );
   } catch (error: any) {
+    if (isProjectBillingInactiveError(error)) {
+      return jsonResponse(getProjectBillingInactivePayload(error), 402, origin);
+    }
+
     console.error("[update-pass] ERROR:", error);
     const isHttpError = error instanceof HttpError;
     return jsonResponse(

@@ -1,6 +1,11 @@
 // supabase/functions/create-pass/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -220,6 +225,7 @@ serve(async (req) => {
 
     const caller = await getCallerProfile(req);
     await ensureCanManageProject(projectId, caller);
+    await assertProjectBillingActive(sbAdmin, projectId);
 
     const templateDefaults = await getProjectTemplateDefaults(projectId);
 
@@ -337,6 +343,13 @@ serve(async (req) => {
       }
     );
   } catch (err: any) {
+    if (isProjectBillingInactiveError(err)) {
+      return new Response(JSON.stringify(getProjectBillingInactivePayload(err)), {
+        status: 402,
+        headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+      });
+    }
+
     const isHttpError = err instanceof HttpError;
     const status = isHttpError ? err.status : 500;
     const message = err?.message ?? "Internal error";

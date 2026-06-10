@@ -82,4 +82,23 @@ describe("billing trial expiration enforcement", () => {
       expect(source).toContain("assertProjectBillingActive");
     }
   });
+
+  test("superadmin pass management test functions keep the same billing guard as production functions", () => {
+    const walletConfigSource = readIfExists("frontend/src/components/superadmin/WalletConfigTab.jsx");
+    const createPassTesteSource = readIfExists("supabase/functions/create-pass-teste/index.ts");
+    const updatePassTesteSource = readIfExists("supabase/functions/update-pass-teste/index.ts");
+
+    expect(walletConfigSource).toContain("invokeWalletFunction('create-pass-teste'");
+    expect(walletConfigSource).toContain("invokeWalletFunction('update-pass-teste'");
+    expect(walletConfigSource).not.toContain("invokeWalletFunction('create-pass'");
+    expect(walletConfigSource).not.toContain("invokeWalletFunction('update-pass'");
+
+    for (const source of [createPassTesteSource, updatePassTesteSource]) {
+      expect(source).toContain("../_shared/billingAccess.ts");
+      expect(source).toContain("assertProjectBillingActive");
+      expect(source).toContain("isProjectBillingInactiveError");
+      expect(source).toContain("getProjectBillingInactivePayload");
+      expect(source).toContain("402");
+    }
+  });
 });
