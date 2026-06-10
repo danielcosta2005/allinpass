@@ -618,7 +618,7 @@ export default function RewardsTab({ projectId }) {
               <h2 className="text-xl font-semibold text-gray-900">Recompensas</h2>
             </div>
             <p className="mt-1 text-sm text-gray-600">
-              Configure beneficios por pontos e contabilize resgates pelo QR Code do cliente.
+              Configure benefícios por pontos e contabilize resgates pelo QR Code do cliente.
             </p>
           </div>
 
