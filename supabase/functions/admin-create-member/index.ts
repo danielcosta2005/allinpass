@@ -11,13 +11,20 @@ type BillingPlanRow = {
   code: string;
   trial_days: number | null;
   base_price_cents: number | null;
-  included_passes: number | null;
-  overage_price_cents: number | null;
   included_pass_installs: number | null;
   included_notification_sends: number | null;
   overage_pass_install_cents: number | null;
   overage_notification_sent_cents: number | null;
 };
+
+class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 function generatePassword() {
   const length = 12;
@@ -47,6 +54,36 @@ function isDuplicateKeyError(error: unknown) {
   const code = String(maybeError?.code ?? "");
   const message = String(maybeError?.message ?? "");
   return code === "23505" || /duplicate key value/i.test(message);
+}
+
+function getBearerToken(req: Request) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request) {
+  const token = getBearerToken(req);
+  if (!token) throw new HttpError(401, "Missing Authorization header");
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw new HttpError(401, "Sessao invalida.");
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  return { user, profile };
+}
+
+function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
+  if (caller.profile?.role !== "superadmin") {
+    throw new HttpError(403, "Acesso negado. Apenas superadmins podem criar membros.");
+  }
 }
 
 async function getExistingProjectSubscription(supabaseAdmin: SupabaseAdminClient, projectId: string) {
@@ -129,7 +166,7 @@ async function ensureProjectFreeTrialBilling(
   const { data: planData, error: planError } = await supabaseAdmin
     .from("billing_plans")
     .select(
-      "id, code, trial_days, base_price_cents, included_passes, overage_price_cents, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents",
+      "id, code, trial_days, base_price_cents, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents",
     )
     .eq("code", FREE_PLAN_CODE)
     .eq("is_active", true)
@@ -163,8 +200,6 @@ async function ensureProjectFreeTrialBilling(
     current_period_end: periodEnd.toISOString(),
     gateway_provider: "other",
     base_price_cents: plan.base_price_cents ?? 0,
-    included_passes: plan.included_passes ?? plan.included_pass_installs ?? 0,
-    overage_price_cents: plan.overage_price_cents ?? plan.overage_pass_install_cents ?? 0,
     included_pass_installs: plan.included_pass_installs ?? 0,
     included_notification_sends: plan.included_notification_sends ?? 0,
     overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
@@ -254,6 +289,8 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
+
     let userId: string | null = null;
     let inviteSent = false;
 
@@ -317,7 +354,7 @@ Deno.serve(async (req) => {
     console.error("Erro na função admin-create-member:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 400,
+      status: error instanceof HttpError ? error.status : 400,
     });
   }
 });

@@ -35,12 +35,21 @@ describe("legacy free trial provisioning", () => {
     expect(migrationSource).toContain("case when coalesce(fp.trial_days, 0) > 0 then 'trialing' else 'active' end as status");
     expect(migrationSource).toContain("gateway_provider");
     expect(migrationSource).toContain("'other'");
+    expect(migrationSource).toContain("coalesce(existing_billing_account.metadata, '{}'::jsonb)");
+    expect(migrationSource).not.toContain("coalesce(metadata, '{}'::jsonb)");
+    expect(migrationSource).not.toContain("included_passes");
+    expect(migrationSource).not.toContain("overage_price_cents");
   });
 
   test("superadmin member creation provisionally creates free-trial billing when project has no subscription", () => {
     const functionSource = readIfExists("supabase/functions/admin-create-member/index.ts");
+    const adminClientSource = readIfExists("frontend/src/lib/admin.js");
 
+    expect(adminClientSource).toContain("supabase.functions.invoke('admin-create-member'");
+    expect(adminClientSource).not.toContain("admin-create-member-teste");
     expect(functionSource).toContain("ensureProjectFreeTrialBilling");
+    expect(functionSource).toContain("ensureSuperadmin");
+    expect(functionSource).toContain("getCallerProfile");
     expect(functionSource).toContain("FREE_PLAN_CODE");
     expect(functionSource).toContain("free_trial");
     expect(functionSource).toContain("billing_plans");
@@ -52,6 +61,8 @@ describe("legacy free trial provisioning", () => {
     expect(functionSource).toContain("legacy_admin_create_member");
     expect(functionSource).toContain("isDuplicateKeyError");
     expect(functionSource).toContain("23505");
+    expect(functionSource).not.toContain("included_passes");
+    expect(functionSource).not.toContain("overage_price_cents");
   });
 
   test("project creation remains billing-free until a member is added", () => {

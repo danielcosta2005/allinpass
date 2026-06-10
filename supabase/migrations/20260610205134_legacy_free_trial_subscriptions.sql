@@ -21,8 +21,6 @@ free_plan as (
     bp.code,
     bp.trial_days,
     bp.base_price_cents,
-    bp.included_passes,
-    bp.overage_price_cents,
     bp.included_pass_installs,
     bp.included_notification_sends,
     bp.overage_pass_install_cents,
@@ -54,7 +52,7 @@ eligible_projects as (
     and not exists (select 1 from public.billing_subscriptions bs where bs.project_id = p.id)
 ),
 billing_account_rows as (
-  insert into public.billing_accounts (
+  insert into public.billing_accounts as existing_billing_account (
     project_id,
     legal_name,
     billing_email,
@@ -82,7 +80,7 @@ billing_account_rows as (
   cross join free_plan fp
   on conflict (project_id) do update
   set
-    metadata = coalesce(public.billing_accounts.metadata, '{}'::jsonb)
+    metadata = coalesce(existing_billing_account.metadata, '{}'::jsonb)
       || jsonb_build_object('legacy_free_trial_backfill_checked_at', now()),
     updated_at = now()
   returning id, project_id
@@ -99,8 +97,6 @@ subscription_rows as (
     current_period_end,
     gateway_provider,
     base_price_cents,
-    included_passes,
-    overage_price_cents,
     included_pass_installs,
     included_notification_sends,
     overage_pass_install_cents,
@@ -127,8 +123,6 @@ subscription_rows as (
     end as current_period_end,
     'other' as gateway_provider,
     coalesce(fp.base_price_cents, 0),
-    coalesce(fp.included_passes, fp.included_pass_installs, 0),
-    coalesce(fp.overage_price_cents, fp.overage_pass_install_cents, 0),
     coalesce(fp.included_pass_installs, 0),
     coalesce(fp.included_notification_sends, 0),
     coalesce(fp.overage_pass_install_cents, 0),
