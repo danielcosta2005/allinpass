@@ -46,7 +46,15 @@ begin
   limit 1
   for update of bs;
 
-  if not found or v_subscription.plan_code is distinct from 'free_trial' then
+  if not found then
+    raise exception using
+      errcode = 'P0001',
+      message = 'PROJECT_BILLING_INACTIVE',
+      detail = 'Trial encerrado. Assine um plano para continuar.',
+      hint = p_resource_type;
+  end if;
+
+  if v_subscription.plan_code is distinct from 'free_trial' then
     return;
   end if;
 

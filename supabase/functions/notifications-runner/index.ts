@@ -4,7 +4,9 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   assertProjectUsageAllowed,
+  isProjectBillingInactiveError,
   isProjectUsageLimitExceededError,
+  PROJECT_BILLING_INACTIVE,
   PROJECT_USAGE_LIMIT_EXCEEDED,
 } from "../_shared/billingAccess.ts";
 
@@ -775,8 +777,12 @@ serve(async (req) => {
     try {
       await assertProjectUsageAllowed(sb, projectId, "notification_sent");
     } catch (quotaErr) {
-      if (isProjectUsageLimitExceededError(quotaErr)) {
-        console.warn(PROJECT_USAGE_LIMIT_EXCEEDED, {
+      if (isProjectUsageLimitExceededError(quotaErr) || isProjectBillingInactiveError(quotaErr)) {
+        const lastError = isProjectBillingInactiveError(quotaErr)
+          ? "project_billing_inactive"
+          : "notifications_limit_reached";
+
+        console.warn(isProjectBillingInactiveError(quotaErr) ? PROJECT_BILLING_INACTIVE : PROJECT_USAGE_LIMIT_EXCEEDED, {
           job_id: job.id,
           project_id: projectId,
           resource_type: "notification_sent",
@@ -786,7 +792,7 @@ serve(async (req) => {
           .from("notification_jobs")
           .update({
             status: "canceled",
-            last_error: "notifications_limit_reached",
+            last_error: lastError,
             last_error_at: new Date().toISOString(),
             locked_at: null,
             locked_by: null,
@@ -795,7 +801,7 @@ serve(async (req) => {
 
         if (cancelErr) throw new Error(`cancel_by_limit_failed:${cancelErr.message}`);
 
-        canceled_by_limit++;
+        if (lastError === "notifications_limit_reached") canceled_by_limit++;
         continue;
       }
 

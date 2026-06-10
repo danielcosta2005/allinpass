@@ -213,7 +213,9 @@ export async function getProjectUsageQuotaState(
     planCode = String(plan?.code || "").trim();
   }
 
-  if (!subscription || planCode !== FREE_PLAN_CODE) {
+  if (!subscription) throw new ProjectBillingInactiveError();
+
+  if (planCode !== FREE_PLAN_CODE) {
     return {
       allowed: true,
       isFreeTrial: false,

@@ -1,8 +1,11 @@
 // supabase/functions/universal-link/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  assertProjectBillingActive,
   assertProjectUsageAllowed,
+  getProjectBillingInactivePayload,
   getProjectUsageLimitExceededPayload,
+  isProjectBillingInactiveError,
   isProjectUsageLimitExceededError,
 } from "../_shared/billingAccess.ts";
 
@@ -418,6 +421,7 @@ Deno.serve(async (req) => {
     const needsInstallQuota = existingInstallStatus !== "installed";
 
     if (needsInstallQuota) {
+      await assertProjectBillingActive(sbAdmin, pass.project_id);
       await assertProjectUsageAllowed(sbAdmin, pass.project_id, "pass_install");
     }
 
@@ -615,6 +619,10 @@ Deno.serve(async (req) => {
 
     return redirect302(destination, headers);
   } catch (e) {
+    if (isProjectBillingInactiveError(e)) {
+      return jsonResponse(getProjectBillingInactivePayload(e), 402, origin);
+    }
+
     if (isProjectUsageLimitExceededError(e)) {
       return jsonResponse(getProjectUsageLimitExceededPayload(e), 402, origin);
     }

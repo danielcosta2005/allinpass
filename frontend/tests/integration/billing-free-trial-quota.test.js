@@ -26,6 +26,7 @@ describe("free trial quota enforcement", () => {
     expect(helperSource).toContain("Franquia do free trial esgotada. Assine um plano para continuar.");
     expect(helperSource).toContain("getProjectUsageQuotaState");
     expect(helperSource).toContain("assertProjectUsageAllowed");
+    expect(helperSource).toContain("throw new ProjectBillingInactiveError()");
     expect(helperSource).toContain("billing_cycle_usage_summaries");
     expect(helperSource).toContain("pass_install_quantity");
     expect(helperSource).toContain("notification_sent_quantity");
@@ -38,6 +39,7 @@ describe("free trial quota enforcement", () => {
     expect(migrationSources).toContain("p_resource_type = 'notification_sent'");
     expect(migrationSources).toContain("billing_cycle_usage_summaries");
     expect(migrationSources).toContain("PROJECT_USAGE_LIMIT_EXCEEDED");
+    expect(migrationSources).toContain("PROJECT_BILLING_INACTIVE");
     expect(migrationSources).toContain("new.install_status = 'installed'");
     expect(migrationSources).toContain("old.install_status is distinct from 'installed'");
     expect(migrationSources).toContain("before insert or update of install_status");
@@ -50,6 +52,9 @@ describe("free trial quota enforcement", () => {
     const runnerSource = readIfExists("supabase/functions/notifications-runner/index.ts");
 
     expect(universalLinkSource).toContain("../_shared/billingAccess.ts");
+    expect(universalLinkSource).toContain("assertProjectBillingActive");
+    expect(universalLinkSource).toContain("isProjectBillingInactiveError");
+    expect(universalLinkSource).toContain("getProjectBillingInactivePayload");
     expect(universalLinkSource).toContain("assertProjectUsageAllowed");
     expect(universalLinkSource).toContain("\"pass_install\"");
     expect(universalLinkSource).toContain("isProjectUsageLimitExceededError");
