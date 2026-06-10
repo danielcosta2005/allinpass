@@ -46,6 +46,7 @@ const LocationsTab = ({
   onSelectedLocationIdsChange,
   passId = null,
   onClose = null,
+  readOnly = false,
 }) => {
   const [locations, setLocations] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +60,7 @@ const LocationsTab = ({
   const [isConfirmationOpen, setIsConfirmationOpen] = useState(false);
   const [locationToDelete, setLocationToDelete] = useState(null);
 
-  const canSelect = selectionMode && typeof onSelectedLocationIdsChange === 'function';
+  const canSelect = !readOnly && selectionMode && typeof onSelectedLocationIdsChange === 'function';
   const selectedIdsSet = new Set(Array.isArray(selectedLocationIds) ? selectedLocationIds : []);
 
   const updateSelectedIds = useCallback((nextIds) => {
@@ -128,6 +129,7 @@ const LocationsTab = ({
 
   const handleSearchAddress = async (e) => {
     e.preventDefault();
+    if (readOnly) return;
 
     const label = formData.label.trim();
     const addressQuery = formData.addressQuery.trim();
@@ -191,6 +193,7 @@ const LocationsTab = ({
   };
 
   const handleSubmitConfirmedLocation = async () => {
+    if (readOnly) return;
     if (!confirmationData) return;
 
     setIsSubmittingLocation(true);
@@ -250,6 +253,7 @@ const LocationsTab = ({
   };
 
   const handleDelete = async () => {
+    if (readOnly) return;
     if (!locationToDelete) return;
 
     setIsSubmittingLocation(true);
@@ -284,6 +288,7 @@ const LocationsTab = ({
   const minimapLng = Number.isFinite(confirmationLng) ? confirmationLng : Number(selectedSearchResult?.lng);
 
   const handleMapCoordinateChange = useCallback((point) => {
+    if (readOnly) return;
     if (!point) return;
     const lat = Number(point.lat);
     const lng = Number(point.lng);
@@ -297,7 +302,7 @@ const LocationsTab = ({
         lng,
       };
     });
-  }, []);
+  }, [readOnly]);
 
   return (
     <div className="space-y-6">
@@ -320,17 +325,19 @@ const LocationsTab = ({
             </Button>
           )}
 
-          <Button
-            onClick={() => setShowForm(!showForm)}
-            className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
-          >
-            <Plus className="w-4 h-4" />
-            Novo Local
-          </Button>
+          {!readOnly && (
+            <Button
+              onClick={() => setShowForm(!showForm)}
+              className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Local
+            </Button>
+          )}
         </div>
       </div>
 
-      {showForm && (
+      {!readOnly && showForm && (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -432,8 +439,8 @@ const LocationsTab = ({
                 key={location.id}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                onClick={selectionMode ? () => toggleLocationSelection(location.id, !isSelected) : undefined}
-                className={`bg-white rounded-2xl p-6 shadow-lg border border-purple-100 flex justify-between items-start ${selectionMode ? 'cursor-pointer transition-colors' : ''} ${selectionMode && isSelected ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''}`}
+                onClick={canSelect ? () => toggleLocationSelection(location.id, !isSelected) : undefined}
+                className={`bg-white rounded-2xl p-6 shadow-lg border border-purple-100 flex justify-between items-start ${canSelect ? 'cursor-pointer transition-colors' : ''} ${canSelect && isSelected ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''}`}
               >
                 <div className="flex items-start gap-3">
                   <div className="bg-purple-100 p-2 rounded-lg">
@@ -454,7 +461,7 @@ const LocationsTab = ({
                 </div>
 
                 <div className="flex items-center gap-1">
-                  {selectionMode && (
+                  {canSelect && (
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={(checked) => toggleLocationSelection(location.id, Boolean(checked))}
@@ -462,23 +469,27 @@ const LocationsTab = ({
                     />
                   )}
 
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setLocationToDelete(location);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
+                  {!readOnly && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLocationToDelete(location);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
                 </div>
               </motion.div>
             );
           }) : (
             <p className="text-gray-500 col-span-full text-center py-4">
               {selectionMode
-                ? 'Nenhuma localização cadastrada. Crie um novo local para vincular ao passe.'
+                ? readOnly
+                  ? 'Nenhuma localização cadastrada.'
+                  : 'Nenhuma localização cadastrada. Crie um novo local para vincular ao passe.'
                 : 'Nenhuma localização adicionada.'}
             </p>
           )}

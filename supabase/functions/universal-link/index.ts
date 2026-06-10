@@ -339,7 +339,7 @@ Deno.serve(async (req) => {
     const { data: pass, error: passErr } = await sbAdmin
       .from("passes")
       .select(
-        "id, project_id, type, title, description, fields, design, short_code_expires_at"
+        "id, project_id, type, title, description, fields, design, status, deleted_at, short_code_expires_at"
       )
       .eq("short_code", c)
       .maybeSingle();
@@ -357,6 +357,17 @@ Deno.serve(async (req) => {
         "not_found",
         "Nenhum passe foi encontrado para este link.",
         404,
+        "validation",
+        { shortCode: c },
+        false,
+      );
+    }
+
+    if (pass.deleted_at || String(pass.status ?? "").toLowerCase() === "excluido") {
+      throw apiError(
+        "pass_deleted",
+        "Este link de carteira não está mais disponível.",
+        410,
         "validation",
         { shortCode: c },
         false,

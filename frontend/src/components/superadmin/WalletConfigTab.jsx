@@ -9,6 +9,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Loader2,
   ChevronLeft,
   ChevronRight,
@@ -23,11 +33,13 @@ import {
   MapPin,
   PlusCircle,
   Edit3,
+  Trash2,
 } from 'lucide-react';
 import { QRCode } from 'react-qrcode-logo';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
 import LocationsTab from '@/components/superadmin/LocationsTab';
 import { listPassLocationIds } from '@/lib/api';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const IMAGE_UPLOAD_RULES = {
   icon: {
@@ -91,8 +103,82 @@ const LEGACY_GLOBAL_DESCRIPTION_VALUES = new Set([
   'modelo global para fallback',
 ]);
 
+const DELETED_PASS_STATUSES = new Set(['excluido', 'excluído', 'deleted', 'inactive', 'inativo']);
+
+const WALLET_FUNCTION_ERROR_MESSAGES = {
+  unauthorized: 'Sessão expirada ou inválida. Faça login novamente.',
+  forbidden: 'Você não tem permissão para realizar esta ação.',
+  bad_request: 'Revise os dados enviados e tente novamente.',
+  not_found: 'Passe não encontrado para este projeto.',
+  invalid_location_ids: 'Uma ou mais localizações não pertencem ao projeto informado.',
+  missing_app_base_url: 'Não foi possível montar o link do passe. Recarregue a página e tente novamente.',
+  missing_env: 'Configuração do servidor incompleta. Tente novamente mais tarde.',
+  method_not_allowed: 'Método inválido para esta operação.',
+  internal_error: 'Não foi possível concluir a operação. Tente novamente.',
+};
+
 function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function normalizeErrorText(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function normalizeStatusKey(status) {
+  return normalizeErrorText(status);
+}
+
+function isDeletedPass(pass) {
+  return Boolean(pass?.deleted_at) || DELETED_PASS_STATUSES.has(normalizeStatusKey(pass?.status));
+}
+
+function translatePassStatus(status) {
+  const key = normalizeStatusKey(status);
+  if (!key || key === 'ativo' || key === 'active') return 'Ativo';
+  if (key === 'issued') return 'Emitido';
+  if (DELETED_PASS_STATUSES.has(key)) return 'Excluído';
+  return status;
+}
+
+function translateWalletError(error, fallback = 'Não foi possível concluir a operação. Tente novamente.') {
+  const code = normalizeStatusKey(error?.error || error?.code);
+  if (code && WALLET_FUNCTION_ERROR_MESSAGES[code]) {
+    if (code === 'internal_error' || code === 'missing_env') {
+      return WALLET_FUNCTION_ERROR_MESSAGES[code];
+    }
+    return error?.message || WALLET_FUNCTION_ERROR_MESSAGES[code];
+  }
+
+  const message = String(error?.message || '').trim();
+  const normalizedMessage = normalizeErrorText(message);
+  if (!message) return fallback;
+  if (normalizedMessage.includes('failed to fetch')) return 'Falha de conexão. Verifique sua internet e tente novamente.';
+  if (normalizedMessage.includes('non-2xx') || normalizedMessage.includes('edge function')) return fallback;
+  if (normalizedMessage.includes('missing authorization')) return WALLET_FUNCTION_ERROR_MESSAGES.unauthorized;
+  if (
+    normalizedMessage.includes('permission denied') ||
+    normalizedMessage.includes('forbidden') ||
+    normalizedMessage.includes('row-level security') ||
+    normalizedMessage.includes('new row violates')
+  ) return WALLET_FUNCTION_ERROR_MESSAGES.forbidden;
+  if (normalizedMessage.includes('duplicate key')) return 'Já existe um registro com estes dados.';
+  return message;
+}
+
+async function getFunctionErrorPayload(error) {
+  const response = error?.context;
+  if (!response || typeof response.json !== 'function') return null;
+
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 function normalizeLocationIds(input) {
@@ -120,11 +206,12 @@ async function invokeWalletFunction(functionName, body) {
   const { data, error } = await supabase.functions.invoke(functionName, { body });
 
   if (error) {
-    throw new Error(error.message || `Falha ao chamar ${functionName}.`);
+    const payload = await getFunctionErrorPayload(error);
+    throw new Error(translateWalletError(payload || error, `Falha ao chamar ${functionName}.`));
   }
 
   if (data?.ok === false || data?.error) {
-    throw new Error(data?.message || data?.error || `Falha ao chamar ${functionName}.`);
+    throw new Error(translateWalletError(data, `Falha ao chamar ${functionName}.`));
   }
 
   return data;
@@ -485,7 +572,16 @@ const PassPreview = ({ formState, qrPreviewUrl, sticky = true, className = '', c
   );
 };
 
-const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass, onCreateNewPass }) => {
+const PassInventory = ({
+  passes,
+  loading,
+  templateDefaults,
+  canManagePasses,
+  onAction,
+  onEditPass,
+  onCreateNewPass,
+  onDeletePass,
+}) => {
   const { toast } = useToast();
   const [activeIndex, setActiveIndex] = useState(0);
   const [direction, setDirection] = useState(0);
@@ -532,13 +628,15 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
         <div>
           <h1 className="text-3xl font-bold">Meus cartões</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {passes.length > 0 ? `${activeIndex + 1} de ${passes.length} passes emitidos` : 'Nenhum passe emitido para este projeto.'}
+            {passes.length > 0 ? `${activeIndex + 1} de ${passes.length} passes ativos` : 'Nenhum passe ativo para este projeto.'}
           </p>
         </div>
-        <Button onClick={onCreateNewPass} className="gap-2">
-          <PlusCircle className="h-4 w-4" />
-          Novo cartão
-        </Button>
+        {canManagePasses && (
+          <Button onClick={onCreateNewPass} className="gap-2">
+            <PlusCircle className="h-4 w-4" />
+            Novo cartão
+          </Button>
+        )}
       </div>
 
       {loading && (
@@ -549,11 +647,17 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
 
       {!loading && passes.length === 0 && (
         <div className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center">
-          <p className="text-sm text-slate-500">Crie o primeiro cartão para ele aparecer neste inventario.</p>
-          <Button onClick={onCreateNewPass} className="mt-4 gap-2">
-            <PlusCircle className="h-4 w-4" />
-            Novo passe
-          </Button>
+          <p className="text-sm text-slate-500">
+            {canManagePasses
+              ? 'Crie o primeiro cartão para ele aparecer neste inventário.'
+              : 'Nenhum cartão ativo foi criado para este projeto.'}
+          </p>
+          {canManagePasses && (
+            <Button onClick={onCreateNewPass} className="mt-4 gap-2">
+              <PlusCircle className="h-4 w-4" />
+              Novo passe
+            </Button>
+          )}
         </div>
       )}
 
@@ -586,8 +690,8 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
                 formState={activePassFormState}
                 qrPreviewUrl={activePass.qr_url}
                 sticky={false}
-                cardClassName="transition duration-200 group-hover:grayscale group-hover:brightness-75"
-                cardOverlay={(
+                cardClassName={canManagePasses ? 'transition duration-200 group-hover:grayscale group-hover:brightness-75' : ''}
+                cardOverlay={canManagePasses ? (
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-0 transition duration-200 group-hover:opacity-100">
                     <Button
                       type="button"
@@ -598,7 +702,7 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
                       Editar
                     </Button>
                   </div>
-                )}
+                ) : null}
               />
 
               <div className="mt-5 flex flex-col items-center gap-3 text-center">
@@ -606,7 +710,7 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Passe sem titulo'}</p>
                     <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
-                      {activePass.status || 'Ativo'}
+                      {translatePassStatus(activePass.status)}
                     </span>
                   </div>
                   <p className="text-sm text-slate-500">
@@ -622,6 +726,17 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
                     <Download className="mr-2 h-4 w-4" />
                     Baixar QR
                   </Button>
+                  {canManagePasses && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() => onDeletePass(activePass)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Excluir
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -666,6 +781,7 @@ const PassInventory = ({ passes, loading, templateDefaults, onAction, onEditPass
 
 const PassEditorPanel = ({
   isEditingPass,
+  readOnly = false,
   formState,
   activeLocationIds,
   isProcessing,
@@ -688,7 +804,7 @@ const PassEditorPanel = ({
         <div className="space-y-4">
           <div>
             <Label>Tipo</Label>
-            <Select value={formState.type} onValueChange={(v) => onFormChange('type', v)}>
+            <Select value={formState.type} onValueChange={(v) => onFormChange('type', v)} disabled={readOnly || isProcessing}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="loyalty">Loyalty</SelectItem>
@@ -701,7 +817,7 @@ const PassEditorPanel = ({
 
           <div>
             <Label>Titulo</Label>
-            <Input value={formState.title} maxLength={16} onChange={(e) => onFormChange('title', e.target.value)} placeholder="Ex: Cartao" />
+            <Input value={formState.title} maxLength={16} onChange={(e) => onFormChange('title', e.target.value)} placeholder="Ex: Cartao" disabled={readOnly || isProcessing} />
             {String(formState.title || '').length >= 16 && (
               <p className="mt-1 text-xs text-amber-600">Limite de caracteres atingido.</p>
             )}
@@ -709,57 +825,64 @@ const PassEditorPanel = ({
 
           <div>
             <Label>Descricao</Label>
-            <Textarea value={formState.description} onChange={(e) => onFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um cafe." />
+            <Textarea value={formState.description} onChange={(e) => onFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um cafe." disabled={readOnly || isProcessing} />
           </div>
         </div>
 
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-2">
-            <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => onFormChange('colors.background', e.target.value)} />
-            <ColorInput label="Rotulo" value={formState.colors.label} onChange={(e) => onFormChange('colors.label', e.target.value)} />
-            <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => onFormChange('colors.text', e.target.value)} />
+            <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => onFormChange('colors.background', e.target.value)} disabled={readOnly || isProcessing} />
+            <ColorInput label="Rotulo" value={formState.colors.label} onChange={(e) => onFormChange('colors.label', e.target.value)} disabled={readOnly || isProcessing} />
+            <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => onFormChange('colors.text', e.target.value)} disabled={readOnly || isProcessing} />
           </div>
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <UploadButtonWithInfo uploadKey="appleLogo" onUpload={onUploadClick} />
-              <UploadButtonWithInfo uploadKey="googleLogo" onUpload={onUploadClick} />
-              <UploadButtonWithInfo uploadKey="appleStrip" onUpload={onUploadClick} />
-              <UploadButtonWithInfo uploadKey="googleHero" onUpload={onUploadClick} />
+          {!readOnly && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <UploadButtonWithInfo uploadKey="appleLogo" onUpload={onUploadClick} />
+                <UploadButtonWithInfo uploadKey="googleLogo" onUpload={onUploadClick} />
+                <UploadButtonWithInfo uploadKey="appleStrip" onUpload={onUploadClick} />
+                <UploadButtonWithInfo uploadKey="googleHero" onUpload={onUploadClick} />
+              </div>
+              <div className="md:max-w-[calc(50%-0.375rem)]">
+                <UploadButtonWithInfo uploadKey="icon" onUpload={onUploadClick} />
+              </div>
             </div>
-            <div className="md:max-w-[calc(50%-0.375rem)]">
-              <UploadButtonWithInfo uploadKey="icon" onUpload={onUploadClick} />
-            </div>
-          </div>
+          )}
 
-          <Button type="button" variant="outline" className="w-full justify-start" onClick={onOpenLocations}>
-            <MapPin className="mr-2 h-4 w-4" />
-            Adicionar localizacao ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
-          </Button>
+          {!readOnly && (
+            <Button type="button" variant="outline" className="w-full justify-start" onClick={onOpenLocations}>
+              <MapPin className="mr-2 h-4 w-4" />
+              Adicionar localizacao ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
+            </Button>
+          )}
 
           <input type="file" ref={fileInputRef} onChange={onFileChange} className="hidden" accept=".png,image/png" />
         </div>
       </div>
     </div>
 
-    <div className="flex flex-wrap justify-center items-center gap-4 py-6">
-      <Button size="lg" onClick={onSave} disabled={isProcessing} variant="outline">
-        {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-        {isProcessing ? 'Salvando...' : 'Salvar alteracoes'}
-      </Button>
-
-      {!isEditingPass && (
-        <Button size="lg" onClick={onGenerateLink} disabled={isProcessing}>
-          {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
-          {isProcessing ? 'Gerando...' : 'Gerar Link Unico'}
+    {!readOnly && (
+      <div className="flex flex-wrap justify-center items-center gap-4 py-6">
+        <Button size="lg" onClick={onSave} disabled={isProcessing} variant="outline">
+          {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          {isProcessing ? 'Salvando...' : 'Salvar alteracoes'}
         </Button>
-      )}
-    </div>
+
+        {!isEditingPass && (
+          <Button size="lg" onClick={onGenerateLink} disabled={isProcessing}>
+            {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
+            {isProcessing ? 'Gerando...' : 'Gerar Link Unico'}
+          </Button>
+        )}
+      </div>
+    )}
   </div>
 );
 
 const WalletConfigTab = ({ projectId, onBack }) => {
   const { toast } = useToast();
+  const { user, role } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [passes, setPasses] = useState([]);
   const [loadingPasses, setLoadingPasses] = useState(false);
@@ -775,15 +898,28 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const [draftLocationIds, setDraftLocationIds] = useState([]);
   const [passLocationsByPassId, setPassLocationsByPassId] = useState({});
   const [uploadingKey, setUploadingKey] = useState(null);
+  const [projectMemberRole, setProjectMemberRole] = useState(null);
+  const [passToDelete, setPassToDelete] = useState(null);
   const fileInputRef = useRef(null);
 
+  const canManagePasses = role === 'superadmin' || role === 'admin' || projectMemberRole === 'owner';
+  const isReadOnly = !canManagePasses;
   const isEditingPass = walletView === 'edit' && Boolean(selectedPass?.id);
   const isCreatingPass = walletView === 'new';
   const isEditorOpen = isEditingPass || isCreatingPass;
   const activeLocationIds = isEditingPass ? selectedPassLocationIds : draftLocationIds;
   const canGoBackToProjects = typeof onBack === 'function';
 
+  const showManagePermissionToast = () => {
+    toast({
+      title: 'Acesso somente leitura',
+      description: 'Funcionários podem apenas visualizar passes. Peça a um gestor para alterar cartões.',
+      variant: 'destructive',
+    });
+  };
+
   const updateLocationSelection = useCallback((ids) => {
+    if (isReadOnly) return;
     const normalized = normalizeLocationIds(ids);
     if (isEditingPass && selectedPass?.id) {
       setSelectedPassLocationIds(normalized);
@@ -791,7 +927,32 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       return;
     }
     setDraftLocationIds(normalized);
-  }, [isEditingPass, selectedPass]);
+  }, [isEditingPass, isReadOnly, selectedPass]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setProjectMemberRole(null);
+
+    if (!projectId || !user?.id) return undefined;
+
+    async function loadProjectMemberRole() {
+      const { data, error } = await supabase
+        .from('project_members')
+        .select('role')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      setProjectMemberRole(error ? null : data?.role || null);
+    }
+
+    loadProjectMemberRole();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, user?.id]);
 
   const fetchPasses = useCallback(async (pId) => {
     if (!pId) return;
@@ -799,11 +960,12 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     try {
       const { data, error } = await supabase
         .from('passes')
-        .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design')
+        .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design, deleted_at')
         .eq('project_id', pId)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      const rows = data || [];
+      const rows = (data || []).filter((row) => !isDeletedPass(row));
       setPasses(rows);
 
       const passIds = rows.map((row) => row.id).filter(Boolean);
@@ -875,6 +1037,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   }, [templateDefaults, selectedPass]);
 
   const handleFormChange = (path, value) => {
+    if (isReadOnly) return;
+
     setFormState((prev) => {
       const keys = path.split('.');
       const temp = JSON.parse(JSON.stringify(prev));
@@ -889,11 +1053,23 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleUploadClick = (key) => {
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     setUploadingKey(key);
     fileInputRef.current?.click();
   };
 
   const handleFileChange = async (event) => {
+    if (!canManagePasses) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploadingKey(null);
+      showManagePermissionToast();
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file || !uploadingKey) return;
     const rule = IMAGE_UPLOAD_RULES[uploadingKey];
@@ -932,6 +1108,19 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
   const handleSelectPass = async (pass) => {
     if (!pass?.id) return;
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+    if (isDeletedPass(pass)) {
+      toast({
+        title: 'Passe indisponível',
+        description: 'Este passe foi excluído e não pode ser editado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setGenerationResult(null);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -942,9 +1131,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       try {
         const { data: passRow, error: passError } = await supabase
           .from('passes')
-          .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design')
+          .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design, deleted_at')
           .eq('id', pass.id)
           .eq('project_id', projectId)
+          .is('deleted_at', null)
           .single();
 
         if (passError) throw passError;
@@ -979,6 +1169,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleCreateNewPass = () => {
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     setSelectedPass(null);
     setWalletView('new');
     setSelectedPassLocationIds([]);
@@ -1000,6 +1195,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleGenerateLink = async () => {
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     setIsProcessing(true);
     try {
       const design = buildDesignPayload(formState);
@@ -1036,6 +1236,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleSaveTemplate = async () => {
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     setIsProcessing(true);
     try {
       const normalizedDefaultsToSave = normalizeWalletDefaults({ ...formState, qr_url: '' });
@@ -1055,6 +1260,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
   const handleUpdatePass = async () => {
     if (!selectedPass?.id) return;
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     const confirmed = window.confirm('Essas mudanças também irão alterar os passes que já estão na carteira dos clientes, deseja confirmar a operação?');
     if (!confirmed) return;
 
@@ -1105,6 +1315,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   };
 
   const handleSave = async () => {
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
     if (isEditingPass) {
       await handleUpdatePass();
       return;
@@ -1141,6 +1356,86 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     window.open(url, '_blank');
   };
 
+  const handleDeletePassRequest = (pass) => {
+    if (!pass?.id) return;
+    if (!canManagePasses) {
+      showManagePermissionToast();
+      return;
+    }
+
+    setPassToDelete(pass);
+  };
+
+  const handleConfirmDeletePass = async () => {
+    if (!passToDelete?.id) return;
+    if (!canManagePasses) {
+      setPassToDelete(null);
+      showManagePermissionToast();
+      return;
+    }
+
+    const deletingPass = passToDelete;
+    setIsProcessing(true);
+    try {
+      await invokeWalletFunction('delete-pass', {
+        project_id: projectId,
+        pass_id: deletingPass.id,
+      });
+
+      toast({
+        title: 'Passe excluído',
+        description: `${deletingPass.title || 'Passe'} foi removido da operação.`,
+      });
+      setPassToDelete(null);
+
+      if (selectedPass?.id === deletingPass.id) {
+        handleBackToPasses();
+      }
+
+      await fetchPasses(projectId);
+    } catch (error) {
+      toast({
+        title: 'Erro ao excluir passe',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const deletePassDialog = (
+    <AlertDialog
+      open={!!passToDelete}
+      onOpenChange={(open) => {
+        if (!open && !isProcessing) setPassToDelete(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Excluir passe?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O passe "{passToDelete?.title || 'sem título'}" será removido da operação. Instalações e histórico permanecem preservados.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isProcessing}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              handleConfirmDeletePass();
+            }}
+            disabled={isProcessing}
+            className="bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-600"
+          >
+            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Excluir
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
   if (!isEditorOpen) {
     return (
       <div className="p-4 md:p-6 lg:p-8">
@@ -1160,12 +1455,15 @@ const WalletConfigTab = ({ projectId, onBack }) => {
           passes={passes}
           loading={loadingPasses}
           templateDefaults={templateDefaults}
+          canManagePasses={canManagePasses}
           onAction={handlePassesListAction}
           onEditPass={handleSelectPass}
           onCreateNewPass={handleCreateNewPass}
+          onDeletePass={handleDeletePassRequest}
         />
 
         <GenerationResultModal isOpen={isModalOpen} setIsOpen={setIsModalOpen} result={generationResult} />
+        {deletePassDialog}
       </div>
     );
   }
@@ -1216,6 +1514,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         >
           <PassEditorPanel
             isEditingPass={isEditingPass}
+            readOnly={isReadOnly}
             formState={formState}
             activeLocationIds={activeLocationIds}
             isProcessing={isProcessing}
@@ -1249,11 +1548,13 @@ const WalletConfigTab = ({ projectId, onBack }) => {
             selectedLocationIds={activeLocationIds}
             onSelectedLocationIdsChange={updateLocationSelection}
             onClose={() => setIsLocationsModalOpen(false)}
+            readOnly={isReadOnly}
           />
         </DialogContent>
       </Dialog>
 
       <GenerationResultModal isOpen={isModalOpen} setIsOpen={setIsModalOpen} result={generationResult} />
+      {deletePassDialog}
     </div>
   );
 };
