@@ -1040,7 +1040,7 @@ function handleConfirmEnqueue() {
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>
-                    Confirmar{" "}
+                        Confirmar{" "}
                     {isScheduledRecurring
                       ? "recorrência semanal"
                       : sendMode === "schedule"
