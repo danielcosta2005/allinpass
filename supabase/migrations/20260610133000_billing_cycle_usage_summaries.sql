@@ -28,24 +28,31 @@ create table if not exists public.billing_cycle_usage_summaries (
   unique (project_id, subscription_id, period_start, period_end),
   check (period_end > period_start)
 );
+
 create index if not exists billing_cycle_usage_summaries_project_period_idx
   on public.billing_cycle_usage_summaries(project_id, period_start desc, period_end desc);
+
 create index if not exists billing_cycle_usage_summaries_subscription_idx
   on public.billing_cycle_usage_summaries(subscription_id, period_start desc);
+
 create index if not exists billing_cycle_usage_summaries_cycle_idx
   on public.billing_cycle_usage_summaries(billing_cycle_id)
   where billing_cycle_id is not null;
+
 drop trigger if exists trg_billing_cycle_usage_summaries_updated_at on public.billing_cycle_usage_summaries;
 create trigger trg_billing_cycle_usage_summaries_updated_at
 before update on public.billing_cycle_usage_summaries
 for each row execute function public.set_updated_at();
+
 alter table public.billing_cycle_usage_summaries enable row level security;
+
 drop policy if exists billing_cycle_usage_summaries_member_select on public.billing_cycle_usage_summaries;
 create policy billing_cycle_usage_summaries_member_select
 on public.billing_cycle_usage_summaries
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
+
 drop policy if exists billing_cycle_usage_summaries_superadmin_write on public.billing_cycle_usage_summaries;
 create policy billing_cycle_usage_summaries_superadmin_write
 on public.billing_cycle_usage_summaries
@@ -53,8 +60,10 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
+
 grant select on table public.billing_cycle_usage_summaries to authenticated;
 grant select, insert, update, delete on table public.billing_cycle_usage_summaries to service_role;
+
 create or replace function public.resolve_billing_usage_event_period(
   p_project_id uuid,
   p_subscription_id uuid,
@@ -147,10 +156,13 @@ begin
   end if;
 end;
 $$;
+
 alter function public.resolve_billing_usage_event_period(uuid, uuid, uuid, timestamptz)
   owner to postgres;
+
 revoke all on function public.resolve_billing_usage_event_period(uuid, uuid, uuid, timestamptz) from public;
 grant execute on function public.resolve_billing_usage_event_period(uuid, uuid, uuid, timestamptz) to service_role;
+
 create or replace function public.trg_prepare_billing_usage_event_cycle()
 returns trigger
 language plpgsql
@@ -187,8 +199,10 @@ begin
   return new;
 end;
 $$;
+
 alter function public.trg_prepare_billing_usage_event_cycle()
   owner to postgres;
+
 create or replace function public.recalculate_billing_cycle_usage_summary(
   p_summary_id uuid
 )
@@ -257,10 +271,13 @@ begin
   where id = p_summary_id;
 end;
 $$;
+
 alter function public.recalculate_billing_cycle_usage_summary(uuid)
   owner to postgres;
+
 revoke all on function public.recalculate_billing_cycle_usage_summary(uuid) from public;
 grant execute on function public.recalculate_billing_cycle_usage_summary(uuid) to service_role;
+
 create or replace function public.apply_billing_cycle_usage_summary_delta(
   p_project_id uuid,
   p_subscription_id uuid,
@@ -388,6 +405,7 @@ begin
   perform public.recalculate_billing_cycle_usage_summary(v_summary_id);
 end;
 $$;
+
 alter function public.apply_billing_cycle_usage_summary_delta(
   uuid,
   uuid,
@@ -399,6 +417,7 @@ alter function public.apply_billing_cycle_usage_summary_delta(
   timestamptz
 )
   owner to postgres;
+
 revoke all on function public.apply_billing_cycle_usage_summary_delta(
   uuid,
   uuid,
@@ -419,6 +438,7 @@ grant execute on function public.apply_billing_cycle_usage_summary_delta(
   boolean,
   timestamptz
 ) to service_role;
+
 create or replace function public.trg_sync_billing_cycle_usage_summary()
 returns trigger
 language plpgsql
@@ -468,18 +488,22 @@ begin
   return new;
 end;
 $$;
+
 alter function public.trg_sync_billing_cycle_usage_summary()
   owner to postgres;
+
 drop trigger if exists trg_prepare_billing_usage_event_cycle on public.billing_usage_events;
 create trigger trg_prepare_billing_usage_event_cycle
 before insert or update of project_id, subscription_id, billing_cycle_id, resource_type, event_type, is_billable, occurred_at
 on public.billing_usage_events
 for each row execute function public.trg_prepare_billing_usage_event_cycle();
+
 drop trigger if exists trg_sync_billing_cycle_usage_summary on public.billing_usage_events;
 create trigger trg_sync_billing_cycle_usage_summary
 after insert or update of project_id, subscription_id, billing_cycle_id, resource_type, event_type, quantity, is_billable, occurred_at or delete
 on public.billing_usage_events
 for each row execute function public.trg_sync_billing_cycle_usage_summary();
+
 insert into public.billing_cycle_usage_summaries (
   project_id,
   subscription_id,
@@ -531,6 +555,7 @@ set
     excluded.last_usage_event_at
   ),
   metadata = public.billing_cycle_usage_summaries.metadata || excluded.metadata;
+
 do $$
 declare
   r record;

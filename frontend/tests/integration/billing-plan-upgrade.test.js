@@ -80,7 +80,7 @@ describe("billing plan changes", () => {
     expect(billingClientSource).toContain("if (targetPlanCode === FREE_PLAN_CODE) return 'unavailable';");
     expect(billingClientSource).toContain(".filter((plan) => plan.changeKind !== 'unavailable')");
 
-    expect(billingHookSource).toContain("getCurrentBillingSubscription");
+    expect(billingHookSource).toContain("getBillingSubscriptionForAccess");
     expect(billingHookSource).toContain("startBillingPlanChange");
     expect(billingHookSource).toContain("PLAN_CHANGES_PUBLIC_ENABLED");
     expect(billingHookSource).toContain("if (!PLAN_CHANGES_PUBLIC_ENABLED) return undefined;");
@@ -141,6 +141,25 @@ describe("billing plan changes", () => {
     expect(migrationSources).toContain("create or replace function public.calculate_billing_cycle_overage");
     expect(migrationSources).toContain("ceil(coalesce(");
     expect(migrationSources).toContain("v_change.prorated_notification_allowance");
+  });
+
+  test("keeps live cycle usage and overage totals in billing cycle summaries", () => {
+    const summaryMigration = readIfExists("supabase/migrations/20260610133000_billing_cycle_usage_summaries.sql");
+
+    expect(summaryMigration).toContain("create table if not exists public.billing_cycle_usage_summaries");
+    expect(summaryMigration).toContain("included_pass_installs integer not null default 0");
+    expect(summaryMigration).toContain("included_notification_sends integer not null default 0");
+    expect(summaryMigration).toContain("overage_pass_install_cents integer not null default 0");
+    expect(summaryMigration).toContain("overage_notification_sent_cents integer not null default 0");
+    expect(summaryMigration).toContain("pass_install_overage_quantity integer not null default 0");
+    expect(summaryMigration).toContain("notification_sent_overage_quantity integer not null default 0");
+    expect(summaryMigration).toContain("pass_install_overage_cents integer not null default 0");
+    expect(summaryMigration).toContain("notification_sent_overage_cents integer not null default 0");
+    expect(summaryMigration).toContain("total_overage_cents integer not null default 0");
+    expect(summaryMigration).toContain("greatest(v_summary.pass_install_quantity - v_install_allowance, 0)");
+    expect(summaryMigration).toContain("greatest(v_summary.notification_sent_quantity - v_notification_allowance, 0)");
+    expect(summaryMigration).toContain("public.recalculate_billing_cycle_usage_summary");
+    expect(summaryMigration).toContain("perform public.recalculate_billing_cycle_usage_summary");
   });
 
   test("schedules downgrades for the next cycle instead of applying them immediately", () => {

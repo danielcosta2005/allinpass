@@ -359,5 +359,6 @@ begin
   );
 end;
 $$;
+
 revoke all on function public.apply_billing_plan_change(uuid, uuid, text, text, text) from public;
 grant execute on function public.apply_billing_plan_change(uuid, uuid, text, text, text) to service_role;

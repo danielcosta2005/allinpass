@@ -425,6 +425,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/asaas-webhook/index.ts"
 
+[functions.universal-link]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/universal-link/index.ts"
+
 [functions.teste]
 enabled = true
 verify_jwt = true

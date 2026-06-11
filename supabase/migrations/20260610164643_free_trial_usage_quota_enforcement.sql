@@ -96,10 +96,13 @@ begin
   end if;
 end;
 $$;
+
 alter function public.assert_free_trial_usage_quota_available(uuid, text, integer, timestamptz)
   owner to postgres;
+
 revoke all on function public.assert_free_trial_usage_quota_available(uuid, text, integer, timestamptz) from public;
 grant execute on function public.assert_free_trial_usage_quota_available(uuid, text, integer, timestamptz) to service_role;
+
 create or replace function public.trg_assert_user_pass_free_trial_quota()
 returns trigger
 language plpgsql
@@ -147,8 +150,10 @@ begin
   return new;
 end;
 $$;
+
 alter function public.trg_assert_user_pass_free_trial_quota()
   owner to postgres;
+
 drop trigger if exists user_passes_free_trial_quota_before_install on public.user_passes;
 create trigger user_passes_free_trial_quota_before_install
 before insert or update of install_status

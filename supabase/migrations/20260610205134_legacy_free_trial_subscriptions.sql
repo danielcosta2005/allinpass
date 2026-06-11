@@ -11,6 +11,7 @@ begin
     raise exception 'Active free_trial billing plan not found for legacy_free_trial_backfill.';
   end if;
 end $$;
+
 with runtime as (
   select now() as started_at
 ),

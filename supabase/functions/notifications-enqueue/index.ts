@@ -2,6 +2,16 @@
 // branch
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  getProjectUsageLimitExceededPayload,
+  getProjectUsageQuotaState,
+  isProjectBillingInactiveError,
+  isProjectUsageLimitExceededError,
+  PROJECT_USAGE_LIMIT_EXCEEDED,
+  ProjectUsageLimitExceededError,
+} from "../_shared/billingAccess.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -398,6 +408,8 @@ serve(async (req) => {
     }
 
     // 📡 4) Canais
+    await assertProjectBillingActive(admin, projectId);
+
     const channels = {
       apple: body.channels?.apple ?? true,
       google: body.channels?.google ?? true,
@@ -530,8 +542,8 @@ serve(async (req) => {
     // ⚙️ 8) Criar jobs
     let skipped_removed = 0;
     let skipped_no_platform = 0;
-    const skipped_limit = 0;
-    const limit_reached = false;
+    let skipped_limit = 0;
+    let limit_reached = false;
 
     const nowIso = new Date().toISOString();
     const scheduleIso = effectiveScheduledFor ?? null;
@@ -637,11 +649,34 @@ serve(async (req) => {
       );
     }
 
+    const quotaState = await getProjectUsageQuotaState(admin, projectId, "notification_sent", jobs.length);
+    let availableJobQuota = jobs.length;
+    let jobsToInsert = jobs;
+
+    if (quotaState.isFreeTrial && quotaState.remaining !== null) {
+      availableJobQuota = Math.max(0, quotaState.remaining);
+
+      if (availableJobQuota <= 0) {
+        console.warn(PROJECT_USAGE_LIMIT_EXCEEDED, {
+          projectId,
+          resourceType: "notification_sent",
+        });
+        const quotaError = new ProjectUsageLimitExceededError("notification_sent", quotaState);
+        return jsonResponse(402, getProjectUsageLimitExceededPayload(quotaError), origin);
+      }
+
+      if (jobs.length > availableJobQuota) {
+        skipped_limit = jobs.length - availableJobQuota;
+        limit_reached = true;
+        jobsToInsert = jobs.slice(0, availableJobQuota);
+      }
+    }
+
     const BATCH = 500;
     let created = 0;
 
-    for (let i = 0; i < jobs.length; i += BATCH) {
-      const chunk = jobs.slice(i, i + BATCH);
+    for (let i = 0; i < jobsToInsert.length; i += BATCH) {
+      const chunk = jobsToInsert.slice(i, i + BATCH);
       const { error: jobsErr } = await admin.from("notification_jobs").insert(chunk);
       if (jobsErr) throw jobsErr;
       created += chunk.length;
@@ -663,6 +698,14 @@ serve(async (req) => {
       origin
     );
   } catch (err) {
+    if (isProjectBillingInactiveError(err)) {
+      return jsonResponse(402, getProjectBillingInactivePayload(err), origin);
+    }
+
+    if (isProjectUsageLimitExceededError(err)) {
+      return jsonResponse(402, getProjectUsageLimitExceededPayload(err), origin);
+    }
+
     return jsonResponse(
       500,
       { error: (err as any)?.message || "Erro inesperado" },
