@@ -31,6 +31,43 @@ function randSuffix(len = 6) {
   return out;
 }
 
+class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function getBearerToken(req: Request) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+async function getProjectCreator(supabaseAdmin: any, req: Request) {
+  const token = getBearerToken(req);
+  if (!token) throw new HttpError(401, "Missing Authorization header");
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw new HttpError(401, "Sessão inválida.");
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  if (!["superadmin", "admin"].includes(profile?.role)) {
+    throw new HttpError(403, "Apenas admins e superadmins podem criar projetos.");
+  }
+
+  return { user, profile };
+}
+
 Deno.serve(async (req) => {
   const origin = req.headers.get("Origin");
 
@@ -41,6 +78,8 @@ Deno.serve(async (req) => {
 
   try {
     const { name, description, logo_url } = await req.json().catch(() => ({}));
+    const supabaseAdmin = getSupabaseAdminClient();
+    const caller = await getProjectCreator(supabaseAdmin, req);
 
     if (!name || String(name).trim().length === 0) {
       return new Response(JSON.stringify({ error: "O nome do projeto é obrigatório." }), {
@@ -48,8 +87,6 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders(origin), "Content-Type": "application/json" },
       });
     }
-
-    const supabaseAdmin = getSupabaseAdminClient();
 
     // ✅ gera slug
     const baseSlug = slugify(String(name));
@@ -90,8 +127,9 @@ Deno.serve(async (req) => {
         description: typeof description === "string" ? description.trim() : null,
         logo_url: typeof logo_url === "string" ? logo_url.trim() : null,
         auth_mode: "form_only",
+        created_by: caller.user.id,
       })
-      .select("id, name, slug, description, logo_url, auth_mode, created_at")
+      .select("id, name, slug, description, logo_url, auth_mode, created_by, created_at")
       .single();
 
     if (projectError) throw projectError;
@@ -119,7 +157,7 @@ Deno.serve(async (req) => {
     console.error("Erro ao criar projeto:", error);
     return new Response(
       JSON.stringify({ error: error?.message || "Ocorreu um erro interno." }),
-      { status: 500, headers: { ...corsHeaders(origin), "Content-Type": "application/json" } },
+      { status: error instanceof HttpError ? error.status : 500, headers: { ...corsHeaders(origin), "Content-Type": "application/json" } },
     );
   }
 });
