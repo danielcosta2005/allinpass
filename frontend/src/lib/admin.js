@@ -3,7 +3,7 @@ import { invokeAdmin } from './invokeAdmin';
 import { supabase } from '@/lib/supabaseClient';
 
 export async function adminCreateMember({ projectId, email, password, role }) {
-    const { data, error } = await supabase.functions.invoke('admin-create-member-teste', {
+    const { data, error } = await supabase.functions.invoke('admin-create-member', {
         body: { projectId, email, password, role },
     });
 

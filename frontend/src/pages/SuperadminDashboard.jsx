@@ -14,10 +14,12 @@ import AdminTab from '@/components/superadmin/AdminTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import {
+  STAFF_MANAGEABLE_MEMBER_ROLES,
   canAccessAdminPanel,
   canDeleteProject,
   canGeneratePass,
   canManageProject as canManageProjectByRole,
+  canManageStaffMembers,
   canSeeSuperadminTabs,
   getDefaultAdminTab,
 } from '@/lib/adminPermissions';
@@ -28,6 +30,7 @@ const SuperadminDashboard = () => {
   const [signingOut, setSigningOut] = useState(false);
   const isSuperadmin = canSeeSuperadminTabs(role);
   const canAccessKpiMembersAndCustomers = canAccessAdminPanel(role);
+  const canManageMembers = canManageStaffMembers({ role });
   const defaultTab = getDefaultAdminTab(role);
 
   const [selectedProject, setSelectedProject] = useState(() => {
@@ -279,7 +282,15 @@ const SuperadminDashboard = () => {
                     )}
                     {canAccessKpiMembersAndCustomers && (
                       <TabsContent value="members" className="mt-0">
-                        {selectedProject && <MembersTab projectId={selectedProject.id} />}
+                        {selectedProject && (
+                          <MembersTab
+                            projectId={selectedProject.id}
+                            canCreateMembers={canManageMembers}
+                            canEditMembers={canManageMembers}
+                            canRemoveMembers={canManageMembers}
+                            manageableRoles={STAFF_MANAGEABLE_MEMBER_ROLES}
+                          />
+                        )}
                       </TabsContent>
                     )}
                     {canAccessKpiMembersAndCustomers && (
