@@ -14,8 +14,8 @@ function TrialExpiredBillingState({
       <p className="mt-5 text-xs font-bold uppercase tracking-wide text-amber-700">Trial encerrado</p>
       <h2 className="mt-2 text-3xl font-bold text-slate-950">Acesso operacional pausado</h2>
       <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
-        Seu Free Trial chegou ao fim. Os dados do projeto foram preservados, mas as acoes operacionais ficam
-        bloqueadas ate que o acesso seja reativado.
+        Seu Free Trial chegou ao fim. Os dados do projeto foram preservados, mas as ações operacionais ficam
+        bloqueadas até que o acesso seja reativado.
       </p>
 
       {billingError ? (
@@ -33,7 +33,7 @@ function TrialExpiredBillingState({
           </div>
         ) : (
           <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
-            Fale com o suporte para avaliar a reativacao do acesso.
+            Fale com o suporte para avaliar a reativação do acesso.
           </div>
         )}
       </div>
