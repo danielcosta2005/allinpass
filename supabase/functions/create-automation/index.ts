@@ -7,7 +7,7 @@ import {
 } from "../_shared/billingAccess.ts";
 // branch
 
-type AutomationType = "points_wallet" | "expiring_soon" | "days_without_visit";
+type AutomationType = "expiring_soon" | "days_without_visit";
 type AutomationStatus = "on" | "off";
 
 type CreateAutomationBody = {
@@ -34,7 +34,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function isValidType(type: string): type is AutomationType {
-  return ["points_wallet", "expiring_soon", "days_without_visit"].includes(type);
+  return ["expiring_soon", "days_without_visit"].includes(type);
 }
 
 function isValidStatus(status: string): status is AutomationStatus {
