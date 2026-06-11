@@ -27,7 +27,7 @@ import { listMembers } from '@/lib/api';
 import { adminCreateMember, adminUpdateMember, adminRemoveMember } from '@/lib/admin';
 
 const memberRoleOptions = [
-  { value: 'owner', label: 'Owner' },
+  { value: 'owner', label: 'Gestor' },
   { value: 'staff', label: 'Funcionário' },
 ];
 
