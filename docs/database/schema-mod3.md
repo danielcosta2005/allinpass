@@ -159,6 +159,23 @@ Colunas principais:
 - cobranca: `quantity`, `unit_amount_cents`, `is_billable`, `occurred_at`
 - conciliacao: `billing_cycle_id`, `invoice_item_id`
 
+### `public.billing_cycle_usage_summaries`
+Resumo operacional de consumo por ciclo/periodo.
+
+Colunas principais:
+- vinculo: `project_id`, `subscription_id`, `billing_cycle_id`
+- janela: `period_start`, `period_end`
+- contadores: `pass_install_quantity`, `notification_sent_quantity`
+- franquia/preco efetivos: `included_pass_installs`, `included_notification_sends`, `overage_pass_install_cents`, `overage_notification_sent_cents`
+- excedente vivo: `pass_install_overage_quantity`, `notification_sent_overage_quantity`, `pass_install_overage_cents`, `notification_sent_overage_cents`, `total_overage_cents`
+- auditoria leve: `last_usage_event_at`, `metadata`
+
+Uso esperado:
+- `billing_usage_events` continua sendo o ledger auditavel e fonte da verdade.
+- `billing_cycle_usage_summaries` evita somas repetidas para dashboard, limite do ciclo e pre-fechamento.
+- os campos de excedente sao recalculados a partir do uso agregado e da franquia/preco efetivos do ciclo.
+- `billing_invoices` e `billing_invoice_items` continuam sendo snapshot financeiro gerado no fechamento, nao contador vivo.
+
 ## 6) Retroativo e creditos
 
 ### `public.billing_reprocessing_batches`
@@ -282,6 +299,22 @@ Garantia de idempotencia (sem dupla contagem):
 Observacao de consolidacao:
 - o trigger legado `trg_passes_log_billing_usage` (em `public.passes`) foi removido
 - o modelo atual mede consumo por instalacao (`user_passes`) e envio (`notification_jobs`)
+
+### Triggers de resumo por ciclo em `billing_usage_events`
+- `trg_prepare_billing_usage_event_cycle`: antes de inserir/alterar campos de apuracao, tenta preencher `subscription_id` e `billing_cycle_id` usando `billing_cycles` ou a janela atual de `billing_subscriptions`.
+- `trg_sync_billing_cycle_usage_summary`: depois de inserir/alterar/remover eventos de uso, aplica o delta em `billing_cycle_usage_summaries`.
+
+Regras de contagem:
+- so considera `is_billable = true`
+- so considera `event_type = 'issue'`
+- so considera `resource_type in ('pass_install', 'notification_sent')`
+- se nao houver ciclo/assinatura resolvivel, o evento permanece no ledger mas nao entra no resumo
+
+Garantia operacional:
+- a chave unica `(project_id, subscription_id, period_start, period_end)` evita duplicidade de resumo
+- updates/deletes raros aplicam delta reverso para manter o agregado consistente
+- `public.recalculate_billing_cycle_usage_summary(summary_id)` usa `get_billing_cycle_entitlements` para atualizar franquia/preco efetivos e excedentes sem re-somar `billing_usage_events`
+- um backfill na migration recalcula resumos para eventos ja existentes
 
 ## D) Enriquecimento de mudanca de plano, franquia e excedente
 

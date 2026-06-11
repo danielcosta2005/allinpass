@@ -1,5 +1,10 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  assertProjectBillingActive,
+  getProjectBillingInactivePayload,
+  isProjectBillingInactiveError,
+} from "../_shared/billingAccess.ts";
 
 function corsHeaders(origin?: string) {
   return {
@@ -221,6 +226,8 @@ serve(async (req) => {
       }, origin);
     }
 
+    await assertProjectBillingActive(admin, projectId);
+
     const { data: redeemData, error: redeemErr } = await admin.rpc(
       "redeem_reward_points",
       {
@@ -265,6 +272,10 @@ serve(async (req) => {
         : null,
     }, origin);
   } catch (err) {
+    if (isProjectBillingInactiveError(err)) {
+      return jsonResponse(402, getProjectBillingInactivePayload(err), origin);
+    }
+
     return jsonResponse(
       500,
       {

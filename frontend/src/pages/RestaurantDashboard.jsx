@@ -12,6 +12,7 @@ import NotificationsDashboard from '@/components/restaurant/NotificationsDashboa
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
 import NoProjectSignupState from '@/components/restaurant/dashboard/NoProjectSignupState';
+import TrialExpiredBillingState from '@/components/restaurant/dashboard/TrialExpiredBillingState';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -27,9 +28,12 @@ const RestaurantDashboard = () => {
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
   const {
+    isTrialExpired,
+    billingAccessState,
     billingLoading,
+    billingError,
     billingPlanName,
-  } = useRestaurantBilling({ projectId, toast });
+  } = useRestaurantBilling({ projectId, toast, user });
 
   const {
     signupStatus,
@@ -52,6 +56,8 @@ const RestaurantDashboard = () => {
       sessionStorage.setItem('restaurant_active_tab', value);
     } catch (_) {}
   };
+
+  const billingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
 
   useEffect(() => {
     if (!ALLOWED_TABS.has(activeTab)) {
@@ -107,6 +113,11 @@ const RestaurantDashboard = () => {
               status={signupStatus}
               statusError={signupStatusError}
               statusLoading={signupStatusLoading}
+            />
+          ) : billingBlocked ? (
+            <TrialExpiredBillingState
+              billingError={billingError}
+              billingLoading={billingLoading}
             />
           ) : (
             <motion.div

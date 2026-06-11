@@ -6,6 +6,7 @@ type SupabaseAdmin = any;
 const FREE_PLAN_CODE = "free_trial";
 const DEFAULT_CHECKOUT_EXPIRATION_MINUTES = 60;
 const ACTIVE_SUBSCRIPTION_STATUSES = ["trialing", "active", "past_due", "paused"];
+const EXPIRABLE_SUBSCRIPTION_STATUSES = [...ACTIVE_SUBSCRIPTION_STATUSES, "expired"];
 
 type BillingPlan = {
   id: string;
@@ -352,7 +353,7 @@ async function getCurrentSubscription(
       ].join(", "),
     )
     .eq("project_id", projectId)
-    .in("status", ACTIVE_SUBSCRIPTION_STATUSES)
+    .in("status", EXPIRABLE_SUBSCRIPTION_STATUSES)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -361,7 +362,7 @@ async function getCurrentSubscription(
   if (!data) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_SUBSCRIPTION_NOT_FOUND",
-      "Assinatura ativa nao encontrada para este projeto.",
+      "Assinatura nao encontrada para este projeto.",
       404,
     );
   }
@@ -950,6 +951,22 @@ Deno.serve(async (req) => {
       getTargetPlan(supabaseAdmin, planCode),
     ]);
 
+    const currentPriceCents = Number(subscription.base_price_cents || subscription.billing_plans?.base_price_cents || 0);
+    const targetPriceCents = Number(targetPlan.base_price_cents || 0);
+    const currentPlanCode = String(subscription.billing_plans?.code || "").trim().toLowerCase();
+    const allowExpiredTrial =
+      subscription.status === "expired"
+      && currentPlanCode === FREE_PLAN_CODE
+      && targetPriceCents > 0;
+
+    if (subscription.status === "expired" && !allowExpiredTrial) {
+      throw new BillingPlanChangeError(
+        "BILLING_PLAN_CHANGE_EXPIRED_SUBSCRIPTION_UNSUPPORTED",
+        "Esta assinatura expirada so pode ser reativada escolhendo um plano pago.",
+        409,
+      );
+    }
+
     if (subscription.plan_id === targetPlan.id) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_ALREADY_ON_PLAN",
@@ -958,8 +975,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    const currentPriceCents = Number(subscription.base_price_cents || subscription.billing_plans?.base_price_cents || 0);
-    const targetPriceCents = Number(targetPlan.base_price_cents || 0);
     const changeType = getPlanChangeType(subscription, targetPlan);
 
     const reusableSession = await findReusableSession(supabaseAdmin, subscription, targetPlan);
