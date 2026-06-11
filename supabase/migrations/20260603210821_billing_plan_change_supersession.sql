@@ -2,11 +2,9 @@
 
 alter table public.billing_plan_change_sessions
   drop constraint if exists billing_plan_change_sessions_status_check;
-
 alter table public.billing_plan_change_sessions
   add constraint billing_plan_change_sessions_status_check
   check (status in ('pending', 'created', 'paid', 'applied', 'canceled', 'expired', 'failed', 'superseded'));
-
 with ranked as (
   select
     id,
@@ -28,12 +26,10 @@ set
 from ranked
 where ranked.id = bpcs.id
   and ranked.rn > 1;
-
 create unique index if not exists billing_plan_change_sessions_one_active_next_cycle_idx
   on public.billing_plan_change_sessions (subscription_id)
   where effective_mode = 'next_cycle'
     and status in ('pending', 'created', 'paid');
-
 create or replace function public.supersede_pending_next_cycle_plan_changes(
   p_subscription_id uuid,
   p_superseded_by_session_id uuid default null,
@@ -64,10 +60,8 @@ begin
   return v_superseded_count;
 end;
 $$;
-
 revoke all on function public.supersede_pending_next_cycle_plan_changes(uuid, uuid, text) from public;
 grant execute on function public.supersede_pending_next_cycle_plan_changes(uuid, uuid, text) to service_role;
-
 create or replace function public.apply_billing_plan_change(
   p_session_id uuid,
   p_actor_user_id uuid default null,
@@ -373,10 +367,8 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.apply_billing_plan_change(uuid, uuid, text, text, text) from public;
 grant execute on function public.apply_billing_plan_change(uuid, uuid, text, text, text) to service_role;
-
 create or replace function public.apply_due_billing_plan_changes()
 returns integer
 language plpgsql
@@ -425,6 +417,5 @@ begin
   return v_applied_count;
 end;
 $$;
-
 revoke all on function public.apply_due_billing_plan_changes() from public;
 grant execute on function public.apply_due_billing_plan_changes() to service_role;

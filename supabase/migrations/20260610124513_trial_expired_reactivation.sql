@@ -1,88 +1,3 @@
--- Suporte ao fluxo de mudanca de plano dentro do painel do estabelecimento.
---
--- A assinatura atual continua em public.billing_subscriptions e o historico
--- comercial continua em public.billing_subscription_changes. Esta tabela guarda
--- apenas a intencao operacional da mudanca, incluindo checkout/assinatura Asaas.
-
-create table if not exists public.billing_plan_change_sessions (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.projects(id) on delete cascade,
-  subscription_id uuid not null,
-  previous_plan_id uuid not null references public.billing_plans(id) on delete restrict,
-  new_plan_id uuid not null references public.billing_plans(id) on delete restrict,
-  requested_by uuid references public.profiles(id) on delete set null,
-  change_type text not null default 'upgrade'
-    check (change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change')),
-  effective_mode text not null default 'immediate'
-    check (effective_mode in ('immediate', 'next_cycle')),
-  provider text not null default 'asaas'
-    check (provider in ('asaas')),
-  provider_checkout_id text,
-  provider_subscription_id text,
-  provider_customer_id text,
-  provider_payment_id text,
-  external_reference text not null,
-  status text not null default 'pending'
-    check (status in ('pending', 'created', 'paid', 'applied', 'canceled', 'expired', 'failed')),
-  amount_cents integer not null check (amount_cents >= 0),
-  currency text not null default 'BRL'
-    check (char_length(currency) = 3 and currency = upper(currency)),
-  checkout_url text,
-  success_url text,
-  cancel_url text,
-  expired_url text,
-  paid_at timestamptz,
-  expires_at timestamptz,
-  applied_at timestamptz,
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint billing_plan_change_sessions_subscription_project_fk
-    foreign key (subscription_id, project_id)
-    references public.billing_subscriptions(id, project_id)
-    on delete cascade,
-  constraint billing_plan_change_sessions_paid_status_check
-    check (
-      (status in ('paid', 'applied') and paid_at is not null)
-      or status not in ('paid', 'applied')
-    )
-);
-alter table public.billing_plan_change_sessions
-  drop constraint if exists billing_plan_change_sessions_change_type_check;
-alter table public.billing_plan_change_sessions
-  add constraint billing_plan_change_sessions_change_type_check
-  check (change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change'));
-create unique index if not exists billing_plan_change_sessions_external_reference_uidx
-  on public.billing_plan_change_sessions (external_reference);
-create unique index if not exists billing_plan_change_sessions_provider_checkout_uidx
-  on public.billing_plan_change_sessions (provider, provider_checkout_id)
-  where provider_checkout_id is not null;
-create index if not exists billing_plan_change_sessions_project_status_idx
-  on public.billing_plan_change_sessions (project_id, status, created_at desc);
-create index if not exists billing_plan_change_sessions_subscription_idx
-  on public.billing_plan_change_sessions (subscription_id, created_at desc);
-create index if not exists billing_plan_change_sessions_requested_by_idx
-  on public.billing_plan_change_sessions (requested_by, created_at desc)
-  where requested_by is not null;
-drop trigger if exists trg_billing_plan_change_sessions_updated_at
-  on public.billing_plan_change_sessions;
-create trigger trg_billing_plan_change_sessions_updated_at
-before update on public.billing_plan_change_sessions
-for each row execute function public.set_updated_at();
-alter table public.billing_plan_change_sessions enable row level security;
-revoke all on table public.billing_plan_change_sessions from anon;
-revoke all on table public.billing_plan_change_sessions from authenticated;
-grant select, insert, update on table public.billing_plan_change_sessions to service_role;
--- Billing sensivel deve ser mutado por Edge Functions/RPCs com validacao
--- explicita. Membros seguem podendo ler as tabelas pelas policies existentes.
-drop policy if exists billing_subscriptions_member_insert on public.billing_subscriptions;
-drop policy if exists billing_subscriptions_member_update on public.billing_subscriptions;
-drop policy if exists billing_subscription_changes_member_insert on public.billing_subscription_changes;
-alter table public.billing_subscription_changes
-  drop constraint if exists billing_subscription_changes_change_type_check;
-alter table public.billing_subscription_changes
-  add constraint billing_subscription_changes_change_type_check
-  check (change_type in ('upgrade', 'downgrade', 'renewal', 'cancellation', 'reactivation', 'trial_conversion', 'plan_change'));
 create or replace function public.apply_billing_plan_change(
   p_session_id uuid,
   p_actor_user_id uuid default null,
@@ -100,6 +15,12 @@ declare
   v_subscription public.billing_subscriptions%rowtype;
   v_new_plan public.billing_plans%rowtype;
   v_change_id uuid;
+  v_requested_effective_mode text;
+  v_applied_effective_mode text;
+  v_allowance_proration_mode text;
+  v_effective_at timestamptz;
+  v_previous_plan_code text;
+  v_is_expired_trial_conversion boolean := false;
 begin
   select *
     into v_session
@@ -115,6 +36,20 @@ begin
     return jsonb_build_object(
       'success', true,
       'already_applied', true,
+      'scheduled', false,
+      'superseded', false,
+      'plan_change_session_id', v_session.id,
+      'subscription_id', v_session.subscription_id,
+      'new_plan_id', v_session.new_plan_id
+    );
+  end if;
+
+  if v_session.status = 'superseded' then
+    return jsonb_build_object(
+      'success', true,
+      'already_applied', false,
+      'scheduled', false,
+      'superseded', true,
       'plan_change_session_id', v_session.id,
       'subscription_id', v_session.subscription_id,
       'new_plan_id', v_session.new_plan_id
@@ -130,11 +65,53 @@ begin
   from public.billing_subscriptions
   where id = v_session.subscription_id
     and project_id = v_session.project_id
-    and status in ('trialing', 'active', 'past_due', 'paused')
+    and status in ('trialing', 'active', 'past_due', 'paused', 'expired')
   for update;
 
   if not found then
-    raise exception 'Active subscription for plan change session % not found', p_session_id using errcode = 'P0002';
+    raise exception 'Eligible subscription for plan change session % not found', p_session_id using errcode = 'P0002';
+  end if;
+
+  if v_subscription.plan_id <> v_session.previous_plan_id then
+    update public.billing_plan_change_sessions
+    set
+      status = 'superseded',
+      metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+        'superseded_at', now(),
+        'superseded_reason', 'stale_plan_change_session',
+        'current_plan_id', v_subscription.plan_id,
+        'expected_previous_plan_id', v_session.previous_plan_id
+      )
+    where id = v_session.id;
+
+    return jsonb_build_object(
+      'success', true,
+      'already_applied', false,
+      'scheduled', false,
+      'superseded', true,
+      'reason', 'stale_plan_change_session',
+      'plan_change_session_id', v_session.id,
+      'subscription_id', v_subscription.id,
+      'new_plan_id', v_session.new_plan_id,
+      'current_plan_id', v_subscription.plan_id,
+      'expected_previous_plan_id', v_session.previous_plan_id
+    );
+  end if;
+
+  if v_session.effective_mode = 'next_cycle'
+     and v_subscription.current_period_end is not null
+     and v_subscription.current_period_end > now() then
+    return jsonb_build_object(
+      'success', true,
+      'scheduled', true,
+      'superseded', false,
+      'already_applied', false,
+      'plan_change_session_id', v_session.id,
+      'subscription_id', v_subscription.id,
+      'new_plan_id', v_session.new_plan_id,
+      'effective_mode', v_session.effective_mode,
+      'current_period_end', v_subscription.current_period_end
+    );
   end if;
 
   select *
@@ -147,6 +124,38 @@ begin
     raise exception 'Target billing plan % not found or inactive', v_session.new_plan_id using errcode = 'P0002';
   end if;
 
+  select code
+    into v_previous_plan_code
+  from public.billing_plans
+  where id = v_session.previous_plan_id;
+
+  v_is_expired_trial_conversion :=
+    v_subscription.status = 'expired'
+    and v_session.change_type = 'trial_conversion'
+    and v_previous_plan_code = 'free_trial'
+    and v_new_plan.base_price_cents > 0;
+
+  if v_subscription.status = 'expired' and not v_is_expired_trial_conversion then
+    raise exception 'Expired subscription % cannot be applied by this plan change session', v_subscription.id using errcode = '23514';
+  end if;
+
+  v_requested_effective_mode := v_session.effective_mode;
+  v_applied_effective_mode := case
+    when v_session.effective_mode = 'next_cycle' then 'immediate'
+    else v_session.effective_mode
+  end;
+  v_allowance_proration_mode := case
+    when v_applied_effective_mode = 'immediate'
+      and v_session.change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change')
+    then 'full_new_plan'
+    else 'prorated_daily'
+  end;
+  v_effective_at := case
+    when v_session.effective_mode = 'next_cycle'
+    then coalesce(v_subscription.current_period_end, now())
+    else now()
+  end;
+
   insert into public.billing_subscription_changes (
     project_id,
     subscription_id,
@@ -158,6 +167,7 @@ begin
     effective_at,
     requested_by,
     effective_mode,
+    allowance_proration_mode,
     metadata
   )
   values (
@@ -168,15 +178,18 @@ begin
     v_session.change_type,
     'manual',
     0,
-    now(),
+    v_effective_at,
     coalesce(p_actor_user_id, v_session.requested_by),
-    v_session.effective_mode,
+    v_applied_effective_mode,
+    v_allowance_proration_mode,
     jsonb_build_object(
       'origin', 'billing_plan_change_session',
       'plan_change_session_id', v_session.id,
       'provider', v_session.provider,
       'provider_checkout_id', v_session.provider_checkout_id,
-      'provider_subscription_id', coalesce(p_provider_subscription_id, v_session.provider_subscription_id)
+      'provider_subscription_id', coalesce(p_provider_subscription_id, v_session.provider_subscription_id),
+      'requested_effective_mode', v_requested_effective_mode,
+      'reactivated_expired_trial', v_is_expired_trial_conversion
     )
   )
   returning id into v_change_id;
@@ -187,6 +200,10 @@ begin
     status = 'active',
     trial_started_at = null,
     trial_ends_at = null,
+    ended_at = null,
+    canceled_at = null,
+    current_period_start = case when v_is_expired_trial_conversion then v_effective_at else current_period_start end,
+    current_period_end = case when v_is_expired_trial_conversion then v_effective_at + interval '1 month' else current_period_end end,
     gateway_provider = case
       when v_new_plan.base_price_cents > 0
         or nullif(p_provider_subscription_id, '') is not null
@@ -205,10 +222,12 @@ begin
     overage_pass_install_cents = coalesce(v_new_plan.overage_pass_install_cents, 0),
     overage_notification_sent_cents = coalesce(v_new_plan.overage_notification_sent_cents, 0),
     currency = 'BRL',
-    metadata = metadata || jsonb_build_object(
+    metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
       'plan_code', v_new_plan.code,
       'last_plan_change_id', v_change_id,
-      'last_plan_change_session_id', v_session.id
+      'last_plan_change_session_id', v_session.id,
+      'last_requested_effective_mode', v_requested_effective_mode,
+      'reactivated_expired_trial_at', case when v_is_expired_trial_conversion then v_effective_at else null end
     )
   where id = v_subscription.id;
 
@@ -241,7 +260,10 @@ begin
     coalesce(v_new_plan.included_notification_sends, 0),
     0,
     0,
-    coalesce(v_subscription.current_period_end, now() + interval '1 month')
+    case
+      when v_is_expired_trial_conversion then v_effective_at + interval '1 month'
+      else coalesce(v_subscription.current_period_end, now() + interval '1 month')
+    end
   )
   on conflict (project_id) do update
   set
@@ -251,6 +273,34 @@ begin
       excluded.notifications_exp
     );
 
+  if v_is_expired_trial_conversion then
+    insert into public.billing_cycles (
+      project_id,
+      subscription_id,
+      cycle_type,
+      frequency,
+      period_start,
+      period_end,
+      status,
+      metadata
+    )
+    values (
+      v_session.project_id,
+      v_subscription.id,
+      'subscription',
+      'monthly',
+      v_effective_at,
+      v_effective_at + interval '1 month',
+      'open',
+      jsonb_build_object(
+        'origin', 'expired_trial_reactivation',
+        'plan_change_session_id', v_session.id,
+        'billing_subscription_change_id', v_change_id
+      )
+    )
+    on conflict (project_id, cycle_type, period_start, period_end) do nothing;
+  end if;
+
   update public.billing_plan_change_sessions
   set
     status = 'applied',
@@ -258,8 +308,14 @@ begin
     provider_subscription_id = coalesce(nullif(p_provider_subscription_id, ''), provider_subscription_id),
     provider_customer_id = coalesce(nullif(p_provider_customer_id, ''), provider_customer_id),
     provider_payment_id = coalesce(nullif(p_provider_payment_id, ''), provider_payment_id),
-    metadata = metadata || jsonb_build_object('billing_subscription_change_id', v_change_id)
+    metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('billing_subscription_change_id', v_change_id)
   where id = v_session.id;
+
+  perform public.supersede_pending_next_cycle_plan_changes(
+    v_session.subscription_id,
+    v_session.id,
+    'superseded_by_applied_plan_change'
+  );
 
   insert into public.project_billing_audit_logs (
     project_id,
@@ -280,19 +336,26 @@ begin
       'previous_plan_id', v_session.previous_plan_id,
       'new_plan_id', v_session.new_plan_id,
       'billing_subscription_change_id', v_change_id,
-      'plan_change_session_id', v_session.id
+      'plan_change_session_id', v_session.id,
+      'requested_effective_mode', v_requested_effective_mode,
+      'reactivated_expired_trial', v_is_expired_trial_conversion
     )
   );
 
   return jsonb_build_object(
     'success', true,
+    'scheduled', false,
+    'superseded', false,
     'already_applied', false,
     'plan_change_session_id', v_session.id,
     'billing_subscription_change_id', v_change_id,
     'subscription_id', v_subscription.id,
     'new_plan_id', v_new_plan.id,
+    'effective_mode', v_applied_effective_mode,
+    'requested_effective_mode', v_requested_effective_mode,
     'plan_code', v_new_plan.code,
-    'plan_name', v_new_plan.name
+    'plan_name', v_new_plan.name,
+    'reactivated_expired_trial', v_is_expired_trial_conversion
   );
 end;
 $$;

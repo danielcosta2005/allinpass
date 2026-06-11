@@ -7,7 +7,6 @@
 create index if not exists billing_subscriptions_trial_expiration_idx
   on public.billing_subscriptions (trial_ends_at)
   where status = 'trialing' and trial_ends_at is not null;
-
 create or replace function public.expire_trial_subscriptions()
 returns integer
 language plpgsql
@@ -63,7 +62,6 @@ begin
   return v_expired_count;
 end;
 $$;
-
 do $$
 declare
   v_existing_job_id bigint;

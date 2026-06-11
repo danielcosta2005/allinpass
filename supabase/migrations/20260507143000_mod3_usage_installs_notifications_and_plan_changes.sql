@@ -11,24 +11,20 @@ alter table public.billing_plans
   add column if not exists included_notification_sends integer not null default 0,
   add column if not exists overage_pass_install_cents integer not null default 0,
   add column if not exists overage_notification_sent_cents integer not null default 0;
-
 alter table public.billing_subscriptions
   add column if not exists included_pass_installs integer not null default 0,
   add column if not exists included_notification_sends integer not null default 0,
   add column if not exists overage_pass_install_cents integer not null default 0,
   add column if not exists overage_notification_sent_cents integer not null default 0;
-
 -- Backfill plan-level install values from legacy pass fields when possible.
 update public.billing_plans
 set included_pass_installs = included_passes
 where included_pass_installs = 0
   and included_passes > 0;
-
 update public.billing_plans
 set overage_pass_install_cents = overage_price_cents
 where overage_pass_install_cents = 0
   and overage_price_cents > 0;
-
 -- Backfill subscription snapshots from existing legacy fields and/or plan.
 update public.billing_subscriptions bs
 set
@@ -44,7 +40,6 @@ set
   overage_notification_sent_cents = coalesce(bs.overage_notification_sent_cents, 0)
 from public.billing_plans bp
 where bp.id = bs.plan_id;
-
 do $$
 begin
   if not exists (
@@ -128,7 +123,6 @@ begin
   end if;
 end
 $$;
-
 -- ------------------------------------------------------------
 -- B) Usage model and invoice item types
 -- ------------------------------------------------------------
@@ -136,10 +130,8 @@ alter table public.billing_usage_events
   add column if not exists resource_type text,
   add column if not exists user_pass_id uuid,
   add column if not exists notification_job_id uuid;
-
 alter table public.billing_usage_events
   alter column source set default 'manual';
-
 update public.billing_usage_events
 set resource_type = case
   when resource_type is not null then resource_type
@@ -147,22 +139,18 @@ set resource_type = case
   else 'pass_install'
 end
 where resource_type is null;
-
 -- Remove legacy source naming from historical rows.
 update public.billing_usage_events
 set
   metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('legacy_source', source),
   source = 'manual'
 where source = 'pass_issue';
-
 -- Normalize legacy invoice item types before tightening check constraints.
 update public.billing_invoice_items
 set item_type = 'overage_pass_install'
 where item_type = 'overage_pass';
-
 alter table public.billing_usage_events
   alter column resource_type set not null;
-
 do $$
 declare
   c record;
@@ -267,38 +255,30 @@ begin
   end if;
 end
 $$;
-
 create index if not exists billing_usage_events_user_pass_idx
   on public.billing_usage_events(user_pass_id)
   where user_pass_id is not null;
-
 create index if not exists billing_usage_events_notification_job_idx
   on public.billing_usage_events(notification_job_id)
   where notification_job_id is not null;
-
 create index if not exists billing_usage_events_resource_type_occurred_idx
   on public.billing_usage_events(project_id, resource_type, occurred_at desc);
-
 drop index if exists public.billing_usage_events_pass_issue_once_uidx;
-
 create unique index if not exists billing_usage_events_user_pass_install_once_uidx
   on public.billing_usage_events(user_pass_id)
   where user_pass_id is not null
     and resource_type = 'pass_install'
     and event_type = 'issue';
-
 create unique index if not exists billing_usage_events_notification_sent_once_uidx
   on public.billing_usage_events(notification_job_id)
   where notification_job_id is not null
     and resource_type = 'notification_sent'
     and event_type = 'issue';
-
 -- ------------------------------------------------------------
 -- C) Remove legacy passes trigger and add new usage triggers
 -- ------------------------------------------------------------
 drop trigger if exists trg_passes_log_billing_usage on public.passes;
 drop function if exists public.trg_log_pass_issue_billing_usage();
-
 create or replace function public.trg_log_user_pass_install_billing_usage()
 returns trigger
 language plpgsql
@@ -351,7 +331,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.trg_log_notification_sent_billing_usage()
 returns trigger
 language plpgsql
@@ -404,19 +383,16 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_user_passes_log_billing_usage_on_install on public.user_passes;
 create trigger trg_user_passes_log_billing_usage_on_install
 after insert or update of install_status, installed_at
 on public.user_passes
 for each row execute function public.trg_log_user_pass_install_billing_usage();
-
 drop trigger if exists trg_notification_jobs_log_billing_usage_on_sent on public.notification_jobs;
 create trigger trg_notification_jobs_log_billing_usage_on_sent
 after insert or update of status, sent_at
 on public.notification_jobs
 for each row execute function public.trg_log_notification_sent_billing_usage();
-
 -- ------------------------------------------------------------
 -- D) Plan change columns and proration snapshots
 -- ------------------------------------------------------------
@@ -435,7 +411,6 @@ alter table public.billing_subscription_changes
   add column if not exists new_overage_notification_sent_cents integer,
   add column if not exists prorated_install_allowance numeric(14,4),
   add column if not exists prorated_notification_allowance numeric(14,4);
-
 do $$
 begin
   if not exists (
@@ -463,7 +438,6 @@ begin
   end if;
 end
 $$;
-
 create or replace function public.trg_enrich_subscription_change_proration()
 returns trigger
 language plpgsql
@@ -573,7 +547,6 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_billing_subscription_changes_enrich on public.billing_subscription_changes;
 create trigger trg_billing_subscription_changes_enrich
 before insert on public.billing_subscription_changes

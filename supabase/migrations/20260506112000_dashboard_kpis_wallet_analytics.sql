@@ -13,7 +13,6 @@ as $$
     (select count(*) from public.visits)::integer as visits,
     (select count(*) from public.events e where e.type = 'reward_unlocked')::integer as rewards_unlocked;
 $$;
-
 create or replace function public.fn_get_global_kpis_timeseries(p_months integer)
 returns table(month date, visits integer, rewards integer)
 language sql
@@ -44,7 +43,6 @@ as $$
   from months m
   order by m.m;
 $$;
-
 create or replace function public.trg_user_passes_set_install_timestamps()
 returns trigger
 language plpgsql
@@ -79,24 +77,20 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists user_passes_set_install_timestamps on public.user_passes;
 create trigger user_passes_set_install_timestamps
 before insert or update of install_status
 on public.user_passes
 for each row
 execute function public.trg_user_passes_set_install_timestamps();
-
 update public.user_passes
 set installed_at = coalesce(installed_at, issued_at, created_at, now())
 where lower(trim(coalesce(install_status, ''))) = 'installed'
   and installed_at is null;
-
 update public.user_passes
 set installed_at = coalesce(installed_at, removed_at, issued_at, created_at, now())
 where lower(trim(coalesce(install_status, ''))) = 'removed'
   and installed_at is null;
-
 create or replace function public.fn_get_project_kpis(p_project_id uuid)
 returns table(active_customers bigint, visits_this_cycle bigint, rewards_unlocked bigint, wallet_linked bigint)
 language sql
@@ -129,7 +123,6 @@ as $$
         and up.installed_at is not null
     ) as wallet_linked;
 $$;
-
 create or replace function public.fn_get_project_kpis_timeseries(p_project_id uuid, p_months integer)
 returns table(month date, visits integer, rewards_unlocked integer, wallet_linked integer)
 language sql
@@ -169,7 +162,6 @@ as $$
   from months m
   order by m.m;
 $$;
-
 create or replace function public.fn_get_project_analytics(
   p_project_id uuid,
   p_start_date timestamptz,
@@ -416,5 +408,4 @@ begin
   return result;
 end;
 $$;
-
 grant execute on function public.fn_get_project_analytics(uuid, timestamp with time zone, timestamp with time zone) to anon, authenticated, service_role;

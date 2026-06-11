@@ -1,12 +1,9 @@
 alter table if exists public.rewards
   drop constraint if exists rewards_notification_message_not_blank;
-
 alter table if exists public.rewards
   drop column if exists notification_message;
-
 alter table if exists public.reward_redemptions
   drop column if exists notification_message;
-
 create or replace function public.redeem_reward_points(
   p_project_id uuid,
   p_reward_id uuid,
@@ -139,7 +136,6 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from public;
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from anon;
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from authenticated;
