@@ -10,6 +10,7 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const trackedProjectIds = new Set();
 let cachedSuperadminClient = undefined;
+let cachedSuperadminAuth = undefined;
 let cachedSuperadminAuthError = null;
 
 function trackProjectId(projectId) {
@@ -23,20 +24,28 @@ function untrackProjectId(projectId) {
 async function resolveSuperadminClient() {
   if (cachedSuperadminClient !== undefined) return cachedSuperadminClient;
 
+  const auth = await resolveSuperadminAuth();
+  cachedSuperadminClient = auth?.client ?? null;
+  return cachedSuperadminClient;
+}
+
+async function resolveSuperadminAuth() {
+  if (cachedSuperadminAuth !== undefined) return cachedSuperadminAuth;
+
   const { superadminEmail, superadminPassword } = getOptionalEnv();
   if (!superadminEmail || !superadminPassword) {
-    cachedSuperadminClient = null;
-    return cachedSuperadminClient;
+    cachedSuperadminAuth = null;
+    return cachedSuperadminAuth;
   }
 
   try {
     const auth = await signInWithPassword(superadminEmail, superadminPassword);
-    cachedSuperadminClient = auth.client;
-    return cachedSuperadminClient;
+    cachedSuperadminAuth = auth;
+    return cachedSuperadminAuth;
   } catch (error) {
-    cachedSuperadminClient = null;
+    cachedSuperadminAuth = null;
     cachedSuperadminAuthError = error instanceof Error ? error.message : String(error);
-    return cachedSuperadminClient;
+    return cachedSuperadminAuth;
   }
 }
 
@@ -76,16 +85,98 @@ async function createProject(overrides = {}) {
   return { result, project };
 }
 
+async function createProjectTeste({ name, description, logo_url, accessToken } = {}) {
+  const body = {
+    name: name ?? `Projeto Teste ${randomId("integ")}`,
+    description: description ?? "Projeto de teste de integracao",
+    logo_url: logo_url ?? null,
+  };
+
+  const result = await invokeEdgeFunction("create-project-teste", {
+    body,
+    accessToken,
+  });
+
+  if (!result.ok) {
+    throw new Error(
+      `create-project-teste falhou (${result.status}): ${result.text || "sem payload"}`,
+    );
+  }
+
+  const project = result.body?.project;
+  if (!project?.id) {
+    throw new Error("create-project-teste nao retornou project.id.");
+  }
+
+  trackProjectId(project.id);
+  return { result, project };
+}
+
+async function createProjectOwner({
+  projectId,
+  email = randomEmail("owner"),
+  password = randomPassword("Owner"),
+} = {}) {
+  if (!projectId) throw new Error("projectId e obrigatorio para createProjectOwner().");
+
+  const serviceRoleClient = createServiceRoleClient();
+  if (!serviceRoleClient) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY e obrigatorio para criar owner de teste.");
+  }
+
+  const { data: createdUser, error: createError } = await serviceRoleClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (createError) throw createError;
+
+  const userId = createdUser?.user?.id;
+  if (!userId) throw new Error("auth.admin.createUser nao retornou user.id.");
+
+  const { error: profileError } = await serviceRoleClient
+    .from("profiles")
+    .upsert({
+      id: userId,
+      email,
+      role: "establishment",
+      created_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (profileError) throw profileError;
+
+  const { error: memberError } = await serviceRoleClient
+    .from("project_members")
+    .upsert({
+      project_id: projectId,
+      user_id: userId,
+      role: "owner",
+    }, { onConflict: "project_id,user_id" });
+
+  if (memberError) throw memberError;
+
+  return {
+    email,
+    password,
+    userId,
+    role: "owner",
+  };
+}
+
 async function createMember({
   projectId,
-  role = "owner",
+  role = "staff",
   email = randomEmail("member"),
   password = randomPassword(),
+  accessToken,
 } = {}) {
   if (!projectId) throw new Error("projectId e obrigatorio para createMember().");
+  if (!accessToken) throw new Error("accessToken e obrigatorio para createMember().");
 
   const result = await invokeEdgeFunction("admin-create-member", {
     body: { projectId, email, password, role },
+    accessToken,
   });
 
   if (!result.ok || !result.body?.success) {
@@ -145,12 +236,16 @@ async function createPass({
 }
 
 async function provisionProjectAndOwner() {
+  const { supabaseServiceRoleKey } = getOptionalEnv();
+  if (!supabaseServiceRoleKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY e obrigatorio para criar owner de teste.");
+  }
+
   const { project } = await createProject();
 
   try {
-    const member = await createMember({
+    const member = await createProjectOwner({
       projectId: project.id,
-      role: "owner",
     });
 
     const auth = await signInWithPassword(member.email, member.password);
@@ -335,9 +430,12 @@ module.exports = {
   randomEmail,
   randomPassword,
   createProject,
+  createProjectTeste,
+  createProjectOwner,
   createMember,
   createPass,
   provisionProjectAndOwner,
   cleanupProjectData,
   cleanupTrackedProjects,
+  resolveSuperadminAuth,
 };
