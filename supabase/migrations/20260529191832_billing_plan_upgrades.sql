@@ -47,56 +47,42 @@ create table if not exists public.billing_plan_change_sessions (
       or status not in ('paid', 'applied')
     )
 );
-
 alter table public.billing_plan_change_sessions
   drop constraint if exists billing_plan_change_sessions_change_type_check;
-
 alter table public.billing_plan_change_sessions
   add constraint billing_plan_change_sessions_change_type_check
   check (change_type in ('upgrade', 'downgrade', 'trial_conversion', 'plan_change'));
-
 create unique index if not exists billing_plan_change_sessions_external_reference_uidx
   on public.billing_plan_change_sessions (external_reference);
-
 create unique index if not exists billing_plan_change_sessions_provider_checkout_uidx
   on public.billing_plan_change_sessions (provider, provider_checkout_id)
   where provider_checkout_id is not null;
-
 create index if not exists billing_plan_change_sessions_project_status_idx
   on public.billing_plan_change_sessions (project_id, status, created_at desc);
-
 create index if not exists billing_plan_change_sessions_subscription_idx
   on public.billing_plan_change_sessions (subscription_id, created_at desc);
-
 create index if not exists billing_plan_change_sessions_requested_by_idx
   on public.billing_plan_change_sessions (requested_by, created_at desc)
   where requested_by is not null;
-
 drop trigger if exists trg_billing_plan_change_sessions_updated_at
   on public.billing_plan_change_sessions;
 create trigger trg_billing_plan_change_sessions_updated_at
 before update on public.billing_plan_change_sessions
 for each row execute function public.set_updated_at();
-
 alter table public.billing_plan_change_sessions enable row level security;
-
 revoke all on table public.billing_plan_change_sessions from anon;
 revoke all on table public.billing_plan_change_sessions from authenticated;
 grant select, insert, update on table public.billing_plan_change_sessions to service_role;
-
 -- Billing sensivel deve ser mutado por Edge Functions/RPCs com validacao
 -- explicita. Membros seguem podendo ler as tabelas pelas policies existentes.
 drop policy if exists billing_subscriptions_member_insert on public.billing_subscriptions;
 drop policy if exists billing_subscriptions_member_update on public.billing_subscriptions;
 drop policy if exists billing_subscription_changes_member_insert on public.billing_subscription_changes;
-
 alter table public.billing_subscription_changes
   drop constraint if exists billing_subscription_changes_change_type_check;
-
 alter table public.billing_subscription_changes
   add constraint billing_subscription_changes_change_type_check
   check (change_type in ('upgrade', 'downgrade', 'renewal', 'cancellation', 'reactivation', 'trial_conversion', 'plan_change'));
-
 create or replace function public.apply_billing_plan_change(
   p_session_id uuid,
   p_actor_user_id uuid default null,
@@ -310,6 +296,5 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.apply_billing_plan_change(uuid, uuid, text, text, text) from public;
 grant execute on function public.apply_billing_plan_change(uuid, uuid, text, text, text) to service_role;

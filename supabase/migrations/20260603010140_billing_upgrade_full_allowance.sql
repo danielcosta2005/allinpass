@@ -5,17 +5,13 @@
 alter table public.billing_subscription_changes
   add column if not exists effective_overage_pass_install_cents integer,
   add column if not exists effective_overage_notification_sent_cents integer;
-
 alter table public.billing_subscription_changes
   drop constraint if exists billing_subscription_changes_allowance_proration_mode_check;
-
 alter table public.billing_subscription_changes
   add constraint billing_subscription_changes_allowance_proration_mode_check
   check (allowance_proration_mode in ('prorated_daily', 'none', 'full_new_plan'));
-
 alter table public.billing_subscription_changes
   alter column allowance_proration_mode set default 'full_new_plan';
-
 do $$
 begin
   if not exists (
@@ -35,7 +31,6 @@ begin
   end if;
 end
 $$;
-
 create or replace function public.trg_enrich_subscription_change_proration()
 returns trigger
 language plpgsql
@@ -179,7 +174,6 @@ begin
   return new;
 end;
 $$;
-
 create or replace function public.get_billing_cycle_entitlements(
   p_subscription_id uuid,
   p_period_start timestamptz default null,
@@ -292,7 +286,6 @@ begin
     'subscription_snapshot'::text;
 end;
 $$;
-
 create or replace function public.calculate_billing_cycle_overage(
   p_subscription_id uuid,
   p_period_start timestamptz default null,
@@ -375,13 +368,10 @@ begin
     v_ent.allowance_source;
 end;
 $$;
-
 revoke all on function public.get_billing_cycle_entitlements(uuid, timestamptz, timestamptz) from public;
 grant execute on function public.get_billing_cycle_entitlements(uuid, timestamptz, timestamptz) to authenticated, service_role;
-
 revoke all on function public.calculate_billing_cycle_overage(uuid, timestamptz, timestamptz) from public;
 grant execute on function public.calculate_billing_cycle_overage(uuid, timestamptz, timestamptz) to authenticated, service_role;
-
 create or replace function public.apply_billing_plan_change(
   p_session_id uuid,
   p_actor_user_id uuid default null,
@@ -640,10 +630,8 @@ begin
   );
 end;
 $$;
-
 revoke all on function public.apply_billing_plan_change(uuid, uuid, text, text, text) from public;
 grant execute on function public.apply_billing_plan_change(uuid, uuid, text, text, text) to service_role;
-
 create or replace function public.apply_due_billing_plan_changes()
 returns integer
 language plpgsql
@@ -687,10 +675,8 @@ begin
   return v_applied_count;
 end;
 $$;
-
 revoke all on function public.apply_due_billing_plan_changes() from public;
 grant execute on function public.apply_due_billing_plan_changes() to service_role;
-
 do $$
 declare
   v_existing_job_id bigint;

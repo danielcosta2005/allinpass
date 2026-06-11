@@ -1,3 +1,5 @@
+export const STAFF_MANAGEABLE_MEMBER_ROLES = ['staff'];
+
 export function isSuperadminRole(role) {
   return role === 'superadmin';
 }
@@ -34,4 +36,12 @@ export function getDefaultAdminTab(role) {
 
 export function canSeeSuperadminTabs(role) {
   return isSuperadminRole(role);
+}
+
+export function canAccessRestaurantMembersTab(memberRole) {
+  return memberRole === 'owner';
+}
+
+export function canManageStaffMembers({ role, memberRole } = {}) {
+  return isSuperadminRole(role) || memberRole === 'owner';
 }

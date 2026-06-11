@@ -1,18 +1,75 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
-async function isSuperAdmin(supabase: any) {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user) return false;
+class HttpError extends Error {
+  status: number;
 
-  const { data: profile, error: profErr } = await supabase
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function getBearerToken(req: Request) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+async function getCaller(supabaseAdmin: any, req: Request) {
+  const token = getBearerToken(req);
+  if (!token) throw new HttpError(401, "Missing Authorization header");
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw new HttpError(401, "Sessão inválida.");
+
+  const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
-  if (profErr) return false;
-  return profile?.role === "superadmin";
+  if (profileError) throw profileError;
+  return { user, profile };
+}
+
+async function ensureCanManageStaffMembers(supabaseAdmin: any, caller: any, projectId: string) {
+  if (caller.profile?.role === "superadmin") return;
+
+  const { data: membership, error } = await supabaseAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", caller.user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (membership?.role !== "owner") {
+    throw new HttpError(403, "Acesso negado. Apenas gestores do projeto ou superadmins podem remover membros da equipe.");
+  }
+}
+
+async function ensureTargetIsStaff(supabaseAdmin: any, projectId: string, memberId: string) {
+  const { data: member, error } = await supabaseAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", memberId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!member) throw new HttpError(404, "Membro não encontrado neste projeto.");
+  if (member.role !== "staff") {
+    throw new HttpError(403, "Apenas membros staff podem ser gerenciados por este fluxo.");
+  }
 }
 
 Deno.serve(async (req) => {
@@ -22,73 +79,41 @@ Deno.serve(async (req) => {
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-    if (!SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
+    if (!SUPABASE_URL || !SERVICE_KEY) {
       throw new Error("Variáveis de ambiente do Supabase não configuradas.");
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Client do caller (com ANON + Authorization do usuário logado)
-    const callerSupabase = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const allowed = await isSuperAdmin(callerSupabase);
-    if (!allowed) {
-      return new Response(JSON.stringify({ error: "Acesso negado. Apenas superadmins podem remover membros." }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const body = await req.json();
-    const memberId = body.memberId;   // ✅ padronizado
+    const memberId = body.memberId;
     const projectId = body.projectId;
 
     if (!memberId || !projectId) {
-      return new Response(JSON.stringify({ error: "Os campos memberId e projectId são obrigatórios." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      throw new HttpError(400, "Os campos memberId e projectId são obrigatórios.");
     }
 
-    // Client admin
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    const caller = await getCaller(supabaseAdmin, req);
+    await ensureCanManageStaffMembers(supabaseAdmin, caller, projectId);
+    await ensureTargetIsStaff(supabaseAdmin, projectId, memberId);
 
     const { error: deleteErr } = await supabaseAdmin
       .from("project_members")
       .delete()
       .match({ project_id: projectId, user_id: memberId });
 
-    if (deleteErr) {
-      console.error("Erro ao deletar project_members:", deleteErr);
-      return new Response(JSON.stringify({ error: deleteErr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (deleteErr) throw deleteErr;
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    console.error("Erro na edge function admin-remove-member:", e);
-    return new Response(JSON.stringify({ error: e?.message || "Erro desconhecido na edge function" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ success: true });
+  } catch (error) {
+    console.error("Erro na edge function admin-remove-member:", error);
+    return jsonResponse(
+      { error: error instanceof Error ? error.message : "Erro desconhecido na edge function" },
+      error instanceof HttpError ? error.status : 500,
+    );
   }
 });

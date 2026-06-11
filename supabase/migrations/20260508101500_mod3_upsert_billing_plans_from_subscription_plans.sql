@@ -146,4 +146,3 @@ set
   included_notification_sends = excluded.included_notification_sends,
   overage_pass_install_cents = excluded.overage_pass_install_cents,
   overage_notification_sent_cents = excluded.overage_notification_sent_cents;
-

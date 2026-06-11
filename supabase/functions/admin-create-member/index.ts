@@ -26,15 +26,101 @@ class HttpError extends Error {
   }
 }
 
-function generatePassword() {
-  const length = 12;
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
-  let retVal = "";
-  for (let i = 0, n = charset.length; i < length; ++i) {
-    retVal += charset.charAt(Math.floor(Math.random() * n));
+function jsonResponse(payload: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    status,
+  });
+}
+
+function getBearerToken(req: Request) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+async function getCaller(supabaseAdmin: any, req: Request) {
+  const token = getBearerToken(req);
+  if (!token) throw new HttpError(401, "Missing Authorization header");
+
+  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) throw new HttpError(401, "Sessão inválida.");
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  return { user, profile };
+}
+
+async function ensureCanManageStaffMembers(supabaseAdmin: any, caller: any, projectId: string) {
+  if (caller.profile?.role === "superadmin") return;
+
+  const { data: membership, error } = await supabaseAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", caller.user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (membership?.role !== "owner") {
+    throw new HttpError(403, "Acesso negado. Apenas gestores do projeto ou superadmins podem convidar membros da equipe.");
   }
-  return retVal;
+}
+
+function ensureStaffRole(role: unknown) {
+  if (role !== "staff") {
+    throw new HttpError(400, "Apenas membros com papel staff podem ser adicionados por este fluxo.");
+  }
+}
+
+async function ensureConfirmedUser(supabaseAdmin: any, userId: string) {
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    email_confirm: true,
+  });
+
+  if (error) throw error;
+}
+
+async function ensureTargetCanBeStaffMember(supabaseAdmin: any, projectId: string, userId: string) {
+  const { data: member, error } = await supabaseAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (member && member.role !== "staff") {
+    throw new HttpError(403, "Apenas membros staff podem ser gerenciados por este fluxo.");
+  }
+}
+
+async function ensureEstablishmentProfile(supabaseAdmin: any, userId: string, email: string) {
+  const { data: profile, error: profileReadError } = await supabaseAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileReadError) throw profileReadError;
+  if (profile?.role === "superadmin" || profile?.role === "admin") return;
+
+  const { error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .upsert({
+      id: userId,
+      email,
+      role: "establishment",
+      created_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+
+  if (profileError) throw profileError;
 }
 
 function addDays(date: Date, days: number) {
@@ -54,36 +140,6 @@ function isDuplicateKeyError(error: unknown) {
   const code = String(maybeError?.code ?? "");
   const message = String(maybeError?.message ?? "");
   return code === "23505" || /duplicate key value/i.test(message);
-}
-
-function getBearerToken(req: Request) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || "";
-}
-
-async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request) {
-  const token = getBearerToken(req);
-  if (!token) throw new HttpError(401, "Missing Authorization header");
-
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  const user = userData?.user;
-  if (userError || !user) throw new HttpError(401, "Sessao invalida.");
-
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  return { user, profile };
-}
-
-function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
-  if (caller.profile?.role !== "superadmin") {
-    throw new HttpError(403, "Acesso negado. Apenas superadmins podem criar membros.");
-  }
 }
 
 async function getExistingProjectSubscription(supabaseAdmin: SupabaseAdminClient, projectId: string) {
@@ -281,15 +337,25 @@ Deno.serve(async (req) => {
 
   try {
     const { email, password, projectId, role } = await req.json();
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = String(email || "").trim().toLowerCase();
 
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    if (!normalizedEmail) throw new HttpError(400, "Email é obrigatório.");
+    if (!projectId) throw new HttpError(400, "projectId é obrigatório.");
+    ensureStaffRole(role);
 
-    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+    if (!SUPABASE_URL || !SERVICE_KEY) {
+      throw new Error("Variáveis de ambiente do Supabase não configuradas.");
+    }
+
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const caller = await getCaller(supabaseAdmin, req);
+    await ensureCanManageStaffMembers(supabaseAdmin, caller, projectId);
 
     let userId: string | null = null;
     let inviteSent = false;
@@ -297,64 +363,50 @@ Deno.serve(async (req) => {
     const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     if (listError) throw listError;
 
-    const existingUser = users.find(u => u.email?.toLowerCase() === normalizedEmail);
+    const existingUser = users.find((u: any) => u.email?.toLowerCase() === normalizedEmail);
 
     if (existingUser) {
-      // User existe -> get id.
       userId = existingUser.id;
+      await ensureConfirmedUser(supabaseAdmin, userId);
+    } else if (password && password.trim().length > 0) {
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password: password.trim(),
+        email_confirm: true,
+      });
+      if (createError) throw createError;
+      userId = newUser.user.id;
     } else {
-      // User não existe
-      if (password && password.trim().length > 0) {
-        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: normalizedEmail,
-          password: password.trim(),
-          email_confirm: true,
-        });
-        if (createError) throw createError;
-        userId = newUser.user.id;
-      } else {
-        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
-        if (inviteError) throw inviteError;
-        userId = invited.user?.id ?? null;
-        inviteSent = true;
-      }
+      const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
+      if (inviteError) throw inviteError;
+      userId = invited.user?.id ?? null;
+      inviteSent = true;
     }
 
     if (!userId) throw new Error("Não foi possível determinar o userId.");
+    await ensureTargetCanBeStaffMember(supabaseAdmin, projectId, userId);
 
-    const { error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .upsert({
-        id: userId,
-        email: normalizedEmail,
-        role: 'establishment',
-        created_at: new Date().toISOString(),
-      }, { onConflict: "id" });
-
-    if (profileError) throw profileError;
+    await ensureEstablishmentProfile(supabaseAdmin, userId, normalizedEmail);
 
     const { error: linkError } = await supabaseAdmin
       .from("project_members")
       .upsert({
         project_id: projectId,
         user_id: userId,
-        role, // staff or owner
+        role: "staff",
       }, { onConflict: "project_id,user_id" });
 
     if (linkError) throw linkError;
 
-    await ensureProjectFreeTrialBilling(supabaseAdmin, projectId, normalizedEmail);
+    const billingEmail = String(caller.user?.email || normalizedEmail).trim().toLowerCase();
+    await ensureProjectFreeTrialBilling(supabaseAdmin, projectId, billingEmail || normalizedEmail);
 
-    return new Response(JSON.stringify({ success: true, userId, inviteSent }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
-    });
-
+    return jsonResponse({ success: true, userId, inviteSent });
   } catch (error) {
     console.error("Erro na função admin-create-member:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: error instanceof HttpError ? error.status : 400,
-    });
+    return jsonResponse(
+      { error: error instanceof Error ? error.message : "Erro desconhecido." },
+      error instanceof HttpError ? error.status : 400,
+    );
   }
 });

@@ -18,7 +18,6 @@ create table if not exists public.billing_plans (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.billing_accounts (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -37,7 +36,6 @@ create table if not exists public.billing_accounts (
   unique (project_id),
   unique (id, project_id)
 );
-
 create table if not exists public.billing_payment_methods (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -61,7 +59,6 @@ create table if not exists public.billing_payment_methods (
     references public.billing_accounts(id, project_id)
     on delete cascade
 );
-
 create table if not exists public.billing_subscriptions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -93,7 +90,6 @@ create table if not exists public.billing_subscriptions (
   check (current_period_end is null or current_period_start is null or current_period_end > current_period_start),
   check (trial_ends_at is null or trial_started_at is null or trial_ends_at >= trial_started_at)
 );
-
 create table if not exists public.billing_subscription_changes (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -114,7 +110,6 @@ create table if not exists public.billing_subscription_changes (
     references public.billing_subscriptions(id, project_id)
     on delete cascade
 );
-
 create table if not exists public.billing_cycles (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -132,7 +127,6 @@ create table if not exists public.billing_cycles (
   unique (project_id, cycle_type, period_start, period_end),
   check (period_end > period_start)
 );
-
 create table if not exists public.billing_invoices (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -162,7 +156,6 @@ create table if not exists public.billing_invoices (
   unique (id, project_id),
   check (total_cents >= 0)
 );
-
 create table if not exists public.billing_invoice_items (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -182,7 +175,6 @@ create table if not exists public.billing_invoice_items (
     references public.billing_invoices(id, project_id)
     on delete cascade
 );
-
 create table if not exists public.billing_reprocessing_batches (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -198,7 +190,6 @@ create table if not exists public.billing_reprocessing_batches (
   metadata jsonb not null default '{}'::jsonb,
   check (period_end > period_start)
 );
-
 create table if not exists public.billing_usage_events (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -217,7 +208,6 @@ create table if not exists public.billing_usage_events (
   metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.billing_credit_wallets (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -230,7 +220,6 @@ create table if not exists public.billing_credit_wallets (
   unique (project_id),
   unique (id, project_id)
 );
-
 create table if not exists public.billing_credit_transactions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -251,7 +240,6 @@ create table if not exists public.billing_credit_transactions (
     references public.billing_credit_wallets(id, project_id)
     on delete cascade
 );
-
 create table if not exists public.billing_notification_rules (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -267,7 +255,6 @@ create table if not exists public.billing_notification_rules (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 create table if not exists public.billing_notification_deliveries (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -281,7 +268,6 @@ create table if not exists public.billing_notification_deliveries (
   payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create table if not exists public.project_billing_audit_logs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -292,15 +278,12 @@ create table if not exists public.project_billing_audit_logs (
   changes jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
-
 create index if not exists billing_plans_active_idx
   on public.billing_plans (id)
   where is_active;
-
 create unique index if not exists billing_accounts_gateway_customer_uidx
   on public.billing_accounts (gateway_provider, gateway_customer_id)
   where gateway_customer_id is not null;
-
 create index if not exists billing_payment_methods_project_idx
   on public.billing_payment_methods (project_id);
 create index if not exists billing_payment_methods_account_idx
@@ -308,7 +291,6 @@ create index if not exists billing_payment_methods_account_idx
 create index if not exists billing_payment_methods_default_active_idx
   on public.billing_payment_methods (project_id, created_at desc)
   where is_default and status = 'active';
-
 create index if not exists billing_subscriptions_project_status_idx
   on public.billing_subscriptions (project_id, status);
 create unique index if not exists billing_subscriptions_active_project_uidx
@@ -319,12 +301,10 @@ create unique index if not exists billing_subscriptions_gateway_uidx
   where gateway_subscription_id is not null;
 create index if not exists billing_subscriptions_plan_idx
   on public.billing_subscriptions (plan_id);
-
 create index if not exists billing_subscription_changes_subscription_idx
   on public.billing_subscription_changes (subscription_id, effective_at desc);
 create index if not exists billing_subscription_changes_project_idx
   on public.billing_subscription_changes (project_id, created_at desc);
-
 create index if not exists billing_cycles_project_period_idx
   on public.billing_cycles (project_id, period_start desc, period_end desc);
 create index if not exists billing_cycles_subscription_idx
@@ -333,7 +313,6 @@ create index if not exists billing_cycles_subscription_idx
 create index if not exists billing_cycles_open_idx
   on public.billing_cycles (project_id, cycle_type)
   where status = 'open';
-
 create unique index if not exists billing_invoices_invoice_number_uidx
   on public.billing_invoices (invoice_number)
   where invoice_number is not null;
@@ -348,15 +327,12 @@ create index if not exists billing_invoices_cycle_idx
 create index if not exists billing_invoices_subscription_idx
   on public.billing_invoices (subscription_id)
   where subscription_id is not null;
-
 create index if not exists billing_invoice_items_invoice_idx
   on public.billing_invoice_items (invoice_id);
 create index if not exists billing_invoice_items_project_idx
   on public.billing_invoice_items (project_id, created_at desc);
-
 create index if not exists billing_reprocessing_batches_project_status_idx
   on public.billing_reprocessing_batches (project_id, status, triggered_at desc);
-
 create index if not exists billing_usage_events_project_occurred_idx
   on public.billing_usage_events (project_id, occurred_at desc);
 create index if not exists billing_usage_events_subscription_idx
@@ -377,7 +353,6 @@ create index if not exists billing_usage_events_unbilled_idx
 create unique index if not exists billing_usage_events_pass_issue_once_uidx
   on public.billing_usage_events (pass_id)
   where pass_id is not null and source = 'pass_issue' and event_type = 'issue';
-
 create index if not exists billing_credit_transactions_wallet_idx
   on public.billing_credit_transactions (wallet_id, created_at desc);
 create index if not exists billing_credit_transactions_project_idx
@@ -388,17 +363,14 @@ create index if not exists billing_credit_transactions_invoice_item_idx
 create index if not exists billing_credit_transactions_usage_event_idx
   on public.billing_credit_transactions (usage_event_id)
   where usage_event_id is not null;
-
 create index if not exists billing_notification_rules_project_active_idx
   on public.billing_notification_rules (project_id, is_active);
 create index if not exists billing_notification_deliveries_rule_sched_idx
   on public.billing_notification_deliveries (rule_id, scheduled_for);
 create index if not exists billing_notification_deliveries_project_status_idx
   on public.billing_notification_deliveries (project_id, status, scheduled_for);
-
 create index if not exists project_billing_audit_logs_project_created_idx
   on public.project_billing_audit_logs (project_id, created_at desc);
-
 create or replace function public.can_access_project(p_project_id uuid)
 returns boolean
 language sql
@@ -408,7 +380,6 @@ set search_path = public
 as $$
   select public.is_superadmin() or public.is_member_of_project(p_project_id);
 $$;
-
 create or replace function public.trg_sync_credit_wallet_balance()
 returns trigger
 language plpgsql
@@ -488,7 +459,6 @@ begin
   return null;
 end;
 $$;
-
 create or replace function public.trg_log_pass_issue_billing_usage()
 returns trigger
 language plpgsql
@@ -525,57 +495,46 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_billing_plans_updated_at on public.billing_plans;
 create trigger trg_billing_plans_updated_at
 before update on public.billing_plans
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_accounts_updated_at on public.billing_accounts;
 create trigger trg_billing_accounts_updated_at
 before update on public.billing_accounts
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_payment_methods_updated_at on public.billing_payment_methods;
 create trigger trg_billing_payment_methods_updated_at
 before update on public.billing_payment_methods
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_subscriptions_updated_at on public.billing_subscriptions;
 create trigger trg_billing_subscriptions_updated_at
 before update on public.billing_subscriptions
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_cycles_updated_at on public.billing_cycles;
 create trigger trg_billing_cycles_updated_at
 before update on public.billing_cycles
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_invoices_updated_at on public.billing_invoices;
 create trigger trg_billing_invoices_updated_at
 before update on public.billing_invoices
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_credit_wallets_updated_at on public.billing_credit_wallets;
 create trigger trg_billing_credit_wallets_updated_at
 before update on public.billing_credit_wallets
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_notification_rules_updated_at on public.billing_notification_rules;
 create trigger trg_billing_notification_rules_updated_at
 before update on public.billing_notification_rules
 for each row execute function public.set_updated_at();
-
 drop trigger if exists trg_billing_credit_transactions_apply on public.billing_credit_transactions;
 create trigger trg_billing_credit_transactions_apply
 after insert or update or delete on public.billing_credit_transactions
 for each row execute function public.trg_sync_credit_wallet_balance();
-
 drop trigger if exists trg_passes_log_billing_usage on public.passes;
 create trigger trg_passes_log_billing_usage
 after insert on public.passes
 for each row execute function public.trg_log_pass_issue_billing_usage();
-
 alter table public.billing_plans enable row level security;
 alter table public.billing_accounts enable row level security;
 alter table public.billing_payment_methods enable row level security;
@@ -591,14 +550,12 @@ alter table public.billing_credit_transactions enable row level security;
 alter table public.billing_notification_rules enable row level security;
 alter table public.billing_notification_deliveries enable row level security;
 alter table public.project_billing_audit_logs enable row level security;
-
 drop policy if exists billing_plans_public_read on public.billing_plans;
 create policy billing_plans_public_read
 on public.billing_plans
 for select
 to anon, authenticated
 using (is_active or (select public.is_superadmin()));
-
 drop policy if exists billing_plans_superadmin_write on public.billing_plans;
 create policy billing_plans_superadmin_write
 on public.billing_plans
@@ -606,21 +563,18 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_accounts_member_select on public.billing_accounts;
 create policy billing_accounts_member_select
 on public.billing_accounts
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_accounts_member_insert on public.billing_accounts;
 create policy billing_accounts_member_insert
 on public.billing_accounts
 for insert
 to authenticated
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_accounts_member_update on public.billing_accounts;
 create policy billing_accounts_member_update
 on public.billing_accounts
@@ -628,14 +582,12 @@ for update
 to authenticated
 using ((select public.can_access_project(project_id)))
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_accounts_superadmin_delete on public.billing_accounts;
 create policy billing_accounts_superadmin_delete
 on public.billing_accounts
 for delete
 to authenticated
 using ((select public.is_superadmin()));
-
 drop policy if exists billing_payment_methods_member_rw on public.billing_payment_methods;
 create policy billing_payment_methods_member_rw
 on public.billing_payment_methods
@@ -643,21 +595,18 @@ for all
 to authenticated
 using ((select public.can_access_project(project_id)))
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscriptions_member_select on public.billing_subscriptions;
 create policy billing_subscriptions_member_select
 on public.billing_subscriptions
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscriptions_member_insert on public.billing_subscriptions;
 create policy billing_subscriptions_member_insert
 on public.billing_subscriptions
 for insert
 to authenticated
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscriptions_member_update on public.billing_subscriptions;
 create policy billing_subscriptions_member_update
 on public.billing_subscriptions
@@ -665,28 +614,24 @@ for update
 to authenticated
 using ((select public.can_access_project(project_id)))
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscriptions_superadmin_delete on public.billing_subscriptions;
 create policy billing_subscriptions_superadmin_delete
 on public.billing_subscriptions
 for delete
 to authenticated
 using ((select public.is_superadmin()));
-
 drop policy if exists billing_subscription_changes_member_select on public.billing_subscription_changes;
 create policy billing_subscription_changes_member_select
 on public.billing_subscription_changes
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscription_changes_member_insert on public.billing_subscription_changes;
 create policy billing_subscription_changes_member_insert
 on public.billing_subscription_changes
 for insert
 to authenticated
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_subscription_changes_superadmin_modify on public.billing_subscription_changes;
 create policy billing_subscription_changes_superadmin_modify
 on public.billing_subscription_changes
@@ -694,21 +639,18 @@ for update
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_subscription_changes_superadmin_delete on public.billing_subscription_changes;
 create policy billing_subscription_changes_superadmin_delete
 on public.billing_subscription_changes
 for delete
 to authenticated
 using ((select public.is_superadmin()));
-
 drop policy if exists billing_cycles_member_select on public.billing_cycles;
 create policy billing_cycles_member_select
 on public.billing_cycles
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_cycles_superadmin_write on public.billing_cycles;
 create policy billing_cycles_superadmin_write
 on public.billing_cycles
@@ -716,14 +658,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_invoices_member_select on public.billing_invoices;
 create policy billing_invoices_member_select
 on public.billing_invoices
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_invoices_superadmin_write on public.billing_invoices;
 create policy billing_invoices_superadmin_write
 on public.billing_invoices
@@ -731,14 +671,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_invoice_items_member_select on public.billing_invoice_items;
 create policy billing_invoice_items_member_select
 on public.billing_invoice_items
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_invoice_items_superadmin_write on public.billing_invoice_items;
 create policy billing_invoice_items_superadmin_write
 on public.billing_invoice_items
@@ -746,14 +684,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_reprocessing_batches_member_select on public.billing_reprocessing_batches;
 create policy billing_reprocessing_batches_member_select
 on public.billing_reprocessing_batches
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_reprocessing_batches_superadmin_write on public.billing_reprocessing_batches;
 create policy billing_reprocessing_batches_superadmin_write
 on public.billing_reprocessing_batches
@@ -761,14 +697,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_usage_events_member_select on public.billing_usage_events;
 create policy billing_usage_events_member_select
 on public.billing_usage_events
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_usage_events_superadmin_write on public.billing_usage_events;
 create policy billing_usage_events_superadmin_write
 on public.billing_usage_events
@@ -776,14 +710,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_credit_wallets_member_select on public.billing_credit_wallets;
 create policy billing_credit_wallets_member_select
 on public.billing_credit_wallets
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_credit_wallets_superadmin_write on public.billing_credit_wallets;
 create policy billing_credit_wallets_superadmin_write
 on public.billing_credit_wallets
@@ -791,14 +723,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_credit_transactions_member_select on public.billing_credit_transactions;
 create policy billing_credit_transactions_member_select
 on public.billing_credit_transactions
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_credit_transactions_superadmin_write on public.billing_credit_transactions;
 create policy billing_credit_transactions_superadmin_write
 on public.billing_credit_transactions
@@ -806,7 +736,6 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists billing_notification_rules_member_rw on public.billing_notification_rules;
 create policy billing_notification_rules_member_rw
 on public.billing_notification_rules
@@ -814,14 +743,12 @@ for all
 to authenticated
 using ((select public.can_access_project(project_id)))
 with check ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_notification_deliveries_member_select on public.billing_notification_deliveries;
 create policy billing_notification_deliveries_member_select
 on public.billing_notification_deliveries
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists billing_notification_deliveries_superadmin_write on public.billing_notification_deliveries;
 create policy billing_notification_deliveries_superadmin_write
 on public.billing_notification_deliveries
@@ -829,14 +756,12 @@ for all
 to authenticated
 using ((select public.is_superadmin()))
 with check ((select public.is_superadmin()));
-
 drop policy if exists project_billing_audit_logs_member_select on public.project_billing_audit_logs;
 create policy project_billing_audit_logs_member_select
 on public.project_billing_audit_logs
 for select
 to authenticated
 using ((select public.can_access_project(project_id)));
-
 drop policy if exists project_billing_audit_logs_superadmin_write on public.project_billing_audit_logs;
 create policy project_billing_audit_logs_superadmin_write
 on public.project_billing_audit_logs

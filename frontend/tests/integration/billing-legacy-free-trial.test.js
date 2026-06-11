@@ -41,15 +41,17 @@ describe("legacy free trial provisioning", () => {
     expect(migrationSource).not.toContain("overage_price_cents");
   });
 
-  test("superadmin member creation provisionally creates free-trial billing when project has no subscription", () => {
+  test("staff member creation provisionally creates free-trial billing when project has no subscription", () => {
     const functionSource = readIfExists("supabase/functions/admin-create-member/index.ts");
     const adminClientSource = readIfExists("frontend/src/lib/admin.js");
 
     expect(adminClientSource).toContain("supabase.functions.invoke('admin-create-member'");
     expect(adminClientSource).not.toContain("admin-create-member-teste");
     expect(functionSource).toContain("ensureProjectFreeTrialBilling");
-    expect(functionSource).toContain("ensureSuperadmin");
-    expect(functionSource).toContain("getCallerProfile");
+    expect(functionSource).toContain("ensureCanManageStaffMembers");
+    expect(functionSource).toContain("membership?.role !== \"owner\"");
+    expect(functionSource).not.toContain("ensureSuperadmin");
+    expect(functionSource).not.toContain("getCallerProfile");
     expect(functionSource).toContain("FREE_PLAN_CODE");
     expect(functionSource).toContain("free_trial");
     expect(functionSource).toContain("billing_plans");

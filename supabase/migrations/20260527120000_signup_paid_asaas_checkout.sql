@@ -22,23 +22,18 @@ begin
   end loop;
 end
 $$;
-
 alter table public.billing_accounts
   add constraint billing_accounts_gateway_provider_check
   check (gateway_provider in ('pagseguro', 'infinitepay', 'rede', 'asaas', 'other'));
-
 alter table public.billing_payment_methods
   add constraint billing_payment_methods_gateway_provider_check
   check (gateway_provider in ('pagseguro', 'infinitepay', 'rede', 'asaas', 'other'));
-
 alter table public.billing_subscriptions
   add constraint billing_subscriptions_gateway_provider_check
   check (gateway_provider is null or gateway_provider in ('pagseguro', 'infinitepay', 'rede', 'asaas', 'other'));
-
 alter table public.billing_invoices
   add constraint billing_invoices_gateway_provider_check
   check (gateway_provider is null or gateway_provider in ('pagseguro', 'infinitepay', 'rede', 'asaas', 'other'));
-
 create table if not exists public.signup_checkout_sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -80,32 +75,24 @@ create table if not exists public.signup_checkout_sessions (
       or status not in ('paid', 'finalized')
     )
 );
-
 create unique index if not exists signup_checkout_sessions_external_reference_uidx
   on public.signup_checkout_sessions (external_reference);
-
 create unique index if not exists signup_checkout_sessions_provider_checkout_uidx
   on public.signup_checkout_sessions (provider, provider_checkout_id)
   where provider_checkout_id is not null;
-
 create index if not exists signup_checkout_sessions_user_status_idx
   on public.signup_checkout_sessions (user_id, status, created_at desc);
-
 create index if not exists signup_checkout_sessions_plan_idx
   on public.signup_checkout_sessions (plan_id);
-
 create index if not exists signup_checkout_sessions_provider_payment_idx
   on public.signup_checkout_sessions (provider, provider_payment_id)
   where provider_payment_id is not null;
-
 drop trigger if exists trg_signup_checkout_sessions_updated_at
   on public.signup_checkout_sessions;
 create trigger trg_signup_checkout_sessions_updated_at
 before update on public.signup_checkout_sessions
 for each row execute function public.set_updated_at();
-
 alter table public.signup_checkout_sessions enable row level security;
-
 revoke all on table public.signup_checkout_sessions from anon;
 revoke all on table public.signup_checkout_sessions from authenticated;
 grant select, insert, update on table public.signup_checkout_sessions to service_role;

@@ -35,10 +35,8 @@ begin
   return new;
 end;
 $$;
-
 alter function public.trg_notification_jobs_enforce_limit_on_sent()
   owner to postgres;
-
 drop trigger if exists trg_notification_jobs_enforce_limit_on_sent on public.notification_jobs;
 create trigger trg_notification_jobs_enforce_limit_on_sent
 before insert or update of status

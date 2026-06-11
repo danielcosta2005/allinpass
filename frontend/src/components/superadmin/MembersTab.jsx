@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Plus, Loader2, Edit, Trash2 } from 'lucide-react';
+import { Plus, Loader2, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,7 +27,7 @@ import { listMembers } from '@/lib/api';
 import { adminCreateMember, adminUpdateMember, adminRemoveMember } from '@/lib/admin';
 
 const memberRoleOptions = [
-  { value: 'owner', label: 'Gestor' },
+  { value: 'owner', label: 'Owner' },
   { value: 'staff', label: 'Funcionário' },
 ];
 
@@ -36,7 +36,13 @@ const memberRoleLabels = memberRoleOptions.reduce((labels, option) => {
   return labels;
 }, {});
 
-const MembersTab = ({ projectId }) => {
+const MembersTab = ({
+  projectId,
+  canCreateMembers = false,
+  canEditMembers = false,
+  canRemoveMembers = false,
+  manageableRoles = [],
+}) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,10 +51,15 @@ const MembersTab = ({ projectId }) => {
   const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' });
 
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ newPassword: '', role: 'staff' });
+  const [editForm, setEditForm] = useState({ newPassword: '' });
   
   const [memberToEdit, setMemberToEdit] = useState(null);
   const [memberToRemove, setMemberToRemove] = useState(null);
+  const manageableRoleSet = useMemo(() => new Set(manageableRoles), [manageableRoles]);
+  const canShowActionsColumn = canEditMembers || canRemoveMembers;
+  const canManageMember = useCallback((member) => {
+    return manageableRoleSet.has(member?.role);
+  }, [manageableRoleSet]);
 
   const fetchMembers = useCallback(async () => {
     if (!projectId) return;
@@ -85,6 +96,10 @@ const MembersTab = ({ projectId }) => {
 
   const handleCreateMember = async (e) => {
     e.preventDefault();
+    if (!canCreateMembers) {
+      toast({ title: "Acesso negado", description: "Você não tem permissão para adicionar membros.", variant: "destructive" });
+      return;
+    }
     if (createForm.password && !validatePassword(createForm.password)) {
       toast({ title: "Senha inválida", description: "A senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
       return;
@@ -115,13 +130,18 @@ const MembersTab = ({ projectId }) => {
   };
 
   const openEditModal = (member) => {
+    if (!canEditMembers || !canManageMember(member)) return;
     setMemberToEdit(member);
-    setEditForm({ newPassword: '', role: member.role });
+    setEditForm({ newPassword: '' });
     setShowEditModal(true);
   };
   
   const handleUpdateMember = async (e) => {
     e.preventDefault();
+    if (!memberToEdit || !canEditMembers || !canManageMember(memberToEdit)) {
+      toast({ title: "Acesso negado", description: "Você não tem permissão para editar este membro.", variant: "destructive" });
+      return;
+    }
     if (editForm.newPassword && !validatePassword(editForm.newPassword)) {
       toast({ title: "Senha inválida", description: "A nova senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
       return;
@@ -131,7 +151,7 @@ const MembersTab = ({ projectId }) => {
       await adminUpdateMember({
         memberId: memberToEdit.user_id,
         projectId,
-        role: editForm.role,
+        role: 'staff',
         password: editForm.newPassword || undefined,
       });
       toast({ title: "Membro atualizado!", description: "As informações do membro foram salvas." });
@@ -147,6 +167,11 @@ const MembersTab = ({ projectId }) => {
 
   const handleRemoveMember = async () => {
     if (!memberToRemove) return;
+    if (!canRemoveMembers || !canManageMember(memberToRemove)) {
+      toast({ title: "Acesso negado", description: "Você não tem permissão para remover este membro.", variant: "destructive" });
+      setMemberToRemove(null);
+      return;
+    }
     setIsSubmitting(true);
     try {
       await adminRemoveMember({ projectId, memberId: memberToRemove.user_id });
@@ -164,9 +189,11 @@ const MembersTab = ({ projectId }) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Membros</h2>
-        <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
-          <Plus className="w-4 h-4" /> Novo Membro
-        </Button>
+        {canCreateMembers && (
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
+            <Plus className="w-4 h-4" /> Novo Membro
+          </Button>
+        )}
       </div>
       
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100">
@@ -181,22 +208,36 @@ const MembersTab = ({ projectId }) => {
                   <th scope="col" className="px-6 py-3">Email</th>
                   <th scope="col" className="px-6 py-3">Papel</th>
                   <th scope="col" className="px-6 py-3">Criação</th>
-                  <th scope="col" className="px-6 py-3 text-right">Ações</th>
+                  {canShowActionsColumn && <th scope="col" className="px-6 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
-                {members.map(member => (
-                    
+                {members.map(member => {
+                  const canEditMember = canEditMembers && canManageMember(member);
+                  const canRemoveMember = canRemoveMembers && canManageMember(member);
+
+                  return (
                     <tr key={member.user_id} className="bg-white border-b">
-                    <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
-                    <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
-                    <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}><Edit className="h-4 w-4 text-blue-500" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                    </td>
-                  </tr>
-                ))}
+                      <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
+                      <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
+                      <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
+                      {canShowActionsColumn && (
+                        <td className="px-6 py-4 text-right">
+                          {canEditMember && (
+                            <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}>
+                              <Edit className="h-4 w-4 text-blue-500" />
+                            </Button>
+                          )}
+                          {canRemoveMember && (
+                            <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -228,13 +269,6 @@ const MembersTab = ({ projectId }) => {
           <DialogHeader><DialogTitle>Editar Membro</DialogTitle><DialogDescription>{memberToEdit?.email}</DialogDescription></DialogHeader>
           <form onSubmit={handleUpdateMember} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
-              <select id="role" value={editForm.role} onChange={handleEditFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                {memberRoleOptions.map(option => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Salvar</Button></DialogFooter>
           </form>
         </DialogContent>

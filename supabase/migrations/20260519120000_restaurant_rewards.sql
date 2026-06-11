@@ -10,7 +10,6 @@ create table if not exists public.rewards (
   constraint rewards_points_required_check check (points_required > 0),
   constraint rewards_status_check check (status = any (array['active'::text, 'inactive'::text]))
 );
-
 create table if not exists public.reward_redemptions (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references public.projects(id) on delete cascade,
@@ -29,19 +28,14 @@ create table if not exists public.reward_redemptions (
   constraint reward_redemptions_points_before_check check (points_before >= 0),
   constraint reward_redemptions_points_after_check check (points_after >= 0)
 );
-
 create index if not exists rewards_project_created_idx
   on public.rewards (project_id, created_at desc);
-
 create index if not exists rewards_project_status_idx
   on public.rewards (project_id, status);
-
 create index if not exists reward_redemptions_project_created_idx
   on public.reward_redemptions (project_id, created_at desc);
-
 create index if not exists reward_redemptions_project_user_pass_idx
   on public.reward_redemptions (project_id, user_pass_id, created_at desc);
-
 create or replace function public.set_rewards_updated_at()
 returns trigger
 language plpgsql
@@ -51,13 +45,11 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists trg_rewards_updated_at on public.rewards;
 create trigger trg_rewards_updated_at
 before update on public.rewards
 for each row
 execute function public.set_rewards_updated_at();
-
 create or replace function public.redeem_reward_points(
   p_project_id uuid,
   p_reward_id uuid,
@@ -190,24 +182,20 @@ begin
   );
 end;
 $$;
-
 alter table public.rewards enable row level security;
 alter table public.reward_redemptions enable row level security;
-
 drop policy if exists rewards_select_project_staff on public.rewards;
 create policy rewards_select_project_staff
 on public.rewards
 for select
 to authenticated
 using (public.is_project_staff(project_id));
-
 drop policy if exists rewards_insert_project_staff on public.rewards;
 create policy rewards_insert_project_staff
 on public.rewards
 for insert
 to authenticated
 with check (public.is_project_staff(project_id));
-
 drop policy if exists rewards_update_project_staff on public.rewards;
 create policy rewards_update_project_staff
 on public.rewards
@@ -215,36 +203,30 @@ for update
 to authenticated
 using (public.is_project_staff(project_id))
 with check (public.is_project_staff(project_id));
-
 drop policy if exists rewards_delete_project_staff on public.rewards;
 create policy rewards_delete_project_staff
 on public.rewards
 for delete
 to authenticated
 using (public.is_project_staff(project_id));
-
 drop policy if exists reward_redemptions_select_project_staff on public.reward_redemptions;
 create policy reward_redemptions_select_project_staff
 on public.reward_redemptions
 for select
 to authenticated
 using (public.is_project_staff(project_id));
-
 drop policy if exists reward_redemptions_insert_project_staff on public.reward_redemptions;
 create policy reward_redemptions_insert_project_staff
 on public.reward_redemptions
 for insert
 to authenticated
 with check (public.is_project_staff(project_id));
-
 grant all on table public.rewards to anon;
 grant all on table public.rewards to authenticated;
 grant all on table public.rewards to service_role;
-
 grant all on table public.reward_redemptions to anon;
 grant all on table public.reward_redemptions to authenticated;
 grant all on table public.reward_redemptions to service_role;
-
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from public;
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from anon;
 revoke all on function public.redeem_reward_points(uuid, uuid, text) from authenticated;

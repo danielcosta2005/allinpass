@@ -43,11 +43,9 @@ begin
   end if;
 end
 $$;
-
 alter table public.billing_plans
   drop column if exists included_passes,
   drop column if exists overage_price_cents;
-
 -- ------------------------------------------------------------------
 -- 2) billing_subscriptions
 -- ------------------------------------------------------------------
@@ -88,7 +86,6 @@ begin
   end if;
 end
 $$;
-
 alter table public.billing_subscriptions
   drop column if exists included_passes,
   drop column if exists overage_price_cents;

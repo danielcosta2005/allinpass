@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { MessageCircle } from 'lucide-react';
@@ -20,12 +20,25 @@ import { ALLOWED_TABS, DASHBOARD_TABS, SUPPORT_WHATSAPP_URL } from '@/constants/
 import { usePaidSignupRecovery } from '@/hooks/usePaidSignupRecovery';
 import { useProjectName } from '@/hooks/useProjectName';
 import { useRestaurantBilling } from '@/hooks/useRestaurantBilling';
+import {
+  STAFF_MANAGEABLE_MEMBER_ROLES,
+  canAccessRestaurantMembersTab,
+  canManageStaffMembers,
+} from '@/lib/adminPermissions';
+import { supabase } from '@/lib/supabaseClient';
 
 const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
+  const [memberRole, setMemberRole] = useState(undefined);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
+  const canSeeMembersTab = canAccessRestaurantMembersTab(memberRole);
+  const canManageMembers = canManageStaffMembers({ memberRole });
+  const dashboardTabs = useMemo(() => (
+    DASHBOARD_TABS.filter((tab) => tab.value !== 'members' || canSeeMembersTab)
+  ), [canSeeMembersTab]);
+  const allowedTabs = useMemo(() => new Set(dashboardTabs.map((tab) => tab.value)), [dashboardTabs]);
 
   const {
     isTrialExpired,
@@ -51,6 +64,7 @@ const RestaurantDashboard = () => {
   });
 
   const handleTabChange = (value) => {
+    if (!allowedTabs.has(value)) return;
     setActiveTab(value);
     try {
       sessionStorage.setItem('restaurant_active_tab', value);
@@ -60,13 +74,43 @@ const RestaurantDashboard = () => {
   const billingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
 
   useEffect(() => {
-    if (!ALLOWED_TABS.has(activeTab)) {
+    if (memberRole === undefined && ALLOWED_TABS.has(activeTab)) return;
+    if (!allowedTabs.has(activeTab)) {
       setActiveTab('kpis');
       try {
         sessionStorage.setItem('restaurant_active_tab', 'kpis');
       } catch (_) {}
     }
-  }, [activeTab]);
+  }, [activeTab, allowedTabs, memberRole]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchMemberRole() {
+      setMemberRole(undefined);
+
+      if (!projectId || !user?.id) {
+        setMemberRole(null);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('project_members')
+        .select('role')
+        .eq('project_id', projectId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      setMemberRole(error ? null : data?.role || null);
+    }
+
+    fetchMemberRole();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, user?.id]);
 
   async function handleSignOut() {
     if (signingOut) return;
@@ -141,13 +185,13 @@ const RestaurantDashboard = () => {
 
                 <TabsList
                   aria-label="Navegacao do painel do projeto"
-                  className="grid w-full grid-cols-2 gap-2 rounded-xl bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
+                  className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-100/60 py-1.5 px-4 shadow-sm"
                 >
-                  {DASHBOARD_TABS.map((tab) => (
+                  {dashboardTabs.map((tab) => (
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-10 w-full gap-2 px-2 text-xs sm:px-3 sm:text-sm"
+                      className="h-10 min-w-[8rem] flex-1 gap-2 px-2 text-xs sm:px-3 sm:text-sm lg:min-w-0 lg:flex-none"
                     >
                       <tab.icon className="h-4 w-4 shrink-0" />
                       <span className="truncate">{tab.label}</span>
@@ -173,9 +217,17 @@ const RestaurantDashboard = () => {
                 <TabsContent value="customers">
                   <CustomersTab projectId={projectId} />
                 </TabsContent>
-                <TabsContent value="members">
-                  <MembersTab projectId={projectId} />
-                </TabsContent>
+                {canSeeMembersTab && (
+                  <TabsContent value="members">
+                    <MembersTab
+                      projectId={projectId}
+                      canCreateMembers={canManageMembers}
+                      canEditMembers={canManageMembers}
+                      canRemoveMembers={canManageMembers}
+                      manageableRoles={STAFF_MANAGEABLE_MEMBER_ROLES}
+                    />
+                  </TabsContent>
+                )}
                 <TabsContent value="visits">
                   <VisitsTab projectId={projectId} />
                 </TabsContent>
