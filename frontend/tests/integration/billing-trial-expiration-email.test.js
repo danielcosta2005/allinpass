@@ -59,6 +59,11 @@ describe("trial expiration email outbox", () => {
     expect(migrationSources).toContain("{{app_org_url}}");
     expect(migrationSources).toContain("on conflict (idempotency_key) do nothing");
     expect(migrationSources).toContain("select expired_count");
+    expect(migrationSources).toContain("recent_missing_email_rows");
+    expect(migrationSources).toContain("'recent_missing_email_backfill'");
+    expect(migrationSources).toContain("v_enqueued_count");
+    expect(migrationSources).toContain("select expired_count, change_count, email_count");
+    expect(migrationSources).toContain("into v_expired_count, v_change_count, v_enqueued_count");
   });
 
   test("schedules the internal dispatcher through pg_net and Supabase Vault", () => {
@@ -83,7 +88,8 @@ describe("trial expiration email outbox", () => {
     expect(functionSource).toContain("RESEND_API_KEY");
     expect(functionSource).toContain("RESEND_FROM_EMAIL");
     expect(functionSource).toContain("EMAIL_DISPATCH_SECRET");
-    expect(functionSource).toContain("APP_BASE_URL");
+    expect(functionSource).toContain("PUBLIC_APP_URL");
+    expect(functionSource).not.toContain("APP_BASE_URL");
     expect(functionSource).toContain("https://api.resend.com/emails");
     expect(functionSource).toContain("Authorization");
     expect(functionSource).toContain("Idempotency-Key");

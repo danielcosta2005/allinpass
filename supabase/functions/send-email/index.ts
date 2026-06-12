@@ -96,8 +96,8 @@ function normalizeAppOrgUrl(rawBaseUrl: string) {
   } catch {
     throw new HttpError(500, {
       ok: false,
-      code: "SEND_EMAIL_INVALID_APP_BASE_URL",
-      error: "APP_BASE_URL invalida.",
+      code: "SEND_EMAIL_INVALID_PUBLIC_APP_URL",
+      error: "PUBLIC_APP_URL invalida.",
     });
   }
 }
@@ -290,7 +290,7 @@ Deno.serve(async (req) => {
     const config: DispatcherConfig = {
       resendApiKey: requiredEnv("RESEND_API_KEY"),
       resendFromEmail: requiredEnv("RESEND_FROM_EMAIL"),
-      appOrgUrl: normalizeAppOrgUrl(requiredEnv("APP_BASE_URL")),
+      appOrgUrl: normalizeAppOrgUrl(requiredEnv("PUBLIC_APP_URL")),
     };
 
     const body = await parseJsonBody(req) as Record<string, unknown>;
