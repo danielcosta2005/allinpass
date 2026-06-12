@@ -50,6 +50,19 @@ function isObj(v: any) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
 
+function errorPayload(
+  error: string,
+  message: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    ok: false,
+    error,
+    message,
+    ...extra,
+  };
+}
+
 class HttpError extends Error {
   status: number;
   payload: Record<string, unknown>;
@@ -63,6 +76,88 @@ class HttpError extends Error {
     this.status = status;
     this.payload = payload;
   }
+}
+
+function getBearerToken(req: Request) {
+  const authHeader = req.headers.get("Authorization") || "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match?.[1] || "";
+}
+
+async function getCallerProfile(req: Request) {
+  const token = getBearerToken(req);
+  if (!token) {
+    throw new HttpError(401, {
+      ...errorPayload(
+        "unauthorized",
+        "Sessão não encontrada. Faça login novamente.",
+      ),
+    });
+  }
+
+  const { data: userData, error: userError } = await sbAdmin.auth.getUser(token);
+  const user = userData?.user;
+  if (userError || !user) {
+    throw new HttpError(401, {
+      ...errorPayload("unauthorized", "Sessão inválida. Faça login novamente."),
+    });
+  }
+
+  const { data: profile, error: profileError } = await sbAdmin
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(`Erro ao buscar perfil: ${profileError.message}`);
+  }
+
+  return { user, profile };
+}
+
+async function ensureCanManageProject(projectId: string, caller: any) {
+  if (caller.profile?.role === "superadmin") return;
+
+  if (caller.profile?.role === "admin") {
+    const { data: project, error: projectError } = await sbAdmin
+      .from("projects")
+      .select("created_by")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    if (projectError) throw new Error(`Erro ao validar projeto: ${projectError.message}`);
+    if (project?.created_by === caller.user.id) return;
+  }
+
+  const { data: membership, error: membershipError } = await sbAdmin
+    .from("project_members")
+    .select("role")
+    .eq("project_id", projectId)
+    .eq("user_id", caller.user.id)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw new Error(`Erro ao validar membro do projeto: ${membershipError.message}`);
+  }
+
+  if (membership?.role === "owner") return;
+
+  if (membership?.role === "staff") {
+    throw new HttpError(403, {
+      ...errorPayload(
+        "forbidden",
+        "Funcionários podem apenas visualizar passes. Peça a um gestor para criar ou editar cartões.",
+      ),
+    });
+  }
+
+  throw new HttpError(403, {
+    ...errorPayload(
+      "forbidden",
+      "Você não tem permissão para criar passes neste projeto.",
+    ),
+  });
 }
 
 function normalizeLocationIds(input: unknown): string[] {
@@ -136,9 +231,12 @@ function resolveAppBaseUrl(req: Request, body: any) {
   const base = fromBody || fromOrigin || PUBLIC_APP_URL;
 
   if (!base) {
-    throw new Error(
-      "Missing app base url (send body.app_base_url or set PUBLIC_APP_URL)."
-    );
+    throw new HttpError(400, {
+      ...errorPayload(
+        "missing_app_base_url",
+        "Não foi possível montar o link do passe. Informe a URL pública da aplicação.",
+      ),
+    });
   }
   return base.replace(/\/$/, "");
 }
@@ -151,18 +249,24 @@ serve(async (req) => {
   }
 
   try {
+    if (req.method !== "POST") {
+      throw new HttpError(405, {
+        ...errorPayload("method_not_allowed", "Use POST."),
+      });
+    }
+
     const body = await req.json().catch(() => ({}));
 
     const projectId =
       typeof body.project_id === "string" ? body.project_id.trim() : body.project_id;
     if (!projectId) {
       throw new HttpError(400, {
-        ok: false,
-        error: "bad_request",
-        message: "project_id is required",
+        ...errorPayload("bad_request", "project_id é obrigatório."),
       });
     }
 
+    const caller = await getCallerProfile(req);
+    await ensureCanManageProject(projectId, caller);
     await assertProjectBillingActive(sbAdmin, projectId);
 
     const templateDefaults = await getProjectTemplateDefaults(projectId);
@@ -205,9 +309,10 @@ serve(async (req) => {
 
       if (invalidIds.length > 0) {
         throw new HttpError(400, {
-          ok: false,
-          error: "invalid_location_ids",
-          message: "Uma ou mais localizacoes nao pertencem ao projeto informado.",
+          ...errorPayload(
+            "invalid_location_ids",
+            "Uma ou mais localizações não pertencem ao projeto informado.",
+          ),
           invalid_ids: invalidIds,
         });
       }
@@ -294,9 +399,10 @@ serve(async (req) => {
     const payload = isHttpError
       ? err.payload
       : {
-          ok: false,
-          error: "internal_error",
-          message,
+          ...errorPayload(
+            "internal_error",
+            "Não foi possível criar o passe. Tente novamente.",
+          ),
         };
 
     if (status >= 500) {
