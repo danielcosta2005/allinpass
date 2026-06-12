@@ -69,6 +69,7 @@ describe("trial expiration email outbox", () => {
     expect(configSource).toContain("verify_jwt = false");
     expect(configSource).toContain('entrypoint = "./functions/send-email/index.ts"');
     expect(migrationSources).toContain("'email-dispatcher'");
+    expect(migrationSources).toContain("'* * * * *'");
     expect(migrationSources).toContain("net.http_post");
     expect(migrationSources).toContain("vault.decrypted_secrets");
     expect(migrationSources).toContain("name = 'project_url'");
