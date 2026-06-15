@@ -26,10 +26,15 @@ import {
 import { listMembers } from '@/lib/api';
 import { adminCreateMember, adminUpdateMember, adminRemoveMember } from '@/lib/admin';
 
-const memberRoleLabels = {
-  owner: 'Gestor',
-  staff: 'Funcionário',
-};
+const memberRoleOptions = [
+  { value: 'owner', label: 'Gestor' },
+  { value: 'staff', label: 'Funcionário' },
+];
+
+const memberRoleLabels = memberRoleOptions.reduce((labels, option) => {
+  labels[option.value] = option.label;
+  return labels;
+}, {});
 
 const MembersTab = ({
   projectId,
@@ -43,7 +48,7 @@ const MembersTab = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', password: '' });
+  const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' });
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ newPassword: '' });
@@ -105,7 +110,7 @@ const MembersTab = ({
         projectId,
         email: createForm.email.trim(),
         password: createForm.password || undefined,
-        role: 'staff',
+        role: createForm.role,
       });
       
       if (result.inviteSent) {
@@ -114,7 +119,7 @@ const MembersTab = ({
         toast({ title: "Membro adicionado!", description: `${createForm.email} foi criado e adicionado ao projeto.` });
       }
 
-      setCreateForm({ email: '', password: '' });
+      setCreateForm({ email: '', password: '', role: 'staff' });
       setShowCreateModal(false);
       await fetchMembers();
     } catch (error) {
@@ -247,6 +252,13 @@ const MembersTab = ({
           <form onSubmit={handleCreateMember} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={createForm.email} onChange={handleCreateFormChange} required disabled={isSubmitting}/></div>
             <div className="space-y-2"><Label htmlFor="password">Senha (Opcional)</Label><Input id="password" type="password" placeholder="Deixe em branco para enviar convite" value={createForm.password} onChange={handleCreateFormChange} disabled={isSubmitting}/></div>
+            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
+              <select id="role" value={createForm.role} onChange={handleCreateFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
+                {memberRoleOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Criar</Button></DialogFooter>
           </form>
         </DialogContent>
