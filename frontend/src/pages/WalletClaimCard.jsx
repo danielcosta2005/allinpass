@@ -1,26 +1,101 @@
-import React, { useMemo } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabaseClient';
 import { Gift, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import { motion } from 'framer-motion';
 
+const FALLBACK_CLAIM_TITLE = 'Resgate seu Cartão de Benefícios';
+const UNAVAILABLE_STATUSES = new Set([404, 410]);
+
 export default function WalletClaimCard() {
   const { c } = useParams();
-  const location = useLocation();
   const { toast } = useToast();
-  const passDescription = useMemo(() => {
-    const searchParams = new URLSearchParams(location.search || '');
-    return (searchParams.get('description') || '').trim();
-  }, [location.search]);
-  const claimTitle = passDescription ? `Resgate seu ${passDescription}` : 'Resgate seu Cartão de benefícios';
+  const [claimTitle, setClaimTitle] = useState(FALLBACK_CLAIM_TITLE);
+  const [previewMessage, setPreviewMessage] = useState('');
+  const [isClaimUnavailable, setIsClaimUnavailable] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const loadClaimPreview = async () => {
+      setClaimTitle(FALLBACK_CLAIM_TITLE);
+      setPreviewMessage('');
+      setIsClaimUnavailable(false);
+
+      if (!c) {
+        setIsClaimUnavailable(true);
+        setPreviewMessage('Código do passe não encontrado.');
+        return;
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl) {
+        setPreviewMessage('Não foi possível carregar os dados do passe agora.');
+        return;
+      }
+
+      try {
+        const url = `${supabaseUrl}/functions/v1/claim-preview?c=${encodeURIComponent(c)}`;
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+
+        const json = await response.json().catch(() => ({}));
+        if (cancelled) return;
+
+        if (response.ok) {
+          const nextTitle = String(json?.claim_title || '').trim();
+          setClaimTitle(nextTitle || FALLBACK_CLAIM_TITLE);
+          setPreviewMessage('');
+          setIsClaimUnavailable(false);
+          return;
+        }
+
+        if (UNAVAILABLE_STATUSES.has(response.status)) {
+          setIsClaimUnavailable(true);
+          setPreviewMessage(json?.message || 'Este link de carteira não está mais disponível.');
+          return;
+        }
+
+        if (response.status === 429) {
+          setPreviewMessage('Muitas tentativas. Tente novamente em instantes.');
+          return;
+        }
+
+        setPreviewMessage('Não foi possível carregar os dados do passe agora.');
+      } catch (error) {
+        if (cancelled || error?.name === 'AbortError') return;
+        setPreviewMessage('Não foi possível carregar os dados do passe agora.');
+      }
+    };
+
+    loadClaimPreview();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [c]);
 
   const handleLogin = async () => {
     if (!c) {
       toast({
         title: 'Link inválido',
         description: 'Código do passe não encontrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (isClaimUnavailable) {
+      toast({
+        title: 'Link indisponível',
+        description: previewMessage || 'Este link de carteira não está mais disponível.',
         variant: 'destructive',
       });
       return;
@@ -71,6 +146,11 @@ export default function WalletClaimCard() {
             <p className="mx-auto max-w-xs text-sm leading-relaxed text-violet-100/90 sm:text-base">
               Receba ofertas, participe de promoções e ganhe benefícios exclusivos.
             </p>
+            {previewMessage ? (
+              <p className="mx-auto max-w-xs text-xs leading-relaxed text-violet-100/75">
+                {previewMessage}
+              </p>
+            ) : null}
           </div>
 
           <div className="relative mt-6 flex items-center justify-center gap-2 text-sm text-violet-100/85">
@@ -82,6 +162,7 @@ export default function WalletClaimCard() {
             size="lg"
             className="relative mt-7 h-16 w-full rounded-full border border-white/20 bg-gradient-to-r from-[#4f5dff] via-[#4a68ff] to-[#3768ff] text-lg font-semibold text-white shadow-[0_16px_40px_rgba(36,71,255,0.45)] transition-all hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_20px_50px_rgba(36,71,255,0.55)]"
             onClick={handleLogin}
+            disabled={isClaimUnavailable}
           >
             <span className="mr-3 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white shadow-sm">
               <img
@@ -90,7 +171,7 @@ export default function WalletClaimCard() {
                 className="h-5 w-5"
               />
             </span>
-            <span>Entrar e começar</span>
+            <span>{isClaimUnavailable ? 'Link indisponível' : 'Entrar e começar'}</span>
           </Button>
 
           <p className="mt-4 text-center text-sm text-violet-100/90">Leva menos de 5 segundos</p>
