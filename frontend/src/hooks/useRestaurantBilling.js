@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   finalizeBillingPlanChange,
   getBillingPlanName,
+  getPendingBillingPlanChange,
   getBillingSubscriptionForAccess,
   getPlanChangeOptions,
   isTrialExpired as isTrialExpiredSubscription,
@@ -30,12 +31,40 @@ const loadMemberRole = async ({ projectId, userId }) => {
 };
 
 const loadBillingData = async ({ projectId, userId }) => {
-  const [subscription, memberRole] = await Promise.all([
+  const [subscription, memberRole, pendingPlanChange] = await Promise.all([
     getBillingSubscriptionForAccess(projectId),
     loadMemberRole({ projectId, userId }),
+    getPendingBillingPlanChange(projectId),
   ]);
-  const planChangeOptions = await getPlanChangeOptions(subscription);
-  return { subscription, planChangeOptions, memberRole };
+  const planChangeOptions = await getPlanChangeOptions(subscription, undefined, pendingPlanChange);
+  return { subscription, planChangeOptions, memberRole, pendingPlanChange };
+};
+
+const isScheduledPlanChangeResult = (result) =>
+  Boolean(
+    result?.scheduled
+      || result?.effective_mode === 'next_cycle'
+      || result?.result?.scheduled
+      || result?.result?.effective_mode === 'next_cycle'
+      || result?.result?.requested_effective_mode === 'next_cycle',
+  );
+
+const getPlanChangeSuccessToast = ({ plan, result }) => {
+  if (plan?.changeKind === 'downgrade' || isScheduledPlanChangeResult(result)) {
+    return {
+      title: 'Downgrade agendado',
+      description: plan?.name
+        ? `Seu plano atual continua ativo ate o fim do ciclo. O plano ${plan.name} sera aplicado automaticamente no proximo ciclo.`
+        : 'Seu plano atual continua ativo ate o fim do ciclo. O novo plano sera aplicado automaticamente no proximo ciclo.',
+    };
+  }
+
+  return {
+    title: 'Plano atualizado',
+    description: plan?.name
+      ? `Seu projeto agora usa o plano ${plan.name}.`
+      : 'A mudanca de plano foi aplicada ao projeto.',
+  };
 };
 
 export function useRestaurantBilling({ projectId, toast, user }) {
@@ -155,13 +184,10 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     setBillingActionPlanCode('finalize');
 
     finalizeBillingPlanChange({ planChangeSessionId })
-      .then(async () => {
+      .then(async (result) => {
         if (cancelled) return;
         await refreshBillingState();
-        toast({
-          title: 'Plano atualizado',
-          description: 'A mudanca de plano foi aplicada ao projeto.',
-        });
+        toast(getPlanChangeSuccessToast({ result }));
       })
       .catch((error) => {
         if (cancelled) return;
@@ -201,10 +227,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
 
       await refreshBillingState();
       setPlanChangeOpen(false);
-      toast({
-        title: 'Plano atualizado',
-        description: `Seu projeto agora usa o plano ${plan.name}.`,
-      });
+      toast(getPlanChangeSuccessToast({ plan, result }));
     } catch (error) {
       const message = error?.message || 'Nao foi possivel iniciar a mudanca de plano.';
       setBillingError(message);

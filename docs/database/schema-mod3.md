@@ -60,6 +60,7 @@ Fluxo esperado:
 - `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional; se for `next_cycle` antes do fim do ciclo, a RPC retorna `scheduled`.
 - `billing-finalize-plan-change` permite finalizar pelo retorno do `/org` quando o webhook ja confirmou o pagamento.
 - `apply_due_billing_plan_changes()` roda via cron e aplica sessoes `paid` + `next_cycle` quando `current_period_end <= now()`.
+- `get_pending_billing_plan_change(project_id)` expoe ao frontend somente a mudanca `next_cycle` ativa do projeto acessivel, para desabilitar o plano ja agendado na UI.
 
 ## 1) Catalogo comercial
 
@@ -392,6 +393,14 @@ Responsabilidades:
 - filtrar assinaturas cujo `current_period_end <= now()`;
 - chamar `apply_billing_plan_change(...)` para cada sessao vencida;
 - rodar a cada 15 minutos pelo cron `billing-apply-due-plan-changes`.
+
+### Funcao `get_pending_billing_plan_change(project_id)`
+Retorna a mudanca `next_cycle` ativa para o projeto acessivel pelo usuario logado.
+
+Responsabilidades:
+- manter `billing_plan_change_sessions` privada para escrita/leitura direta;
+- expor somente dados minimos do plano destino e status da sessao;
+- permitir que a UI mostre `Downgrade ja agendado` e bloqueie nova tentativa para o mesmo plano.
 
 ## Regras de negocio principais
 

@@ -250,6 +250,7 @@ RPCs de fila, billing e signup:
 | `enqueue_automation_notifications()` | invoker/default | Revogada de `public`, `anon`, `authenticated`; concedida a `service_role`. |
 | `check_and_increment_notifications(uuid)` | invoker/default | Revogada de `public`, `anon`, `authenticated`; concedida a `service_role`. |
 | `apply_billing_plan_change(uuid, uuid, text, text, text)` | `SECURITY DEFINER` | Revogada de `public`; concedida a `service_role`. |
+| `get_pending_billing_plan_change(uuid)` | `SECURITY DEFINER` | Revogada de `public`; concedida a `authenticated`; valida acesso por `can_access_project`. |
 | `consume_signup_precheck_rate_limit(...)` | `SECURITY DEFINER` | Concedida a `service_role`. |
 | `signup_precheck_auth_account_status(text)` | `SECURITY DEFINER` | Revogada de client roles; concedida a `service_role`. |
 | `signup_precheck_auth_email_exists(text)` | `SECURITY DEFINER` | Revogada de client roles; concedida a `service_role`. |

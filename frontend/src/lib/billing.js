@@ -72,6 +72,25 @@ function normalizeSubscription(row) {
   };
 }
 
+function normalizePendingPlanChange(row) {
+  if (!row) return null;
+
+  return {
+    id: row.id || null,
+    projectId: row.project_id || null,
+    subscriptionId: row.subscription_id || null,
+    previousPlanId: row.previous_plan_id || null,
+    newPlanId: row.new_plan_id || null,
+    newPlanCode: row.new_plan_code || null,
+    newPlanName: row.new_plan_name || null,
+    changeType: row.change_type || null,
+    effectiveMode: row.effective_mode || null,
+    status: row.status || null,
+    currentPeriodEnd: row.current_period_end || null,
+    createdAt: row.created_at || null,
+  };
+}
+
 function normalizePlanCode(value) {
   return String(value || '').trim().toLowerCase().replace(/-/g, '_');
 }
@@ -157,6 +176,19 @@ export function isTrialExpired(subscription) {
   return Boolean(subscription?.isTrialExpired);
 }
 
+export async function getPendingBillingPlanChange(projectId) {
+  const normalizedProjectId = String(projectId || '').trim();
+  if (!normalizedProjectId) return null;
+
+  const { data, error } = await supabase.rpc('get_pending_billing_plan_change', {
+    p_project_id: normalizedProjectId,
+  });
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  return normalizePendingPlanChange(row);
+}
+
 export function getPlanChangeKind(currentSubscription, targetPlan) {
   if (!currentSubscription || !targetPlan) return 'unavailable';
 
@@ -187,10 +219,11 @@ export function getPlanChangeActionLabel(changeKind) {
   return 'Indisponivel';
 }
 
-export async function getPlanChangeOptions(currentSubscription, planList) {
+export async function getPlanChangeOptions(currentSubscription, planList, pendingPlanChange = null) {
   if (!currentSubscription) return [];
 
   const plans = Array.isArray(planList) ? planList : await fetchSubscriptionPlans();
+  const pendingPlanCode = normalizePlanCode(pendingPlanChange?.newPlanCode);
 
   return plans
     .filter(Boolean)
@@ -198,13 +231,27 @@ export async function getPlanChangeOptions(currentSubscription, planList) {
       const changeKind = getPlanChangeKind(currentSubscription, plan);
       const isCurrent = changeKind === 'current';
       const expiredTrialConversion = isTrialExpired(currentSubscription) && changeKind === 'trial_conversion';
+      const isPendingPlanChange = Boolean(
+        pendingPlanChange
+          && pendingPlanChange.effectiveMode === 'next_cycle'
+          && ['pending', 'created', 'paid'].includes(pendingPlanChange.status)
+          && (
+            (pendingPlanChange.newPlanId && pendingPlanChange.newPlanId === plan.id)
+              || (pendingPlanCode && pendingPlanCode === normalizePlanCode(plan.code))
+          ),
+      );
 
       return {
         ...plan,
         changeKind,
         isCurrent,
-        isSelectable: expiredTrialConversion || (!isCurrent && changeKind !== 'unavailable'),
-        actionLabel: getPlanChangeActionLabel(changeKind),
+        isPendingPlanChange,
+        pendingPlanChange: isPendingPlanChange ? pendingPlanChange : null,
+        isSelectable: !isPendingPlanChange
+          && (expiredTrialConversion || (!isCurrent && changeKind !== 'unavailable')),
+        actionLabel: isPendingPlanChange
+          ? 'Downgrade ja agendado'
+          : getPlanChangeActionLabel(changeKind),
       };
     })
     .filter((plan) => plan.changeKind !== 'unavailable');
