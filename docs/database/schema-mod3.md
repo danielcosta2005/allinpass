@@ -174,6 +174,7 @@ Uso esperado:
 - `billing_usage_events` continua sendo o ledger auditavel e fonte da verdade.
 - `billing_cycle_usage_summaries` evita somas repetidas para dashboard, limite do ciclo e pre-fechamento.
 - os campos de excedente sao recalculados a partir do uso agregado e da franquia/preco efetivos do ciclo.
+- mudancas em `billing_subscription_changes` disparam recalc imediato dos resumos do ciclo afetado.
 - `billing_invoices` e `billing_invoice_items` continuam sendo snapshot financeiro gerado no fechamento, nao contador vivo.
 
 ## 6) Retroativo e creditos
@@ -303,6 +304,7 @@ Observacao de consolidacao:
 ### Triggers de resumo por ciclo em `billing_usage_events`
 - `trg_prepare_billing_usage_event_cycle`: antes de inserir/alterar campos de apuracao, tenta preencher `subscription_id` e `billing_cycle_id` usando `billing_cycles` ou a janela atual de `billing_subscriptions`.
 - `trg_sync_billing_cycle_usage_summary`: depois de inserir/alterar/remover eventos de uso, aplica o delta em `billing_cycle_usage_summaries`.
+- `trg_billing_subscription_changes_recalculate_usage_summary`: depois de inserir/alterar/remover mudanca de plano, recalcula os summaries do ciclo afetado para refletir a franquia/preco efetivos.
 
 Regras de contagem:
 - so considera `is_billable = true`
@@ -314,6 +316,7 @@ Garantia operacional:
 - a chave unica `(project_id, subscription_id, period_start, period_end)` evita duplicidade de resumo
 - updates/deletes raros aplicam delta reverso para manter o agregado consistente
 - `public.recalculate_billing_cycle_usage_summary(summary_id)` usa `get_billing_cycle_entitlements` para atualizar franquia/preco efetivos e excedentes sem re-somar `billing_usage_events`
+- `public.recalculate_billing_cycle_usage_summaries_for_subscription_change(...)` localiza summaries afetados por uma linha de `billing_subscription_changes` e chama o recalc individual.
 - um backfill na migration recalcula resumos para eventos ja existentes
 
 ## D) Enriquecimento de mudanca de plano, franquia e excedente
