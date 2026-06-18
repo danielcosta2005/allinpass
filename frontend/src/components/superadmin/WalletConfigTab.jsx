@@ -1360,7 +1360,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       toast({
         title: 'Cartão atualizado com sucesso.',
         description: queuedJobs > 0
-          ? `Sincronização com as carteiras em andamento (${queuedJobs} job(s) na fila).`
+          ? 'Sincronização com as carteiras em andamento.'
           : 'Não havia carteiras instaladas para sincronizar.',
         variant: 'default',
       });
