@@ -435,6 +435,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/universal-link/index.ts"
 
+[functions.pass-updates-runner]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/pass-updates-runner/index.ts"
+
 [functions.teste]
 enabled = true
 verify_jwt = true

@@ -76,7 +76,7 @@ function jsonResponse(
   body: unknown,
   status: number,
   origin = "*",
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
 ) {
   return new Response(JSON.stringify(body), {
     status,
@@ -123,7 +123,8 @@ function isIOS(userAgent: string | null) {
 }
 
 function base62Random(len = 24): string {
-  const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const chars =
+    "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const bytes = new Uint8Array(len);
   crypto.getRandomValues(bytes);
   let out = "";
@@ -148,7 +149,7 @@ function setCookieHeader(
   req: Request,
   name: string,
   value: string,
-  maxAgeSeconds = 31536000
+  maxAgeSeconds = 31536000,
 ) {
   const url = new URL(req.url);
   const secure = url.protocol === "https:" ? "Secure; " : "";
@@ -181,9 +182,10 @@ type AuthUserInfo = {
 
 async function getUserFromAuthHeader(
   sbAdmin: any,
-  req: Request
+  req: Request,
 ): Promise<AuthUserInfo | null> {
-  const h = req.headers.get("authorization") || req.headers.get("Authorization");
+  const h = req.headers.get("authorization") ||
+    req.headers.get("Authorization");
   if (!h) return null;
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
@@ -197,9 +199,8 @@ async function getUserFromAuthHeader(
   const u = data?.user;
   if (!u?.id) return null;
 
-  const name =
-    (typeof u.user_metadata?.full_name === "string" &&
-      u.user_metadata.full_name) ||
+  const name = (typeof u.user_metadata?.full_name === "string" &&
+    u.user_metadata.full_name) ||
     (typeof u.user_metadata?.name === "string" && u.user_metadata.name) ||
     null;
 
@@ -207,8 +208,7 @@ async function getUserFromAuthHeader(
     ? (u as any).identities
     : [];
   const google = identities.find((i: any) => i?.provider === "google");
-  const google_sub =
-    (google?.identity_data?.sub as string | undefined) ||
+  const google_sub = (google?.identity_data?.sub as string | undefined) ||
     (google?.id as string | undefined) ||
     (u.user_metadata?.sub as string | undefined) ||
     (u.app_metadata?.provider_id as string | undefined) ||
@@ -238,7 +238,7 @@ async function ensurePkPass(
   projectId: string,
   pass_data: any,
   pkPath: string,
-  wantBytes: boolean
+  wantBytes: boolean,
 ): Promise<Uint8Array | null> {
   const dlTry = await sbAdmin.storage.from("pass-assets").download(pkPath);
 
@@ -260,8 +260,7 @@ async function ensurePkPass(
 
   if (!genRes.ok) {
     const payload = await parseFunctionError(genRes);
-    const message =
-      payload?.message ||
+    const message = payload?.message ||
       payload?.error ||
       `Falha ao gerar o passe Apple (HTTP ${genRes.status}).`;
 
@@ -329,8 +328,7 @@ Deno.serve(async (req) => {
     const c = url.searchParams.get("c");
     const dkParam = url.searchParams.get("dk");
 
-    const wantsJson =
-      url.searchParams.get("mode") === "json" ||
+    const wantsJson = url.searchParams.get("mode") === "json" ||
       (req.headers.get("accept") || "").includes("application/json");
     const wantsDownload = url.searchParams.get("dl") === "1";
 
@@ -347,7 +345,7 @@ Deno.serve(async (req) => {
     const { data: pass, error: passErr } = await sbAdmin
       .from("passes")
       .select(
-        "id, project_id, type, title, description, fields, design, status, deleted_at, short_code_expires_at"
+        "id, project_id, type, title, description, fields, design, status, deleted_at, short_code_expires_at, wallet_revision",
       )
       .eq("short_code", c)
       .maybeSingle();
@@ -371,7 +369,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (pass.deleted_at || String(pass.status ?? "").toLowerCase() === "excluido") {
+    if (
+      pass.deleted_at || String(pass.status ?? "").toLowerCase() === "excluido"
+    ) {
       throw apiError(
         "pass_deleted",
         "Este link de carteira não está mais disponível.",
@@ -402,15 +402,16 @@ Deno.serve(async (req) => {
 
     const cookieDevice = getCookie(req, "device_key");
     const legacyDevice = getCookie(req, "pass_token");
-    const deviceKey =
-      (dkParam && dkParam.length >= 12 ? dkParam : null) ??
+    const deviceKey = (dkParam && dkParam.length >= 12 ? dkParam : null) ??
       (cookieDevice && cookieDevice.length >= 12 ? cookieDevice : null) ??
       (legacyDevice && legacyDevice.length >= 12 ? legacyDevice : null) ??
       base62Random(24);
 
     const { data: existingUP, error: upSelErr } = await sbAdmin
       .from("user_passes")
-      .select("id, pass_token, issued_at, expires_at, device_key, user_id, metadata, install_status")
+      .select(
+        "id, pass_token, issued_at, expires_at, device_key, user_id, metadata, install_status",
+      )
       .eq("pass_id", pass.id)
       .eq("device_key", deviceKey)
       .maybeSingle();
@@ -428,7 +429,8 @@ Deno.serve(async (req) => {
     let expiresAt: Date;
 
     const passToken = existingUP?.pass_token ?? base62Random(32);
-    const existingInstallStatus = String(existingUP?.install_status ?? "").trim().toLowerCase();
+    const existingInstallStatus = String(existingUP?.install_status ?? "")
+      .trim().toLowerCase();
     const needsInstallQuota = existingInstallStatus !== "installed";
 
     if (needsInstallQuota) {
@@ -438,14 +440,14 @@ Deno.serve(async (req) => {
 
     const claimMeta = authUser
       ? {
-          claim: {
-            user_id: authUser.id,
-            email: authUser.email,
-            name: authUser.name,
-            google_sub: authUser.google_sub,
-            claimed_at: new Date().toISOString(),
-          },
-        }
+        claim: {
+          user_id: authUser.id,
+          email: authUser.email,
+          name: authUser.name,
+          google_sub: authUser.google_sub,
+          claimed_at: new Date().toISOString(),
+        },
+      }
       : {};
 
     if (existingUP?.issued_at && existingUP?.expires_at) {
@@ -513,16 +515,24 @@ Deno.serve(async (req) => {
       qrMessage: passToken,
 
       short_code: c,
+      pass_id: pass.id,
+      wallet_revision: pass.wallet_revision ?? 1,
 
-      universal_url: `${SUPABASE_URL}/functions/v1/universal-link?c=${encodeURIComponent(
-        c
-      )}`,
+      universal_url: `${SUPABASE_URL}/functions/v1/universal-link?c=${
+        encodeURIComponent(
+          c,
+        )
+      }`,
     };
 
     let destination: string;
 
     if (preferApple) {
-      const pkPath = `issued_users/${pass.id}/${passToken}.pkpass`;
+      const revision = Number(pass.wallet_revision) > 0
+        ? Number(pass.wallet_revision)
+        : 1;
+      const pkPath =
+        `issued_users/${pass.id}/rev-${revision}/${passToken}.pkpass`;
 
       if (wantsDownload) {
         const bytes = await ensurePkPass(
@@ -532,18 +542,34 @@ Deno.serve(async (req) => {
           pass.project_id,
           pass_data,
           pkPath,
-          true
+          true,
         );
+
+        if (!bytes) {
+          throw apiError(
+            "apple_pass_generation_empty",
+            "Falha ao gerar o passe Apple para download.",
+            500,
+            "upstream",
+            { pkPath },
+            true,
+          );
+        }
 
         const headers: Record<string, string> = {
           ...corsHeaders(origin),
           "Set-Cookie": setCookieHeader(req, "device_key", deviceKey),
           "Cache-Control": "no-store",
           "Content-Type": "application/vnd.apple.pkpass",
-          "Content-Disposition": `attachment; filename="pass-${passToken}.pkpass"`,
+          "Content-Disposition":
+            `attachment; filename="pass-${passToken}.pkpass"`,
         };
 
-        return new Response(bytes, { status: 200, headers });
+        const responseBody = bytes.buffer.slice(
+          bytes.byteOffset,
+          bytes.byteOffset + bytes.byteLength,
+        ) as ArrayBuffer;
+        return new Response(responseBody, { status: 200, headers });
       }
 
       await ensurePkPass(
@@ -553,12 +579,14 @@ Deno.serve(async (req) => {
         pass.project_id,
         pass_data,
         pkPath,
-        false
+        false,
       );
 
-      destination = `${SUPABASE_URL}/functions/v1/universal-link?c=${encodeURIComponent(
-        c
-      )}&dl=1&dk=${encodeURIComponent(deviceKey)}`;
+      destination = `${SUPABASE_URL}/functions/v1/universal-link?c=${
+        encodeURIComponent(
+          c,
+        )
+      }&dl=1&dk=${encodeURIComponent(deviceKey)}`;
     } else {
       const gRes = await fetch(`${SUPABASE_URL}/functions/v1/google-pass`, {
         method: "POST",
@@ -573,7 +601,8 @@ Deno.serve(async (req) => {
         const payload = await parseFunctionError(gRes);
         throw apiError(
           "google_pass_failed",
-          payload?.message || payload?.error || `Falha ao gerar o passe Google (HTTP ${gRes.status}).`,
+          payload?.message || payload?.error ||
+            `Falha ao gerar o passe Google (HTTP ${gRes.status}).`,
           gRes.status >= 400 && gRes.status < 600 ? gRes.status : 500,
           gRes.status >= 500 ? "upstream" : "validation",
           {
@@ -642,4 +671,3 @@ Deno.serve(async (req) => {
     return errorResponse(e, origin);
   }
 });
-

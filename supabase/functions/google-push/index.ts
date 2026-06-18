@@ -1,7 +1,7 @@
 // supabase/functions/google-push/index.ts
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { SignJWT, importPKCS8 } from "https://esm.sh/jose@5.2.4";
+import { importPKCS8, SignJWT } from "https://esm.sh/jose@5.2.4";
 
 type WalletResourceKind =
   | "loyaltyObject"
@@ -156,7 +156,7 @@ function toNumber(v: unknown): number | null {
 }
 
 async function loadProjectName(
-  sb: ReturnType<typeof createClient>,
+  sb: any,
   projectId: string,
 ) {
   const { data, error } = await sb
@@ -170,7 +170,7 @@ async function loadProjectName(
 }
 
 async function loadWalletTemplateDefaults(
-  sb: ReturnType<typeof createClient>,
+  sb: any,
   projectId: string,
 ) {
   const [projectRes, globalRes] = await Promise.all([
@@ -217,7 +217,7 @@ async function loadWalletTemplateDefaults(
 }
 
 async function loadPassMerchantLocations(
-  sb: ReturnType<typeof createClient>,
+  sb: any,
   projectId: string,
   passId: string,
 ) {
@@ -278,6 +278,157 @@ async function loadPassMerchantLocations(
   })) as Array<{ latitude: number; longitude: number }>;
 }
 
+function buildGooglePatchPayloads(args: {
+  passRow: any;
+  templateDefaults: Record<string, any>;
+  projectName: string | null;
+  merchantLocations: Array<{ latitude: number; longitude: number }>;
+  up?: any | null;
+  objectId?: string | null;
+  classId?: string | null;
+  supabaseUrl: string;
+  includeObjectGlobalFields?: boolean;
+}) {
+  const {
+    passRow,
+    templateDefaults,
+    projectName,
+    merchantLocations,
+    up,
+    objectId,
+    classId,
+    supabaseUrl,
+    includeObjectGlobalFields = true,
+  } = args;
+
+  const passDesign = toObject((passRow as any).design);
+  const mergedColors = {
+    ...toObject(templateDefaults.colors),
+    ...toObject(passDesign.colors),
+  };
+  const mergedImages = {
+    ...toObject(templateDefaults.images),
+    ...toObject(passDesign.images),
+  };
+  const mergedFields = {
+    ...toObject(templateDefaults.fields),
+    ...toObject((passRow as any).fields),
+  };
+
+  const title = cleanString((passRow as any).title) ??
+    cleanString((templateDefaults as any).title) ??
+    "Cartao Fidelidade";
+  const header = cleanString((passRow as any).description) ??
+    "Programa Fidelidade";
+
+  const metadataPoints = up
+    ? getPointsFromMetadata((up as any).metadata)
+    : null;
+  const points = metadataPoints ?? getPointsFromFields(mergedFields);
+
+  const expSource = cleanString((mergedFields as any).exp_date) ??
+    cleanString((up as any)?.expires_at);
+  const expText = formatBRDateShort(expSource);
+  const expLabel = expText ? `EXPIRA EM ${expText}` : "EXPIRA EM --/--/----";
+
+  const passTypeFromPass = cleanString((passRow as any).type)?.toLowerCase();
+  const inferFromIds = `${classId ?? ""} ${objectId ?? ""}`.toLowerCase();
+  const isLoyalty = passTypeFromPass
+    ? passTypeFromPass === "loyalty"
+    : inferFromIds.includes("loyalty");
+
+  const bgColor = mapBgColor(mergedColors);
+
+  const logoUrl = ensureHttpUrl((mergedImages as any).googleLogo) ??
+    ensureHttpUrl((mergedImages as any).logo) ??
+    storagePublicUrl(supabaseUrl, "templates/default/logo.png");
+
+  const heroUrl = ensureHttpUrl((mergedImages as any).googleHero);
+
+  // For installed passes, barcode value should keep using per-user token.
+  const qrMessage = cleanString((up as any)?.pass_token) ??
+    cleanString((passRow as any).qr_url) ??
+    cleanString((passRow as any).universal_url) ??
+    objectId ??
+    classId ??
+    "";
+
+  const issuerName = projectName ?? "Allin Pass";
+
+  const classKind: WalletResourceKind = isLoyalty
+    ? "loyaltyClass"
+    : "genericClass";
+  const objectKind: WalletResourceKind = isLoyalty
+    ? "loyaltyObject"
+    : "genericObject";
+
+  const classPatchBody = isLoyalty
+    ? {
+      issuerName,
+      reviewStatus: "UNDER_REVIEW",
+      programName: title,
+      hexBackgroundColor: bgColor,
+      ...(logoUrl ? { programLogo: { sourceUri: { uri: logoUrl } } } : {}),
+      ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
+      ...(merchantLocations.length ? { merchantLocations } : {}),
+    }
+    : {
+      issuerName,
+      reviewStatus: "UNDER_REVIEW",
+      hexBackgroundColor: bgColor,
+      ...(logoUrl ? { logo: { sourceUri: { uri: logoUrl } } } : {}),
+      ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
+      ...(merchantLocations.length ? { merchantLocations } : {}),
+    };
+
+  const objectGlobalFields = includeObjectGlobalFields
+    ? {
+      hexBackgroundColor: bgColor,
+      ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
+      ...(merchantLocations.length ? { merchantLocations } : {}),
+    }
+    : {};
+
+  const objectPatchBody = isLoyalty
+    ? {
+      state: "ACTIVE",
+      ...objectGlobalFields,
+      loyaltyPoints: { label: "PONTOS", balance: { string: String(points) } },
+      barcode: { type: "QR_CODE", value: qrMessage },
+      textModulesData: [{ header: "EXPIRA EM", body: expText ?? "--/--/----" }],
+    }
+    : {
+      state: "ACTIVE",
+      ...objectGlobalFields,
+      cardTitle: { defaultValue: { language: "pt-BR", value: title } },
+      header: { defaultValue: { language: "pt-BR", value: header } },
+      subheader: { defaultValue: { language: "pt-BR", value: expLabel } },
+      textModulesData: [
+        { header: "PONTOS", body: String(points) },
+        { header: "EXPIRA EM", body: expText ?? "--/--/----" },
+      ],
+      barcode: { type: "QR_CODE", value: qrMessage },
+    };
+
+  return {
+    classKind,
+    objectKind,
+    classPatchBody,
+    objectPatchBody,
+    applied: {
+      pass_type: passTypeFromPass ?? null,
+      title,
+      header,
+      points,
+      exp_source: expSource,
+      expText,
+      has_logo: !!logoUrl,
+      has_hero: !!heroUrl,
+      merchant_locations: merchantLocations.length,
+    },
+  };
+}
+
 async function getGoogleAccessToken(params: {
   saEmail: string;
   saPkPem: string;
@@ -316,7 +467,9 @@ async function getGoogleAccessToken(params: {
     throw new Error(`Google token error: HTTP ${resp.status}`);
   }
 
-  const accessToken = typeof j?.access_token === "string" ? j.access_token : null;
+  const accessToken = typeof j?.access_token === "string"
+    ? j.access_token
+    : null;
   if (!accessToken) throw new Error("Google token error: missing access_token");
   return accessToken;
 }
@@ -367,7 +520,8 @@ async function patchWalletResource(args: {
 }
 
 function authIsServiceRole(req: Request, serviceRoleKey: string) {
-  const h = req.headers.get("authorization") || req.headers.get("Authorization");
+  const h = req.headers.get("authorization") ||
+    req.headers.get("Authorization");
   if (!h) return false;
   const m = h.match(/^Bearer\s+(.+)$/i);
   if (!m) return false;
@@ -400,7 +554,10 @@ serve(async (req) => {
       { name: "GOOGLE_SA_PK", value: GOOGLE_SA_PK_RAW },
     ]);
     if (!baseCheck.ok) {
-      console.error(`[google-push:${requestId}] missing envs`, baseCheck.missing);
+      console.error(
+        `[google-push:${requestId}] missing envs`,
+        baseCheck.missing,
+      );
       return json(
         500,
         {
@@ -420,14 +577,122 @@ serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
+    const mode = cleanString(body?.mode ?? body?.scope)?.toLowerCase();
+    const classPatchOnly = mode === "class";
+    const skipClassPatch = body?.skip_class_patch === true || mode === "object";
     const passToken = cleanString(
       body?.pass_token || body?.token || body?.serialNumber,
     );
 
     console.info(`[google-push:${requestId}] body parsed`, {
       hasBody: !!body && typeof body === "object",
+      mode: mode ?? null,
       passTokenPrefix: passToken ? `${passToken.slice(0, 8)}...` : null,
+      skipClassPatch,
     });
+
+    const sbAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    if (classPatchOnly) {
+      const passId = cleanString(body?.pass_id);
+      const classId = cleanString(body?.google_class_id ?? body?.class_id);
+
+      if (!passId || !classId) {
+        return json(
+          400,
+          {
+            error: "bad_request",
+            requestId,
+            message: "Send { mode: 'class', pass_id, google_class_id }",
+          },
+          origin,
+        );
+      }
+
+      const { data: passRow, error: passErr } = await sbAdmin
+        .from("passes")
+        .select(
+          "id, project_id, type, title, description, fields, design, qr_url, universal_url",
+        )
+        .eq("id", passId)
+        .maybeSingle();
+
+      if (passErr) {
+        return json(
+          500,
+          {
+            error: "db_error",
+            requestId,
+            message: passErr.message,
+          },
+          origin,
+        );
+      }
+      if (!passRow) {
+        return json(
+          404,
+          {
+            error: "not_found",
+            requestId,
+            message: "pass not found",
+          },
+          origin,
+        );
+      }
+
+      const projectId = String((passRow as any).project_id);
+      const [templateDefaults, projectName, merchantLocations] = await Promise
+        .all([
+          loadWalletTemplateDefaults(sbAdmin, projectId),
+          loadProjectName(sbAdmin, projectId),
+          loadPassMerchantLocations(sbAdmin, projectId, passId),
+        ]);
+
+      const payloads = buildGooglePatchPayloads({
+        passRow,
+        templateDefaults,
+        projectName,
+        merchantLocations,
+        classId,
+        supabaseUrl: SUPABASE_URL,
+      });
+
+      const GOOGLE_SA_PK = normalizePem(GOOGLE_SA_PK_RAW);
+      const accessToken = await getGoogleAccessToken({
+        saEmail: GOOGLE_SA_EMAIL,
+        saPkPem: GOOGLE_SA_PK,
+        scope: "https://www.googleapis.com/auth/wallet_object.issuer",
+        requestId,
+      });
+
+      const classPatchResult = await patchWalletResource({
+        accessToken,
+        kind: payloads.classKind,
+        resourceId: classId,
+        patchBody: payloads.classPatchBody,
+        requestId,
+      });
+
+      return json(
+        200,
+        {
+          ok: true,
+          requestId,
+          patched: true,
+          mode: "class",
+          classKind: payloads.classKind,
+          classId,
+          applied: payloads.applied,
+          wallet: {
+            class: classPatchResult,
+            object: null,
+          },
+        },
+        origin,
+      );
+    }
 
     if (!passToken) {
       return json(
@@ -440,10 +705,6 @@ serve(async (req) => {
         origin,
       );
     }
-
-    const sbAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
 
     const { data: up, error: upErr } = await sbAdmin
       .from("user_passes")
@@ -549,116 +810,24 @@ serve(async (req) => {
     const projectId = String((passRow as any).project_id);
     const passId = String((passRow as any).id);
 
-    const [templateDefaults, projectName, merchantLocations] = await Promise.all([
-      loadWalletTemplateDefaults(sbAdmin, projectId),
-      loadProjectName(sbAdmin, projectId),
-      loadPassMerchantLocations(sbAdmin, projectId, passId),
-    ]);
+    const [templateDefaults, projectName, merchantLocations] = await Promise
+      .all([
+        loadWalletTemplateDefaults(sbAdmin, projectId),
+        loadProjectName(sbAdmin, projectId),
+        loadPassMerchantLocations(sbAdmin, projectId, passId),
+      ]);
 
-    const passDesign = toObject((passRow as any).design);
-    const mergedColors = {
-      ...toObject(templateDefaults.colors),
-      ...toObject(passDesign.colors),
-    };
-    const mergedImages = {
-      ...toObject(templateDefaults.images),
-      ...toObject(passDesign.images),
-    };
-    const mergedFields = {
-      ...toObject(templateDefaults.fields),
-      ...toObject((passRow as any).fields),
-    };
-
-    const title =
-      cleanString((passRow as any).title) ??
-      cleanString((templateDefaults as any).title) ??
-      "Cartao Fidelidade";
-    const header =
-      cleanString((passRow as any).description) ?? "Programa Fidelidade";
-
-    const metadataPoints = getPointsFromMetadata((up as any).metadata);
-    const points = metadataPoints ?? getPointsFromFields(mergedFields);
-
-    const expSource =
-      cleanString((mergedFields as any).exp_date) ??
-      cleanString((up as any).expires_at);
-    const expText = formatBRDateShort(expSource);
-    const expLabel = expText ? `EXPIRA EM ${expText}` : "EXPIRA EM --/--/----";
-
-    const passTypeFromPass = cleanString((passRow as any).type)?.toLowerCase();
-    const inferFromIds = `${classId ?? ""} ${objectId ?? ""}`.toLowerCase();
-    const isLoyalty = passTypeFromPass
-      ? passTypeFromPass === "loyalty"
-      : inferFromIds.includes("loyalty");
-
-    const bgColor = mapBgColor(mergedColors);
-
-    const logoUrl =
-      ensureHttpUrl((mergedImages as any).googleLogo) ??
-      ensureHttpUrl((mergedImages as any).logo) ??
-      storagePublicUrl(SUPABASE_URL, "templates/default/logo.png");
-
-    const heroUrl = ensureHttpUrl((mergedImages as any).googleHero);
-
-    // For installed passes, barcode value should keep using per-user token.
-    const qrMessage =
-      cleanString((up as any).pass_token) ??
-      cleanString((passRow as any).qr_url) ??
-      cleanString((passRow as any).universal_url) ??
-      objectId;
-
-    const issuerName = projectName ?? "Allin Pass";
-
-    const classKind: WalletResourceKind = isLoyalty
-      ? "loyaltyClass"
-      : "genericClass";
-    const objectKind: WalletResourceKind = isLoyalty
-      ? "loyaltyObject"
-      : "genericObject";
-
-    const classPatchBody = isLoyalty
-      ? {
-          issuerName,
-          reviewStatus: "UNDER_REVIEW",
-          programName: title,
-          hexBackgroundColor: bgColor,
-          ...(logoUrl ? { programLogo: { sourceUri: { uri: logoUrl } } } : {}),
-          ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
-          ...(merchantLocations.length ? { merchantLocations } : {}),
-        }
-      : {
-          issuerName,
-          reviewStatus: "UNDER_REVIEW",
-          hexBackgroundColor: bgColor,
-          ...(logoUrl ? { logo: { sourceUri: { uri: logoUrl } } } : {}),
-          ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
-          ...(merchantLocations.length ? { merchantLocations } : {}),
-        };
-
-    const objectPatchBody = isLoyalty
-      ? {
-          state: "ACTIVE",
-          hexBackgroundColor: bgColor,
-          loyaltyPoints: { label: "PONTOS", balance: { string: String(points) } },
-          barcode: { type: "QR_CODE", value: qrMessage },
-          textModulesData: [{ header: "EXPIRA EM", body: expText ?? "--/--/----" }],
-          ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
-          ...(merchantLocations.length ? { merchantLocations } : {}),
-        }
-      : {
-          state: "ACTIVE",
-          hexBackgroundColor: bgColor,
-          cardTitle: { defaultValue: { language: "pt-BR", value: title } },
-          header: { defaultValue: { language: "pt-BR", value: header } },
-          subheader: { defaultValue: { language: "pt-BR", value: expLabel } },
-          textModulesData: [
-            { header: "PONTOS", body: String(points) },
-            { header: "EXPIRA EM", body: expText ?? "--/--/----" },
-          ],
-          barcode: { type: "QR_CODE", value: qrMessage },
-          ...(heroUrl ? { heroImage: { sourceUri: { uri: heroUrl } } } : {}),
-          ...(merchantLocations.length ? { merchantLocations } : {}),
-        };
+    const payloads = buildGooglePatchPayloads({
+      passRow,
+      templateDefaults,
+      projectName,
+      merchantLocations,
+      up,
+      objectId,
+      classId,
+      supabaseUrl: SUPABASE_URL,
+      includeObjectGlobalFields: body?.include_object_global_fields !== false,
+    });
 
     const GOOGLE_SA_PK = normalizePem(GOOGLE_SA_PK_RAW);
     const accessToken = await getGoogleAccessToken({
@@ -669,13 +838,13 @@ serve(async (req) => {
     });
 
     let classPatchResult: any = null;
-    if (classId) {
+    if (classId && !skipClassPatch) {
       try {
         classPatchResult = await patchWalletResource({
           accessToken,
-          kind: classKind,
+          kind: payloads.classKind,
           resourceId: classId,
-          patchBody: classPatchBody,
+          patchBody: payloads.classPatchBody,
           requestId,
         });
       } catch (classError: any) {
@@ -684,7 +853,7 @@ serve(async (req) => {
           `[google-push:${requestId}] class patch failed (continuing)`,
           {
             classId,
-            classKind,
+            classKind: payloads.classKind,
             message: classMessage,
           },
         );
@@ -697,9 +866,9 @@ serve(async (req) => {
 
     const objectPatchResult = await patchWalletResource({
       accessToken,
-      kind: objectKind,
+      kind: payloads.objectKind,
       resourceId: objectId,
-      patchBody: objectPatchBody,
+      patchBody: payloads.objectPatchBody,
       requestId,
     });
 
@@ -709,21 +878,12 @@ serve(async (req) => {
         ok: true,
         requestId,
         patched: true,
-        objectKind,
+        mode: skipClassPatch ? "object" : "object_with_optional_class",
+        objectKind: payloads.objectKind,
         objectId,
-        classKind,
+        classKind: payloads.classKind,
         classId,
-        applied: {
-          pass_type: passTypeFromPass ?? null,
-          title,
-          header,
-          points,
-          exp_source: expSource,
-          expText,
-          has_logo: !!logoUrl,
-          has_hero: !!heroUrl,
-          merchant_locations: merchantLocations.length,
-        },
+        applied: payloads.applied,
         wallet: {
           class: classPatchResult,
           object: objectPatchResult,

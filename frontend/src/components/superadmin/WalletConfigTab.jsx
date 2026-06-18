@@ -1355,14 +1355,14 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
       const result = await invokeWalletFunction('update-pass', body);
 
-      const pushes = result?.pushes || {};
-      const appleFailed = pushes?.apple?.failed ?? 0;
-      const googleFailed = pushes?.google?.failed ?? 0;
-      const hasPushFailures = appleFailed > 0 || googleFailed > 0;
+      const sync = result?.sync || {};
+      const queuedJobs = sync?.total_jobs ?? result?.pushes?.queued ?? 0;
       toast({
-        title: hasPushFailures ? 'Cartão atualizado com alertas.' : 'Cartão atualizado com sucesso.',
-        description: hasPushFailures ? `Push enviado para ${pushes.total_tokens ?? 0} token(s). Apple: ${pushes?.apple?.success ?? 0} ok, ${appleFailed} falhou. Google: ${pushes?.google?.success ?? 0} ok, ${googleFailed} falhou.` : `Atualizações enviadas para os clientes!`,
-        variant: hasPushFailures ? 'destructive' : 'default',
+        title: 'Cartão atualizado com sucesso.',
+        description: queuedJobs > 0
+          ? `Sincronização com as carteiras em andamento (${queuedJobs} job(s) na fila).`
+          : 'Não havia carteiras instaladas para sincronizar.',
+        variant: 'default',
       });
 
       setPassLocationsByPassId((prev) => ({ ...prev, [selectedPass.id]: selectedPassLocationIds }));
