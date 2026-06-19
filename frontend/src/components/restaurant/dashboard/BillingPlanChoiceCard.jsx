@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, CheckCircle2, CreditCard, Loader2, Star } from 'lucide-react';
+import { Check, CheckCircle2, Clock3, CreditCard, Loader2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const formatCurrencyBRL = (value) =>
@@ -21,6 +21,21 @@ const getPlanCardTone = (plan) => {
       check: 'text-purple-700',
       button: 'border-purple-200 bg-white text-purple-700',
       badge: 'bg-purple-600 text-white',
+      feature: 'text-gray-700',
+    };
+  }
+
+  if (plan?.isPendingPlanChange) {
+    return {
+      wrapper: 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 shadow-lg shadow-amber-100/70',
+      title: 'text-amber-950',
+      description: 'text-amber-800/80',
+      price: 'text-amber-950',
+      muted: 'text-amber-700',
+      checkBg: 'bg-amber-100',
+      check: 'text-amber-700',
+      button: 'border-amber-200 bg-white text-amber-700',
+      badge: 'bg-amber-500 text-white',
       feature: 'text-gray-700',
     };
   }
@@ -71,6 +86,7 @@ const getPlanCardTone = (plan) => {
 
 const getPlanChangeHint = (plan) => {
   if (plan?.isCurrent) return 'Ativo agora';
+  if (plan?.isPendingPlanChange) return 'Agendado para proximo ciclo';
   if (plan?.changeKind === 'downgrade') return 'Menor mensalidade';
   if (plan?.changeKind === 'upgrade') return 'Mais capacidade';
   if (plan?.changeKind === 'trial_conversion') return 'Ativacao paga';
@@ -84,9 +100,19 @@ function BillingPlanChoiceCard({
   onSelect,
 }) {
   const tone = getPlanCardTone(plan);
-  const badgeText = plan.isCurrent ? 'Plano atual' : plan.badge || plan.highlight;
+  const badgeText = plan.isCurrent
+    ? 'Plano atual'
+    : plan.isPendingPlanChange
+      ? 'Agendado'
+      : plan.badge || plan.highlight;
   const isActionDisabled = disabled || !plan.isSelectable;
-  const actionLabel = plan.actionLabel || (plan.changeKind === 'downgrade' ? 'Fazer downgrade' : 'Trocar plano');
+  const actionLabel = plan.actionLabel || (
+    plan.isPendingPlanChange
+      ? 'Downgrade ja agendado'
+      : plan.changeKind === 'downgrade'
+        ? 'Fazer downgrade'
+        : 'Trocar plano'
+  );
   const hasZeroTrialPrice = plan.type === 'trial' && Number(plan.price || 0) <= 0;
   const priceLabel = hasZeroTrialPrice
     ? `${plan.trialDays || 7} dias`
@@ -138,6 +164,8 @@ function BillingPlanChoiceCard({
       >
         {busy ? (
           <Loader2 className="h-4 w-4 animate-spin" />
+        ) : plan.isPendingPlanChange ? (
+          <Clock3 className="h-4 w-4" />
         ) : plan.isCurrent ? (
           <CheckCircle2 className="h-4 w-4" />
         ) : (

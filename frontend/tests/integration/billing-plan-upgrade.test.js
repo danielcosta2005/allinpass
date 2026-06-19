@@ -74,6 +74,7 @@ describe("billing plan changes", () => {
     const billingCardSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanChoiceCard.jsx");
 
     expect(billingClientSource).toContain("getCurrentBillingSubscription");
+    expect(billingClientSource).toContain("getPendingBillingPlanChange");
     expect(billingClientSource).toContain("getPlanChangeOptions");
     expect(billingClientSource).toContain("startBillingPlanChange");
     expect(billingClientSource).toContain("billing-start-plan-change");
@@ -82,13 +83,43 @@ describe("billing plan changes", () => {
     expect(billingClientSource).toContain(".filter((plan) => plan.changeKind !== 'unavailable')");
 
     expect(billingHookSource).toContain("getBillingSubscriptionForAccess");
+    expect(billingHookSource).toContain("getPendingBillingPlanChange(projectId)");
+    expect(billingHookSource).toContain("getPlanChangeOptions(subscription, undefined, pendingPlanChange)");
     expect(billingHookSource).toContain("startBillingPlanChange");
     expect(billingDialogSource).toContain("Escolha seu plano");
     expect(dashboardSource).toContain("handleStartPlanChange");
     expect(billingCardSource).toContain("Plano atual");
     expect(billingCardSource).toContain("Fazer downgrade");
+    expect(billingCardSource).toContain("Agendado para proximo ciclo");
+    expect(billingCardSource).toContain("Downgrade ja agendado");
     expect(billingDialogSource).toContain("flex flex-wrap justify-center gap-5");
     expect(dashboardSource).toContain("billingPlanName");
+  });
+
+  test("marks an already scheduled downgrade target as unavailable in the UI", () => {
+    const billingClientSource = readIfExists("frontend/src/lib/billing.js");
+    const billingCardSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanChoiceCard.jsx");
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(migrationSources).toContain("create or replace function public.get_pending_billing_plan_change");
+    expect(migrationSources).toContain("public.can_access_project(bpcs.project_id)");
+    expect(migrationSources).toContain("bpcs.effective_mode = 'next_cycle'");
+    expect(migrationSources).toContain("bpcs.status in ('pending', 'created', 'paid')");
+    expect(migrationSources).toContain("grant execute on function public.get_pending_billing_plan_change(uuid) to authenticated");
+
+    expect(billingClientSource).toContain("supabase.rpc('get_pending_billing_plan_change'");
+    expect(billingClientSource).toContain("isPendingPlanChange");
+    expect(billingClientSource).toContain("isSelectable: !isPendingPlanChange");
+    expect(billingClientSource).toContain("Downgrade ja agendado");
+
+    expect(billingCardSource).toContain("plan?.isPendingPlanChange");
+    expect(billingCardSource).toContain("Clock3");
+    expect(billingCardSource).toContain("Agendado");
   });
 
   test("requires an explicit confirmation before starting a paid plan change", () => {
