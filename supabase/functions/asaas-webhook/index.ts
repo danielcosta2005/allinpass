@@ -35,6 +35,7 @@ function isPaidPaymentEvent(event: string, paymentStatus: string) {
     event === "PAYMENT_RECEIVED" ||
     paymentStatus === "CONFIRMED" ||
     paymentStatus === "RECEIVED" ||
+    paymentStatus === "RECEIVED_IN_CASH" ||
     paymentStatus === "PAID";
 }
 
@@ -108,6 +109,12 @@ type BillingSubscriptionWebhookMatch = {
   billing_account_id: string;
   metadata: Record<string, unknown> | null;
   gateway_subscription_id?: string | null;
+};
+
+type InvoiceCollectionBatchWebhookMatch = {
+  id: string;
+  status: string;
+  metadata: Record<string, unknown> | null;
 };
 
 function getMetadata(value: unknown) {
@@ -589,6 +596,138 @@ async function handleSubscriptionWebhook(
   return true;
 }
 
+function getOverageInvoicePaymentStatus(event: string, paymentStatus: string, isPaid: boolean) {
+  if (isPaid) return "paid";
+  if (event === "PAYMENT_OVERDUE" || paymentStatus === "OVERDUE") return "past_due";
+  if (event === "PAYMENT_REFUNDED" || paymentStatus === "REFUNDED") return "refunded";
+  if (
+    event === "PAYMENT_DELETED" ||
+    paymentStatus === "CANCELED" ||
+    paymentStatus === "DELETED"
+  ) {
+    return "canceled";
+  }
+  if (
+    paymentStatus === "CHARGEBACK_REQUESTED" ||
+    paymentStatus === "CHARGEBACK_DISPUTE" ||
+    paymentStatus === "AWAITING_CHARGEBACK_REVERSAL"
+  ) {
+    return "failed";
+  }
+  if (
+    event === "PAYMENT_CREATED" ||
+    event === "PAYMENT_UPDATED" ||
+    paymentStatus === "PENDING" ||
+    paymentStatus === "AWAITING_RISK_ANALYSIS"
+  ) {
+    return "open";
+  }
+  return "";
+}
+
+async function updateOverageInvoicesForBatch(
+  supabaseAdmin: SupabaseAdmin,
+  batchId: string,
+  nextStatus: string,
+  paidAt: string | null,
+  payload: unknown,
+) {
+  const { data: invoicesData, error: invoicesError } = await supabaseAdmin
+    .from("billing_invoices")
+    .select("id, total_cents, metadata")
+    .eq("collection_batch_id", batchId);
+
+  if (invoicesError) throw invoicesError;
+
+  for (const invoice of invoicesData ?? []) {
+    const totalCents = Math.max(0, Number(invoice.total_cents || 0));
+    const isPaid = nextStatus === "paid";
+    const isTerminalWithoutDebt = nextStatus === "canceled" || nextStatus === "refunded";
+
+    const invoicePatch: Record<string, unknown> = {
+      status: nextStatus,
+      amount_paid_cents: isPaid ? totalCents : 0,
+      amount_due_cents: isPaid || isTerminalWithoutDebt ? 0 : totalCents,
+      paid_at: isPaid ? paidAt : null,
+      metadata: {
+        ...getMetadata(invoice.metadata),
+        last_asaas_overage_payment_webhook: payload,
+      },
+    };
+
+    if (nextStatus === "failed") {
+      invoicePatch.failed_at = new Date().toISOString();
+    }
+
+    const { error: invoiceError } = await supabaseAdmin
+      .from("billing_invoices")
+      .update(invoicePatch)
+      .eq("id", invoice.id);
+
+    if (invoiceError) throw invoiceError;
+  }
+}
+
+async function handleOverageInvoicePaymentWebhook(
+  supabaseAdmin: SupabaseAdmin,
+  event: string,
+  payload: unknown,
+  providerPaymentId: string | null,
+  paymentStatus: string,
+  isPaid: boolean,
+  paidAt: string | null,
+) {
+  if (!providerPaymentId) return false;
+
+  const nextStatus = getOverageInvoicePaymentStatus(event, paymentStatus, isPaid);
+  if (!nextStatus) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("billing_invoice_collection_batches")
+    .select("id, status, metadata")
+    .eq("gateway_provider", "asaas")
+    .eq("gateway_charge_id", providerPaymentId)
+    .maybeSingle();
+
+  if (error) throw error;
+  const batch = data as InvoiceCollectionBatchWebhookMatch | null;
+  if (!batch) return false;
+
+  const batchPatch: Record<string, unknown> = {
+    status: nextStatus,
+    gateway_charge_status: paymentStatus || event,
+    metadata: {
+      ...getMetadata(batch.metadata),
+      last_asaas_payment_webhook: payload,
+    },
+  };
+
+  if (nextStatus === "paid") {
+    batchPatch.paid_at = paidAt;
+    batchPatch.failed_at = null;
+  }
+  if (nextStatus === "failed") {
+    batchPatch.failed_at = new Date().toISOString();
+  }
+
+  const { error: batchError } = await supabaseAdmin
+    .from("billing_invoice_collection_batches")
+    .update(batchPatch)
+    .eq("id", batch.id);
+
+  if (batchError) throw batchError;
+
+  await updateOverageInvoicesForBatch(
+    supabaseAdmin,
+    batch.id,
+    nextStatus,
+    paidAt,
+    payload,
+  );
+
+  return true;
+}
+
 async function handlePaymentWebhook(
   supabaseAdmin: SupabaseAdmin,
   event: string,
@@ -618,6 +757,20 @@ async function handlePaymentWebhook(
     : null;
 
   if (!providerPaymentId && !providerCheckoutId && !externalReference && !providerSubscriptionId) return false;
+
+  if (
+    await handleOverageInvoicePaymentWebhook(
+      supabaseAdmin,
+      event,
+      payload,
+      providerPaymentId,
+      paymentStatus,
+      isPaid,
+      paidAt,
+    )
+  ) {
+    return true;
+  }
 
   let handled = false;
   const identifiers = {
