@@ -141,19 +141,21 @@ Colunas principais:
 - coleta: `collection_batch_id`
 
 ### `public.billing_invoice_collection_batches`
-Agrupa uma ou mais invoices de excedente que foram anexadas a uma cobranca mensal pendente da assinatura Asaas.
+Agrupa uma ou mais invoices de excedente que serao cobradas junto da mensalidade Asaas.
 
 Colunas principais:
 - vinculo: `project_id`, `subscription_id`, `billing_account_id`
 - gateway: `gateway_provider`, `gateway_subscription_id`, `gateway_charge_id`, `gateway_charge_status`
-- modo: `collection_mode = subscription_payment_adjustment`
+- modo: `collection_mode` em `subscription_payment_adjustment` ou `subscription_value_adjustment`
 - valores: `original_subscription_payment_cents`, `overage_cents`, `updated_payment_cents`
 - estado: `status`, `attempt_count`, `last_attempt_at`, `paid_at`, `failed_at`
 
 Uso esperado:
 - nao cria cobranca avulsa automaticamente;
-- atualiza apenas uma cobranca Asaas especifica (`/payments/{id}`), sem alterar o valor recorrente da assinatura;
-- permite carregar invoices `draft` para a proxima cobranca mensal editavel quando nenhuma cobranca pendente existir no momento do fechamento.
+- em `subscription_payment_adjustment`, atualiza uma cobranca Asaas especifica (`/payments/{id}`);
+- em `subscription_value_adjustment`, prepara temporariamente uma assinatura `CREDIT_CARD` com `value = mensalidade + excedente`;
+- o webhook reseta a assinatura para o valor original quando o batch temporario chega a estado terminal;
+- permite carregar invoices `draft` para a proxima cobranca mensal editavel quando nenhuma cobranca pendente existir no momento do fechamento e a assinatura nao for cartao.
 
 ### `public.billing_invoice_items`
 Detalha como a fatura foi composta.
@@ -482,8 +484,10 @@ Responsabilidades:
 3. Se nao houver excedente, marca o ciclo como `closed` e abre o proximo ciclo.
 4. Se houver excedente, cria `billing_invoices` em `draft` e itens `overage_*`.
 5. Aplica downgrades `next_cycle` pagos somente depois do fechamento do ciclo antigo.
-6. A Edge Function busca uma cobranca mensal Asaas `PENDING`/`OVERDUE` da assinatura e atualiza apenas essa cobranca com mensalidade + excedente.
-7. O webhook `PAYMENT_*` marca o batch e as invoices como `paid`, `past_due`, `failed`, `canceled` ou `refunded`.
+6. A Edge Function busca uma cobranca mensal Asaas `PENDING`/`OVERDUE` da assinatura e atualiza essa cobranca com mensalidade + excedente.
+7. Se a assinatura for `CREDIT_CARD` e nao houver cobranca editavel, a Edge Function prepara temporariamente o valor da assinatura com mensalidade + excedente.
+8. O webhook `PAYMENT_*` marca o batch e as invoices como `paid`, `past_due`, `failed`, `canceled` ou `refunded`.
+9. Para batches `subscription_value_adjustment`, o webhook reseta o valor da assinatura Asaas para a mensalidade original.
 
 ## Cenario D - Troca de plano no meio do ciclo
 
