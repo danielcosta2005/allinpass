@@ -38,16 +38,6 @@ type AsaasPayment = {
   subscription?: string | { id?: string };
 };
 
-type AsaasSubscription = {
-  id?: string;
-  status?: string;
-  value?: number;
-  billingType?: string;
-  nextDueDate?: string;
-  cycle?: string;
-  customer?: string;
-};
-
 class HttpError extends Error {
   status: number;
   payload: Record<string, unknown>;
@@ -184,10 +174,6 @@ function normalizePaymentStatus(value: unknown) {
   return String(value ?? "").trim().toUpperCase();
 }
 
-function normalizeBillingType(value: unknown) {
-  return String(value ?? "").trim().toUpperCase();
-}
-
 function readPaymentId(payment: AsaasPayment) {
   return String(payment.id ?? "").trim();
 }
@@ -259,14 +245,6 @@ async function listEditableSubscriptionPayments(apiKey: string, subscriptionId: 
   });
 }
 
-async function getAsaasSubscription(apiKey: string, subscriptionId: string) {
-  return await asaasFetch(
-    apiKey,
-    `/subscriptions/${encodeURIComponent(subscriptionId)}`,
-    { method: "GET" },
-  ) as AsaasSubscription;
-}
-
 function chooseEditablePayment(payments: AsaasPayment[], invoices: InvoiceRow[]) {
   if (!payments.length) return null;
 
@@ -293,20 +271,6 @@ function buildPaymentDescription(payment: AsaasPayment, invoices: InvoiceRow[], 
   const overageText = `Excedente de uso AllinPass (${invoiceNumbers}): R$ ${centsToAsaasValue(overageCents).toFixed(2)}`;
   const description = `${baseDescription}\n${overageText}`;
   return description.length > 500 ? description.slice(0, 497) + "..." : description;
-}
-
-function sumInvoiceDueCents(invoices: InvoiceRow[]) {
-  return invoices.reduce(
-    (sum, invoice) => sum + Math.max(0, Number(invoice.amount_due_cents || invoice.total_cents || 0)),
-    0,
-  );
-}
-
-function getInvoiceDueAt(invoices: InvoiceRow[]) {
-  return invoices
-    .map((invoice) => invoice.due_at)
-    .filter((value): value is string => Boolean(value))
-    .sort()[0] ?? null;
 }
 
 async function closeDueCycles(supabaseAdmin: SupabaseAdmin, limit: number) {
@@ -387,42 +351,6 @@ async function findActiveCollectionBatch(
   return data as { id: string; status: string } | null;
 }
 
-async function findActiveSubscriptionValueAdjustmentBatch(
-  supabaseAdmin: SupabaseAdmin,
-  gatewaySubscriptionId: string,
-) {
-  const { data, error } = await supabaseAdmin
-    .from("billing_invoice_collection_batches")
-    .select("id, status")
-    .eq("gateway_provider", "asaas")
-    .eq("gateway_subscription_id", gatewaySubscriptionId)
-    .eq("collection_mode", "subscription_value_adjustment")
-    .in("status", ["pending", "open", "past_due"])
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as { id: string; status: string } | null;
-}
-
-async function hasActiveSubscriptionValueAdjustmentBatch(
-  supabaseAdmin: SupabaseAdmin,
-  subscriptionId: string,
-) {
-  const { data, error } = await supabaseAdmin
-    .from("billing_invoice_collection_batches")
-    .select("id")
-    .eq("subscription_id", subscriptionId)
-    .eq("collection_mode", "subscription_value_adjustment")
-    .in("status", ["pending", "open", "past_due"])
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return Boolean(data);
-}
-
 async function markInvoicesCollectionError(
   supabaseAdmin: SupabaseAdmin,
   invoices: InvoiceRow[],
@@ -446,166 +374,6 @@ async function markInvoicesCollectionError(
   }
 }
 
-async function prepareSubscriptionValueAdjustment(
-  supabaseAdmin: SupabaseAdmin,
-  apiKey: string,
-  subscription: SubscriptionRow,
-  gatewaySubscriptionId: string,
-  invoices: InvoiceRow[],
-) {
-  const asaasSubscription = await getAsaasSubscription(apiKey, gatewaySubscriptionId);
-  const billingType = normalizeBillingType(asaasSubscription.billingType);
-  if (billingType !== "CREDIT_CARD") {
-    await markInvoicesCollectionError(
-      supabaseAdmin,
-      invoices,
-      "editable_payment_not_found",
-      "Nenhuma cobranca mensal pendente ou vencida encontrada no Asaas.",
-    );
-    return {
-      ok: false,
-      skipped: true,
-      reason: "editable_payment_not_found",
-      billing_type: billingType || null,
-    };
-  }
-
-  const existingBatch = await findActiveSubscriptionValueAdjustmentBatch(
-    supabaseAdmin,
-    gatewaySubscriptionId,
-  );
-  if (existingBatch) {
-    await markInvoicesCollectionError(
-      supabaseAdmin,
-      invoices,
-      "subscription_already_has_value_adjustment",
-      `Assinatura Asaas ja possui batch de ajuste ativo ${existingBatch.id}.`,
-    );
-    return {
-      ok: false,
-      skipped: true,
-      reason: "subscription_already_has_value_adjustment",
-      batch_id: existingBatch.id,
-    };
-  }
-
-  const overageCents = sumInvoiceDueCents(invoices);
-  const originalPaymentCents = asCents(asaasSubscription.value);
-  const updatedPaymentCents = originalPaymentCents + overageCents;
-  const dueAt = getInvoiceDueAt(invoices);
-  const targetNextDueDate = dueAt ? formatAsaasDate(new Date(dueAt)) : null;
-  const today = formatAsaasDate(new Date());
-  const updatePayload: Record<string, unknown> = {
-    value: centsToAsaasValue(updatedPaymentCents),
-    updatePendingPayments: false,
-  };
-  if (targetNextDueDate && targetNextDueDate >= today) {
-    updatePayload.nextDueDate = targetNextDueDate;
-  }
-
-  const { data: batchData, error: batchError } = await supabaseAdmin
-    .from("billing_invoice_collection_batches")
-    .insert({
-      project_id: subscription.project_id,
-      subscription_id: subscription.id,
-      billing_account_id: subscription.billing_account_id,
-      gateway_provider: "asaas",
-      gateway_subscription_id: gatewaySubscriptionId,
-      gateway_charge_id: null,
-      gateway_charge_status: "SUBSCRIPTION_VALUE_PENDING",
-      collection_mode: "subscription_value_adjustment",
-      status: "pending",
-      invoice_count: invoices.length,
-      original_subscription_payment_cents: originalPaymentCents,
-      overage_cents: overageCents,
-      updated_payment_cents: updatedPaymentCents,
-      currency: invoices[0]?.currency ?? "BRL",
-      due_at: dueAt,
-      attempt_count: 1,
-      last_attempt_at: new Date().toISOString(),
-      metadata: {
-        origin: "billing-close-cycles",
-        invoice_ids: invoices.map((invoice) => invoice.id),
-        asaas_subscription_before_update: asaasSubscription,
-        requested_subscription_update: updatePayload,
-      },
-    })
-    .select("id")
-    .single();
-
-  if (batchError) throw batchError;
-  const batch = batchData as { id: string };
-
-  try {
-    const asaasBody = await asaasFetch(apiKey, `/subscriptions/${encodeURIComponent(gatewaySubscriptionId)}`, {
-      method: "PUT",
-      body: JSON.stringify(updatePayload),
-    });
-
-    await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .update({
-        status: "open",
-        metadata: {
-          origin: "billing-close-cycles",
-          invoice_ids: invoices.map((invoice) => invoice.id),
-          asaas_subscription_before_update: asaasSubscription,
-          requested_subscription_update: updatePayload,
-          asaas_subscription_after_update: asaasBody,
-        },
-      })
-      .eq("id", batch.id);
-
-    for (const invoice of invoices) {
-      await supabaseAdmin
-        .from("billing_invoices")
-        .update({
-          collection_batch_id: batch.id,
-          gateway_provider: "asaas",
-          status: "open",
-          due_at: dueAt ?? invoice.due_at,
-          amount_due_cents: Math.max(0, Number(invoice.total_cents || invoice.amount_due_cents || 0)),
-          metadata: {
-            ...getMetadata(invoice.metadata),
-            collection_batch_id: batch.id,
-            gateway_subscription_id: gatewaySubscriptionId,
-            collection_mode: "subscription_value_adjustment",
-            collected_with_subscription_value_adjustment: true,
-          },
-        })
-        .eq("id", invoice.id);
-    }
-
-    return {
-      ok: true,
-      batch_id: batch.id,
-      collection_mode: "subscription_value_adjustment",
-      gateway_subscription_id: gatewaySubscriptionId,
-      invoice_count: invoices.length,
-      overage_cents: overageCents,
-      updated_payment_cents: updatedPaymentCents,
-    };
-  } catch (error) {
-    await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .update({
-        status: "failed",
-        failed_at: new Date().toISOString(),
-        metadata: {
-          origin: "billing-close-cycles",
-          invoice_ids: invoices.map((invoice) => invoice.id),
-          asaas_subscription_before_update: asaasSubscription,
-          requested_subscription_update: updatePayload,
-          update_error: truncate(error),
-        },
-      })
-      .eq("id", batch.id);
-
-    await markInvoicesCollectionError(supabaseAdmin, invoices, "asaas_subscription_value_update_failed", truncate(error, 300));
-    return { ok: false, failed: true, batch_id: batch.id, error: truncate(error, 300) };
-  }
-}
-
 async function collectInvoiceGroup(
   supabaseAdmin: SupabaseAdmin,
   apiKey: string,
@@ -626,13 +394,13 @@ async function collectInvoiceGroup(
   const editablePayments = await listEditableSubscriptionPayments(apiKey, gatewaySubscriptionId);
   const payment = chooseEditablePayment(editablePayments, invoices);
   if (!payment) {
-    return await prepareSubscriptionValueAdjustment(
+    await markInvoicesCollectionError(
       supabaseAdmin,
-      apiKey,
-      subscription,
-      gatewaySubscriptionId,
       invoices,
+      "editable_payment_not_found",
+      "Nenhuma cobranca mensal pendente ou vencida encontrada no Asaas.",
     );
+    return { ok: false, skipped: true, reason: "editable_payment_not_found" };
   }
 
   const providerPaymentId = readPaymentId(payment);
@@ -652,7 +420,10 @@ async function collectInvoiceGroup(
     };
   }
 
-  const overageCents = sumInvoiceDueCents(invoices);
+  const overageCents = invoices.reduce(
+    (sum, invoice) => sum + Math.max(0, Number(invoice.amount_due_cents || invoice.total_cents || 0)),
+    0,
+  );
   const originalPaymentCents = asCents(payment.value);
   const updatedPaymentCents = originalPaymentCents + overageCents;
   const dueAt = payment.dueDate
@@ -804,14 +575,9 @@ async function collectDraftOverageInvoices(
         continue;
       }
 
-      const result = await collectInvoiceGroup(
-        supabaseAdmin,
-        apiKey,
-        subscription,
-        groupInvoices,
-      ) as Record<string, unknown>;
-      if (result.ok === true) collected += groupInvoices.length;
-      else if (result.failed === true) failed += groupInvoices.length;
+      const result = await collectInvoiceGroup(supabaseAdmin, apiKey, subscription, groupInvoices);
+      if (result.ok) collected += groupInvoices.length;
+      else if (result.failed) failed += groupInvoices.length;
       else skipped += groupInvoices.length;
 
       results.push({ subscription_id: subscriptionId, ...result });
@@ -856,18 +622,6 @@ async function realignSubscriptionDueDates(
     const gatewaySubscriptionId = String(subscription.gateway_subscription_id ?? "").trim();
     if (!isAsaasSubscriptionId(gatewaySubscriptionId) || !subscription.current_period_end) {
       skipped += 1;
-      continue;
-    }
-
-    if (await hasActiveSubscriptionValueAdjustmentBatch(supabaseAdmin, subscription.id)) {
-      skipped += 1;
-      results.push({
-        subscription_id: subscription.id,
-        gateway_subscription_id: gatewaySubscriptionId,
-        ok: true,
-        skipped: true,
-        reason: "active_subscription_value_adjustment",
-      });
       continue;
     }
 
@@ -968,9 +722,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>;
     const limit = normalizeLimit(body.limit);
 
-    const alignedDueDates = await realignSubscriptionDueDates(supabaseAdmin, asaasApiKey, limit);
     const closedCycles = await closeDueCycles(supabaseAdmin, limit);
     const collectedInvoices = await collectDraftOverageInvoices(supabaseAdmin, asaasApiKey, limit);
+    const alignedDueDates = await realignSubscriptionDueDates(supabaseAdmin, asaasApiKey, limit);
 
     return jsonResponse({
       ok: true,

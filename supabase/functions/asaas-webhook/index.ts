@@ -114,10 +114,6 @@ type BillingSubscriptionWebhookMatch = {
 type InvoiceCollectionBatchWebhookMatch = {
   id: string;
   status: string;
-  collection_mode: string;
-  gateway_subscription_id?: string | null;
-  gateway_charge_id?: string | null;
-  original_subscription_payment_cents?: number | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -125,58 +121,6 @@ function getMetadata(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
-}
-
-function getAsaasApiBaseUrl() {
-  const explicit = String(Deno.env.get("ASAAS_API_BASE_URL") ?? "").trim();
-  if (explicit) return explicit.replace(/\/$/, "");
-
-  const env = String(Deno.env.get("ASAAS_ENV") ?? "sandbox").trim().toLowerCase();
-  return env === "production"
-    ? "https://api.asaas.com/v3"
-    : "https://api-sandbox.asaas.com/v3";
-}
-
-function centsToAsaasValue(cents: number) {
-  return Math.max(0, Math.trunc(cents)) / 100;
-}
-
-function truncate(value: unknown, maxLength = 1000) {
-  const text = value instanceof Error ? value.message : String(value ?? "");
-  return text.length > maxLength ? `${text.slice(0, maxLength - 3)}...` : text;
-}
-
-async function asaasFetch(
-  apiKey: string,
-  path: string,
-  init: RequestInit = {},
-) {
-  const response = await fetch(`${getAsaasApiBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      "accept": "application/json",
-      "content-type": "application/json",
-      "access_token": apiKey,
-      "User-Agent": "AllinPass/1.0",
-      ...(init.headers ?? {}),
-    },
-  });
-
-  const text = await response.text().catch(() => "");
-  let body: Record<string, unknown> | null = null;
-  if (text.trim()) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = { raw: text };
-    }
-  }
-
-  if (!response.ok) {
-    throw new Error(`Asaas ${response.status}: ${truncate(body?.errors ?? body?.description ?? text, 700)}`);
-  }
-
-  return body ?? {};
 }
 
 function buildProviderPatch({
@@ -687,7 +631,6 @@ async function updateOverageInvoicesForBatch(
   nextStatus: string,
   paidAt: string | null,
   payload: unknown,
-  providerPaymentId: string | null,
 ) {
   const { data: invoicesData, error: invoicesError } = await supabaseAdmin
     .from("billing_invoices")
@@ -711,9 +654,6 @@ async function updateOverageInvoicesForBatch(
         last_asaas_overage_payment_webhook: payload,
       },
     };
-    if (providerPaymentId) {
-      invoicePatch.gateway_charge_id = providerPaymentId;
-    }
 
     if (nextStatus === "failed") {
       invoicePatch.failed_at = new Date().toISOString();
@@ -728,142 +668,29 @@ async function updateOverageInvoicesForBatch(
   }
 }
 
-async function findSubscriptionValueAdjustmentBatch(
-  supabaseAdmin: SupabaseAdmin,
-  providerSubscriptionId: string | null,
-) {
-  if (!providerSubscriptionId) return null;
-
-  const { data, error } = await supabaseAdmin
-    .from("billing_invoice_collection_batches")
-    .select([
-      "id",
-      "status",
-      "collection_mode",
-      "gateway_subscription_id",
-      "gateway_charge_id",
-      "original_subscription_payment_cents",
-      "metadata",
-    ].join(", "))
-    .eq("gateway_provider", "asaas")
-    .eq("gateway_subscription_id", providerSubscriptionId)
-    .eq("collection_mode", "subscription_value_adjustment")
-    .in("status", ["pending", "open", "past_due"])
-    .order("due_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as InvoiceCollectionBatchWebhookMatch | null;
-}
-
-async function resetSubscriptionValueAdjustment(
-  supabaseAdmin: SupabaseAdmin,
-  batch: InvoiceCollectionBatchWebhookMatch,
-  payload: unknown,
-) {
-  if (batch.collection_mode !== "subscription_value_adjustment") return;
-  const gatewaySubscriptionId = readString(batch.gateway_subscription_id);
-  const originalValueCents = Math.max(0, Number(batch.original_subscription_payment_cents || 0));
-  if (!gatewaySubscriptionId || originalValueCents <= 0) return;
-
-  const metadata = getMetadata(batch.metadata);
-  if (metadata.subscription_value_reset_at) return;
-
-  const apiKey = String(Deno.env.get("ASAAS_API_KEY") ?? "").trim();
-  if (!apiKey) {
-    await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .update({
-        metadata: {
-          ...metadata,
-          subscription_value_reset_error: {
-            at: new Date().toISOString(),
-            message: "ASAAS_API_KEY ausente; valor da assinatura precisa ser resetado manualmente.",
-          },
-          last_asaas_payment_webhook: payload,
-        },
-      })
-      .eq("id", batch.id);
-    return;
-  }
-
-  try {
-    const response = await asaasFetch(apiKey, `/subscriptions/${encodeURIComponent(gatewaySubscriptionId)}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        value: centsToAsaasValue(originalValueCents),
-        updatePendingPayments: false,
-      }),
-    });
-
-    await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .update({
-        metadata: {
-          ...metadata,
-          subscription_value_reset_at: new Date().toISOString(),
-          subscription_value_reset_response: response,
-          last_asaas_payment_webhook: payload,
-        },
-      })
-      .eq("id", batch.id);
-  } catch (error) {
-    await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .update({
-        metadata: {
-          ...metadata,
-          subscription_value_reset_error: {
-            at: new Date().toISOString(),
-            message: truncate(error, 300),
-          },
-          last_asaas_payment_webhook: payload,
-        },
-      })
-      .eq("id", batch.id);
-  }
-}
-
 async function handleOverageInvoicePaymentWebhook(
   supabaseAdmin: SupabaseAdmin,
   event: string,
   payload: unknown,
   providerPaymentId: string | null,
-  providerSubscriptionId: string | null,
   paymentStatus: string,
   isPaid: boolean,
   paidAt: string | null,
 ) {
-  if (!providerPaymentId && !providerSubscriptionId) return false;
+  if (!providerPaymentId) return false;
 
   const nextStatus = getOverageInvoicePaymentStatus(event, paymentStatus, isPaid);
   if (!nextStatus) return false;
 
-  let batch: InvoiceCollectionBatchWebhookMatch | null = null;
-  if (providerPaymentId) {
-    const { data, error } = await supabaseAdmin
-      .from("billing_invoice_collection_batches")
-      .select([
-        "id",
-        "status",
-        "collection_mode",
-        "gateway_subscription_id",
-        "gateway_charge_id",
-        "original_subscription_payment_cents",
-        "metadata",
-      ].join(", "))
-      .eq("gateway_provider", "asaas")
-      .eq("gateway_charge_id", providerPaymentId)
-      .maybeSingle();
+  const { data, error } = await supabaseAdmin
+    .from("billing_invoice_collection_batches")
+    .select("id, status, metadata")
+    .eq("gateway_provider", "asaas")
+    .eq("gateway_charge_id", providerPaymentId)
+    .maybeSingle();
 
-    if (error) throw error;
-    batch = data as InvoiceCollectionBatchWebhookMatch | null;
-  }
-
-  if (!batch) {
-    batch = await findSubscriptionValueAdjustmentBatch(supabaseAdmin, providerSubscriptionId);
-  }
+  if (error) throw error;
+  const batch = data as InvoiceCollectionBatchWebhookMatch | null;
   if (!batch) return false;
 
   const batchPatch: Record<string, unknown> = {
@@ -874,9 +701,6 @@ async function handleOverageInvoicePaymentWebhook(
       last_asaas_payment_webhook: payload,
     },
   };
-  if (providerPaymentId && !batch.gateway_charge_id) {
-    batchPatch.gateway_charge_id = providerPaymentId;
-  }
 
   if (nextStatus === "paid") {
     batchPatch.paid_at = paidAt;
@@ -899,20 +723,7 @@ async function handleOverageInvoicePaymentWebhook(
     nextStatus,
     paidAt,
     payload,
-    providerPaymentId,
   );
-
-  if (["paid", "failed", "canceled", "refunded"].includes(nextStatus)) {
-    await resetSubscriptionValueAdjustment(
-      supabaseAdmin,
-      {
-        ...batch,
-        gateway_charge_id: providerPaymentId || batch.gateway_charge_id,
-        metadata: batchPatch.metadata as Record<string, unknown>,
-      },
-      payload,
-    );
-  }
 
   return true;
 }
@@ -953,7 +764,6 @@ async function handlePaymentWebhook(
       event,
       payload,
       providerPaymentId,
-      providerSubscriptionId,
       paymentStatus,
       isPaid,
       paidAt,

@@ -739,7 +739,7 @@ Nao logar `ASAAS_API_KEY`, JWT completo, `service_role_key`, documentos pessoais
 
 ### Objetivo
 
-Fecha ciclos de uso vencidos, gera invoices internas de excedente e tenta cobrar esses excedentes junto da proxima mensalidade Asaas.
+Fecha ciclos de uso vencidos, gera invoices internas de excedente e tenta anexar esses excedentes a uma cobranca mensal pendente da assinatura Asaas.
 
 ### Quando e utilizada
 
@@ -752,16 +752,14 @@ Function sem JWT Supabase (`verify_jwt = false`), protegida por bearer `SUPABASE
 
 ### Responsabilidades e processos internos
 
-1. Realinha `nextDueDate` da assinatura Asaas para `current_period_end + 2 dias`, com `updatePendingPayments = false`, antes de fechar ciclos vencidos.
-2. Busca `billing_cycles` de assinatura com `status = open` e `period_end <= now()`.
-3. Chama `close_billing_cycle_for_overage(cycle_id)`.
-4. Deixa ciclos sem excedente como `closed`, sem criar invoice.
-5. Cria invoices `draft` somente para excedente.
-6. Busca cobrancas Asaas por `GET /v3/payments?subscription=...&status=PENDING/OVERDUE`.
-7. Atualiza a cobranca mensal escolhida via `PUT /v3/payments/{id}` quando ela ja existe.
-8. Para assinaturas `CREDIT_CARD` sem cobranca editavel, prepara temporariamente o valor da assinatura via `PUT /v3/subscriptions/{id}` com mensalidade + excedente.
-9. Cria `billing_invoice_collection_batches` para rastrear valor original, excedente, valor atualizado e modo de coleta.
-10. Nao realinha assinaturas que ja possuem batch ativo de `subscription_value_adjustment`, para nao empurrar a cobranca do excedente para o proximo ciclo.
+1. Busca `billing_cycles` de assinatura com `status = open` e `period_end <= now()`.
+2. Chama `close_billing_cycle_for_overage(cycle_id)`.
+3. Deixa ciclos sem excedente como `closed`, sem criar invoice.
+4. Cria invoices `draft` somente para excedente.
+5. Busca cobrancas Asaas por `GET /v3/payments?subscription=...&status=PENDING/OVERDUE`.
+6. Atualiza apenas a cobranca mensal escolhida via `PUT /v3/payments/{id}`.
+7. Cria `billing_invoice_collection_batches` para rastrear valor original, excedente e valor atualizado.
+8. Realinha `nextDueDate` da assinatura Asaas para `current_period_end + 2 dias`, com `updatePendingPayments = false`.
 
 ### Tabelas e RPCs
 
@@ -770,15 +768,14 @@ Function sem JWT Supabase (`verify_jwt = false`), protegida por bearer `SUPABASE
 | `billing_cycles` | `select` | Busca ciclos vencidos. |
 | `close_billing_cycle_for_overage` | `rpc` | Fecha ciclo, cria invoice de excedente e abre proximo ciclo. |
 | `billing_invoices` | `select`, `update` | Vincula invoices `draft` ao batch/coleta. |
-| `billing_invoice_collection_batches` | `insert`, `update` | Rastreia a cobranca Asaas editada ou o valor temporario preparado na assinatura. |
+| `billing_invoice_collection_batches` | `insert`, `update` | Rastreia a cobranca mensal Asaas editada. |
 | `billing_subscriptions` | `select`, `update` | Le assinatura Asaas e grava realinhamento de `nextDueDate`. |
 
 ### Integracoes externas
 
 - Asaas `GET /v3/payments`: localizar cobranca mensal editavel da assinatura.
 - Asaas `PUT /v3/payments/{id}`: somar excedente a uma cobranca especifica.
-- Asaas `GET /v3/subscriptions/{id}`: identificar `billingType` e valor recorrente atual.
-- Asaas `PUT /v3/subscriptions/{id}`: realinhar `nextDueDate` futuro da assinatura ou preparar temporariamente `value = mensalidade + excedente` em assinaturas por cartao.
+- Asaas `PUT /v3/subscriptions/{id}`: realinhar `nextDueDate` futuro da assinatura.
 
 ### Variaveis de ambiente
 
@@ -798,9 +795,7 @@ O agendamento padrao usa o `cron_secret` do Supabase Vault. A migration cria ess
 
 - `billing_invoices_overage_cycle_uidx` evita mais de uma invoice de excedente ativa por ciclo.
 - `billing_invoice_collection_batches_gateway_charge_uidx` evita atualizar a mesma cobranca Asaas em batches ativos duplicados.
-- `billing_invoice_collection_batches_subscription_value_uidx` evita mais de um ajuste temporario ativo por assinatura Asaas.
-- Se nenhuma cobranca mensal editavel existir e a assinatura nao for cartao, a invoice permanece `draft` e sera tentada de novo; a function nao cria cobranca avulsa automaticamente.
-- Em cartao, a invoice vai para `open` quando a assinatura e preparada com valor temporario; o webhook reseta a assinatura para o valor base depois do pagamento ou de estado terminal.
+- Se nenhuma cobranca mensal editavel existir, a invoice permanece `draft` e sera tentada de novo; a function nao cria cobranca avulsa automaticamente.
 
 ## `asaas-webhook`
 
@@ -842,16 +837,14 @@ No `supabase/config.toml`, esta function deve ficar com `verify_jwt = false`, po
    - `CHECKOUT_EXPIRED` ou `EXPIRED` -> `expired`;
    - `CHECKOUT_CREATED` ou `ACTIVE` -> `created`.
 7. Para `PAYMENT_*`, primeiro verifica se `payment.id` pertence a `billing_invoice_collection_batches`.
-8. Se nao houver `gateway_charge_id` salvo, tenta localizar batch ativo de `subscription_value_adjustment` pelo `payment.subscription`.
-9. Se for cobranca de excedente, atualiza batch e `billing_invoices`.
-10. Quando o batch de `subscription_value_adjustment` chega a estado terminal, reseta a assinatura Asaas para o valor original.
-11. Se nao for excedente, segue para signup e mudanca de plano.
-12. Ignora payload sem `checkout.id` ou sem status reconhecido.
-13. Busca `signup_checkout_sessions` pelo provider `asaas` e `provider_checkout_id`, desde que ainda nao esteja `finalized`.
-14. Se nao encontrar sessao local, retorna sucesso ignorado para evitar retry infinito inutil.
-15. Mescla `metadata` existente com `last_asaas_webhook`.
-16. Atualiza `status` local.
-17. Quando status local e `paid`, grava `paid_at`, `provider_customer_id`, `provider_subscription_id` e `provider_payment_id` quando existirem no payload.
+8. Se for cobranca de excedente, atualiza batch e `billing_invoices`.
+9. Se nao for excedente, segue para signup e mudanca de plano.
+10. Ignora payload sem `checkout.id` ou sem status reconhecido.
+11. Busca `signup_checkout_sessions` pelo provider `asaas` e `provider_checkout_id`, desde que ainda nao esteja `finalized`.
+12. Se nao encontrar sessao local, retorna sucesso ignorado para evitar retry infinito inutil.
+13. Mescla `metadata` existente com `last_asaas_webhook`.
+14. Atualiza `status` local.
+15. Quando status local e `paid`, grava `paid_at`, `provider_customer_id`, `provider_subscription_id` e `provider_payment_id` quando existirem no payload.
 
 ### Fluxo interno
 
@@ -928,7 +921,7 @@ Em erro:
 | Tabela / recurso | Operacao | Observacao |
 |---|---|---|
 | `public.signup_checkout_sessions` | `select`, `update` | Localiza a sessao pelo checkout do Asaas e atualiza status/IDs externos. |
-| `public.billing_invoice_collection_batches` | `select`, `update` | Localiza cobranca Asaas de excedente por `gateway_charge_id` ou por assinatura em ajustes de valor temporario. |
+| `public.billing_invoice_collection_batches` | `select`, `update` | Localiza cobranca Asaas de excedente por `gateway_charge_id`. |
 | `public.billing_invoices` | `select`, `update` | Marca invoices de excedente conforme status do pagamento Asaas. |
 
 ### Funcoes RPC utilizadas
@@ -938,7 +931,6 @@ Nao foram identificadas chamadas `.rpc()` nesta function.
 ### Integracoes externas
 
 - Asaas Webhooks: eventos de checkout enviados pelo provider.
-- Asaas `PUT /v3/subscriptions/{id}`: reseta valor recorrente quando um batch temporario de cartao termina.
 - Supabase PostgREST/Admin client, via `@supabase/supabase-js`.
 
 ### Variaveis de ambiente
@@ -947,9 +939,6 @@ Nao foram identificadas chamadas `.rpc()` nesta function.
 |---|---:|---|
 | `SUPABASE_URL` | Sim | URL do projeto Supabase. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Sim | Client admin para atualizar `signup_checkout_sessions`. |
-| `ASAAS_API_KEY` | Recomendado | Necessaria para resetar o valor da assinatura quando um batch `subscription_value_adjustment` termina. Se ausente, o webhook registra erro de reset no batch sem rejeitar o evento. |
-| `ASAAS_API_BASE_URL` | Nao | Override da URL da API Asaas. |
-| `ASAAS_ENV` | Nao | `sandbox` ou `production` quando nao ha base URL explicita. |
 | `ASAAS_WEBHOOK_TOKEN` | Recomendado | Token compartilhado para validar o header `asaas-access-token`. Se ausente, a function aceita chamadas sem essa validacao. |
 
 ### Seguranca e autorizacao
