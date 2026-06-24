@@ -10,17 +10,16 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const PUSH_CONCURRENCY = 10;
+const JOB_INSERT_CHUNK_SIZE = 500;
 
 class HttpError extends Error {
   status: number;
   payload: Record<string, unknown>;
 
   constructor(status: number, payload: Record<string, unknown>) {
-    const message =
-      typeof payload?.message === "string"
-        ? payload.message
-        : "Request failed.";
+    const message = typeof payload?.message === "string"
+      ? payload.message
+      : "Request failed.";
     super(message);
     this.status = status;
     this.payload = payload;
@@ -86,7 +85,9 @@ async function getCallerProfile(sbAdmin: any, req: Request) {
     });
   }
 
-  const { data: userData, error: userError } = await sbAdmin.auth.getUser(token);
+  const { data: userData, error: userError } = await sbAdmin.auth.getUser(
+    token,
+  );
   const user = userData?.user;
   if (userError || !user) {
     throw new HttpError(401, {
@@ -107,7 +108,11 @@ async function getCallerProfile(sbAdmin: any, req: Request) {
   return { user, profile };
 }
 
-async function ensureCanManageProject(sbAdmin: any, projectId: string, caller: any) {
+async function ensureCanManageProject(
+  sbAdmin: any,
+  projectId: string,
+  caller: any,
+) {
   if (caller.profile?.role === "superadmin") return;
 
   if (caller.profile?.role === "admin") {
@@ -117,7 +122,9 @@ async function ensureCanManageProject(sbAdmin: any, projectId: string, caller: a
       .eq("id", projectId)
       .maybeSingle();
 
-    if (projectError) throw new Error(`Erro ao validar projeto: ${projectError.message}`);
+    if (projectError) {
+      throw new Error(`Erro ao validar projeto: ${projectError.message}`);
+    }
     if (project?.created_by === caller.user.id) return;
   }
 
@@ -129,7 +136,9 @@ async function ensureCanManageProject(sbAdmin: any, projectId: string, caller: a
     .maybeSingle();
 
   if (membershipError) {
-    throw new Error(`Erro ao validar membro do projeto: ${membershipError.message}`);
+    throw new Error(
+      `Erro ao validar membro do projeto: ${membershipError.message}`,
+    );
   }
 
   if (membership?.role === "owner") return;
@@ -165,38 +174,217 @@ function normalizeLocationIds(input: unknown): string[] {
   return [...unique];
 }
 
-async function callPush(
-  functionName: "apple-push" | "google-push",
-  passToken: string,
-) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/${functionName}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ pass_token: passToken }),
-  });
-
-  const payload = await response.json().catch(() => ({}));
-
-  return {
-    ok: response.ok,
-    status: response.status,
-    payload,
-  };
+function isPassScopedGoogleClassId(classId: string | null, passId: string) {
+  if (!classId) return false;
+  return classId.includes(`_pass_${passId}_`);
 }
 
-async function invalidatePkpassCache(
-  sbAdmin: any,
-  passId: string,
-  passToken: string,
-) {
-  const pkPath = `issued_users/${passId}/${passToken}.pkpass`;
-  const { error } = await sbAdmin.storage.from("pass-assets").remove([pkPath]);
-  if (error) {
-    throw new Error(`Falha ao invalidar cache Apple (${pkPath}): ${error.message}`);
+function isGoogleObjectPatchRequiredForGlobalEdit(args: {
+  passType: string | null;
+  incomingFields: Record<string, any>;
+  expDate: string | null;
+}) {
+  const passType = args.passType?.toLowerCase() ?? "";
+
+  // Non-loyalty Google passes keep their visible title/header on the Object.
+  // Loyalty passes can usually rely on the Class for global visual/brand edits,
+  // but field/date edits still need Object patches because they render per pass.
+  if (passType && passType !== "loyalty") return true;
+  if (args.expDate) return true;
+  return Object.keys(args.incomingFields ?? {}).length > 0;
+}
+
+async function insertRowsInChunks(sbAdmin: any, table: string, rows: any[]) {
+  for (let i = 0; i < rows.length; i += JOB_INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + JOB_INSERT_CHUNK_SIZE);
+    const { error } = await sbAdmin.from(table).insert(chunk);
+    if (error) throw new Error(`Erro ao inserir ${table}: ${error.message}`);
   }
+}
+
+async function createPassUpdateCampaign(args: {
+  sbAdmin: any;
+  projectId: string;
+  passId: string;
+  revision: number;
+  userId: string;
+  userPassRows: any[];
+  passType: string | null;
+  incomingFields: Record<string, any>;
+  expDate: string | null;
+}) {
+  const {
+    sbAdmin,
+    projectId,
+    passId,
+    revision,
+    userId,
+    userPassRows,
+    passType,
+    incomingFields,
+    expDate,
+  } = args;
+
+  const installedRows = (userPassRows ?? []).filter((row: any) => {
+    const status = cleanString(row.install_status)?.toLowerCase();
+    return status === "installed";
+  });
+
+  const appleRows = installedRows.filter((row: any) =>
+    cleanString(row.install_platform)?.toLowerCase() === "apple"
+  );
+
+  const googleRows = installedRows.filter((row: any) =>
+    cleanString(row.install_platform)?.toLowerCase() === "google"
+  );
+
+  const requiresGoogleObjectPatch = isGoogleObjectPatchRequiredForGlobalEdit({
+    passType,
+    incomingFields,
+    expDate,
+  });
+
+  const passScopedClassIds = [
+    ...new Set(
+      googleRows
+        .map((row: any) => cleanString(row.google_class_id))
+        .filter((classId: string | null) =>
+          isPassScopedGoogleClassId(classId, passId)
+        ) as string[],
+    ),
+  ];
+
+  const googleObjectRows = googleRows.filter((row: any) => {
+    const classId = cleanString(row.google_class_id);
+    const hasPassScopedClass = isPassScopedGoogleClassId(classId, passId);
+    const hasObject = !!cleanString(row.google_object_id);
+
+    if (!hasObject) return false;
+    if (!hasPassScopedClass) return true;
+    return requiresGoogleObjectPatch;
+  });
+
+  const { data: campaign, error: campaignError } = await sbAdmin
+    .from("pass_update_campaigns")
+    .insert({
+      project_id: projectId,
+      pass_id: passId,
+      revision,
+      status: "pending",
+      created_by: userId,
+      metadata: {
+        source: "update-pass",
+        apple_installed: appleRows.length,
+        google_installed: googleRows.length,
+        google_class_jobs: passScopedClassIds.length,
+        google_object_jobs: googleObjectRows.length,
+        google_object_patch_required: requiresGoogleObjectPatch,
+      },
+    })
+    .select("id, status")
+    .single();
+
+  if (campaignError) {
+    throw new Error(
+      `Erro ao criar campanha de atualizacao: ${campaignError.message}`,
+    );
+  }
+
+  const campaignId = String(campaign.id);
+  const jobs: any[] = [];
+
+  for (const row of appleRows) {
+    const token = cleanString(row.pass_token);
+    if (!token) continue;
+    jobs.push({
+      campaign_id: campaignId,
+      project_id: projectId,
+      pass_id: passId,
+      user_pass_id: row.id,
+      platform: "apple",
+      job_type: "apple_push",
+      target_token: token,
+      priority: 100,
+      idempotency_key: `${campaignId}:apple:${token}`,
+      data: {
+        revision,
+        pass_token: token,
+      },
+    });
+  }
+
+  for (const classId of passScopedClassIds) {
+    jobs.push({
+      campaign_id: campaignId,
+      project_id: projectId,
+      pass_id: passId,
+      platform: "google",
+      job_type: "google_class_patch",
+      google_class_id: classId,
+      priority: 20,
+      idempotency_key: `${campaignId}:google-class:${classId}`,
+      data: {
+        revision,
+        google_class_id: classId,
+      },
+    });
+  }
+
+  for (const row of googleObjectRows) {
+    const token = cleanString(row.pass_token);
+    if (!token) continue;
+    const classId = cleanString(row.google_class_id);
+    const hasPassScopedClass = isPassScopedGoogleClassId(classId, passId);
+    jobs.push({
+      campaign_id: campaignId,
+      project_id: projectId,
+      pass_id: passId,
+      user_pass_id: row.id,
+      platform: "google",
+      job_type: "google_object_patch",
+      target_token: token,
+      google_class_id: classId,
+      priority: 100,
+      idempotency_key: `${campaignId}:google-object:${token}`,
+      data: {
+        revision,
+        pass_token: token,
+        google_object_id: cleanString(row.google_object_id),
+        google_class_id: classId,
+        include_object_global_fields: !hasPassScopedClass,
+      },
+    });
+  }
+
+  if (jobs.length > 0) {
+    await insertRowsInChunks(sbAdmin, "pass_update_jobs", jobs);
+  }
+
+  const nextStatus = jobs.length > 0 ? "processing" : "completed";
+  const { error: updateCampaignError } = await sbAdmin
+    .from("pass_update_campaigns")
+    .update({
+      status: nextStatus,
+      total_jobs: jobs.length,
+      completed_at: jobs.length > 0 ? null : new Date().toISOString(),
+    })
+    .eq("id", campaignId);
+
+  if (updateCampaignError) {
+    throw new Error(
+      `Erro ao atualizar campanha de atualizacao: ${updateCampaignError.message}`,
+    );
+  }
+
+  return {
+    id: campaignId,
+    status: nextStatus,
+    total_jobs: jobs.length,
+    apple_jobs: appleRows.length,
+    google_class_jobs: passScopedClassIds.length,
+    google_object_jobs: googleObjectRows.length,
+    google_object_patch_required: requiresGoogleObjectPatch,
+  };
 }
 
 serve(async (req: Request) => {
@@ -233,19 +421,20 @@ serve(async (req: Request) => {
     const body = await req.json().catch(() => ({}));
     const passData = isObject(body?.pass_data) ? body.pass_data : {};
 
-    const projectId =
-      cleanString(body?.project_id) ??
+    const projectId = cleanString(body?.project_id) ??
       cleanString(passData?.project_id);
 
-    const passId =
-      cleanString(body?.pass_id) ??
+    const passId = cleanString(body?.pass_id) ??
       cleanString(passData?.pass_id) ??
       cleanString(passData?.id);
 
     if (!projectId || !passId) {
       return jsonResponse(
         {
-          ...errorPayload("bad_request", "project_id e pass_id são obrigatórios."),
+          ...errorPayload(
+            "bad_request",
+            "project_id e pass_id são obrigatórios.",
+          ),
         },
         400,
         origin,
@@ -261,7 +450,9 @@ serve(async (req: Request) => {
 
     const { data: existingPass, error: passLookupError } = await sbAdmin
       .from("passes")
-      .select("id, project_id, type, title, description, fields, design, status, deleted_at")
+      .select(
+        "id, project_id, type, title, description, fields, design, status, deleted_at, wallet_revision",
+      )
       .eq("id", passId)
       .eq("project_id", projectId)
       .is("deleted_at", null)
@@ -274,7 +465,10 @@ serve(async (req: Request) => {
     if (!existingPass) {
       return jsonResponse(
         {
-          ...errorPayload("not_found", "Passe não encontrado para este projeto."),
+          ...errorPayload(
+            "not_found",
+            "Passe não encontrado para este projeto.",
+          ),
         },
         404,
         origin,
@@ -287,7 +481,8 @@ serve(async (req: Request) => {
 
     const type = cleanString(passData?.type) ?? cleanString(body?.type);
     const title = cleanString(passData?.title) ?? cleanString(body?.title);
-    const description = cleanString(passData?.description) ?? cleanString(body?.description);
+    const description = cleanString(passData?.description) ??
+      cleanString(body?.description);
 
     if (type) updatePayload.type = type.toLowerCase();
     if (title) updatePayload.title = title;
@@ -296,16 +491,19 @@ serve(async (req: Request) => {
     const incomingFields = isObject(passData?.fields)
       ? passData.fields
       : isObject(body?.fields)
-        ? body.fields
-        : {};
+      ? body.fields
+      : {};
 
-    const existingFields = isObject(existingPass.fields) ? existingPass.fields : {};
+    const existingFields = isObject(existingPass.fields)
+      ? existingPass.fields
+      : {};
     const mergedFields = {
       ...existingFields,
       ...incomingFields,
     };
 
-    const expDate = cleanString(passData?.exp_date) ?? cleanString(body?.exp_date);
+    const expDate = cleanString(passData?.exp_date) ??
+      cleanString(body?.exp_date);
     if (expDate) {
       mergedFields.exp_date = expDate;
     }
@@ -315,20 +513,22 @@ serve(async (req: Request) => {
     const incomingDesign = isObject(passData?.design)
       ? passData.design
       : isObject(body?.design)
-        ? body.design
-        : {};
+      ? body.design
+      : {};
 
-    const existingDesign = isObject(existingPass.design) ? existingPass.design : {};
+    const existingDesign = isObject(existingPass.design)
+      ? existingPass.design
+      : {};
     const incomingColors = isObject(passData?.colors)
       ? passData.colors
       : isObject(incomingDesign?.colors)
-        ? incomingDesign.colors
-        : {};
+      ? incomingDesign.colors
+      : {};
     const incomingImages = isObject(passData?.images)
       ? passData.images
       : isObject(incomingDesign?.images)
-        ? incomingDesign.images
-        : {};
+      ? incomingDesign.images
+      : {};
 
     const mergedDesign = {
       ...existingDesign,
@@ -344,9 +544,12 @@ serve(async (req: Request) => {
     };
 
     updatePayload.design = mergedDesign;
+    updatePayload.wallet_revision = (Number(existingPass.wallet_revision) > 0
+      ? Number(existingPass.wallet_revision)
+      : 1) + 1;
+    updatePayload.wallet_updated_at = new Date().toISOString();
 
-    const hasLocationPayload =
-      body?.location_ids !== undefined ||
+    const hasLocationPayload = body?.location_ids !== undefined ||
       passData?.location_ids !== undefined;
 
     const requestedLocationIds = normalizeLocationIds(
@@ -357,19 +560,26 @@ serve(async (req: Request) => {
 
     if (hasLocationPayload) {
       if (requestedLocationIds.length > 0) {
-        const { data: validLocations, error: validLocationsError } = await sbAdmin
-          .from("locations")
-          .select("id")
-          .eq("project_id", projectId)
-          .in("id", requestedLocationIds);
+        const { data: validLocations, error: validLocationsError } =
+          await sbAdmin
+            .from("locations")
+            .select("id")
+            .eq("project_id", projectId)
+            .in("id", requestedLocationIds);
 
         if (validLocationsError) {
-          throw new Error(`Erro ao validar localizações: ${validLocationsError.message}`);
+          throw new Error(
+            `Erro ao validar localizações: ${validLocationsError.message}`,
+          );
         }
 
-        validLocationIds = (validLocations ?? []).map((row: any) => String(row.id));
+        validLocationIds = (validLocations ?? []).map((row: any) =>
+          String(row.id)
+        );
         const validSet = new Set(validLocationIds);
-        const invalidIds = requestedLocationIds.filter((id) => !validSet.has(id));
+        const invalidIds = requestedLocationIds.filter((id) =>
+          !validSet.has(id)
+        );
 
         if (invalidIds.length > 0) {
           return jsonResponse(
@@ -393,7 +603,9 @@ serve(async (req: Request) => {
       .eq("id", passId)
       .eq("project_id", projectId)
       .is("deleted_at", null)
-      .select("id, project_id, type, title, description, status, fields, design, qr_url, created_at")
+      .select(
+        "id, project_id, type, title, description, status, fields, design, qr_url, created_at, wallet_revision, wallet_updated_at",
+      )
       .single();
 
     if (updateError) {
@@ -401,7 +613,6 @@ serve(async (req: Request) => {
     }
 
     if (hasLocationPayload) {
-
       const { error: deleteMappingsError } = await sbAdmin
         .from("pass_locations")
         .delete()
@@ -409,7 +620,9 @@ serve(async (req: Request) => {
         .eq("pass_id", passId);
 
       if (deleteMappingsError) {
-        throw new Error(`Erro ao limpar localizações antigas do passe: ${deleteMappingsError.message}`);
+        throw new Error(
+          `Erro ao limpar localizações antigas do passe: ${deleteMappingsError.message}`,
+        );
       }
 
       if (validLocationIds.length > 0) {
@@ -424,120 +637,63 @@ serve(async (req: Request) => {
           .insert(mappingRows);
 
         if (insertMappingsError) {
-          throw new Error(`Erro ao salvar localizações do passe: ${insertMappingsError.message}`);
+          throw new Error(
+            `Erro ao salvar localizações do passe: ${insertMappingsError.message}`,
+          );
         }
       }
     }
 
     const { data: userPassRows, error: userPassesError } = await sbAdmin
       .from("user_passes")
-      .select("pass_token, install_status, install_platform")
+      .select(
+        "id, pass_token, install_status, install_platform, google_object_id, google_class_id",
+      )
       .eq("pass_id", passId);
 
     if (userPassesError) {
-      throw new Error(`Erro ao buscar user_passes do passe: ${userPassesError.message}`);
+      throw new Error(
+        `Erro ao buscar user_passes do passe: ${userPassesError.message}`,
+      );
     }
 
-    const installedRows = (userPassRows ?? []).filter((row: any) => {
-      const status = cleanString(row.install_status)?.toLowerCase();
-      return status === "installed";
+    const campaign = await createPassUpdateCampaign({
+      sbAdmin,
+      projectId,
+      passId,
+      revision: Number((updatedPass as any).wallet_revision),
+      userId: caller.user.id,
+      userPassRows: userPassRows ?? [],
+      passType: cleanString((updatedPass as any).type),
+      incomingFields,
+      expDate,
     });
-
-    const openedAppleRows = (userPassRows ?? []).filter((row: any) => {
-      const status = cleanString(row.install_status)?.toLowerCase();
-      const platform = cleanString(row.install_platform)?.toLowerCase();
-      // During claim flow, Apple rows may still be "opened" without install_platform.
-      return status === "opened" && platform !== "google";
-    });
-
-    const openedAppleTokens = [...new Set(
-      openedAppleRows
-        .map((row: any) => cleanString(row.pass_token))
-        .filter(Boolean) as string[],
-    )];
-
-    const appleTokens = [...new Set(
-      installedRows
-        .filter((row: any) => cleanString(row.install_platform)?.toLowerCase() === "apple")
-        .map((row: any) => cleanString(row.pass_token))
-        .filter(Boolean) as string[],
-    )];
-
-    const googleTokens = [...new Set(
-      installedRows
-        .filter((row: any) => cleanString(row.install_platform)?.toLowerCase() === "google")
-        .map((row: any) => cleanString(row.pass_token))
-        .filter(Boolean) as string[],
-    )];
-
-    let appleSuccess = 0;
-    let appleFailed = 0;
-    let googleSuccess = 0;
-    let googleFailed = 0;
-
-    for (let i = 0; i < appleTokens.length; i += PUSH_CONCURRENCY) {
-      const chunk = appleTokens.slice(i, i + PUSH_CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map((token) => callPush("apple-push", token)),
-      );
-
-      for (const result of results) {
-        if (result.ok) appleSuccess += 1;
-        else appleFailed += 1;
-      }
-    }
-
-    let appleCacheInvalidated = 0;
-    let appleCacheInvalidationFailed = 0;
-    for (let i = 0; i < openedAppleTokens.length; i += PUSH_CONCURRENCY) {
-      const chunk = openedAppleTokens.slice(i, i + PUSH_CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map(async (token) => {
-          try {
-            await invalidatePkpassCache(sbAdmin, passId, token);
-            return { ok: true };
-          } catch (error) {
-            console.error("[update-pass] pkpass cache invalidation failed", {
-              passId,
-              tokenPrefix: token.slice(0, 8),
-              message: String((error as any)?.message ?? error),
-            });
-            return { ok: false };
-          }
-        }),
-      );
-
-      for (const result of results) {
-        if (result.ok) appleCacheInvalidated += 1;
-        else appleCacheInvalidationFailed += 1;
-      }
-    }
-
-    for (let i = 0; i < googleTokens.length; i += PUSH_CONCURRENCY) {
-      const chunk = googleTokens.slice(i, i + PUSH_CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map((token) => callPush("google-push", token)),
-      );
-
-      for (const result of results) {
-        if (result.ok) googleSuccess += 1;
-        else googleFailed += 1;
-      }
-    }
 
     return jsonResponse(
       {
         ok: true,
         pass: updatedPass,
-        pushes: {
-          total_tokens: appleTokens.length + googleTokens.length,
-          apple: { success: appleSuccess, failed: appleFailed },
-          google: { success: googleSuccess, failed: googleFailed },
+        sync: {
+          mode: "queued",
+          campaign_id: campaign.id,
+          status: campaign.status,
+          total_jobs: campaign.total_jobs,
+          apple_jobs: campaign.apple_jobs,
+          google_class_jobs: campaign.google_class_jobs,
+          google_object_jobs: campaign.google_object_jobs,
+          google_object_patch_required: campaign.google_object_patch_required,
         },
-        cache_invalidation: {
-          apple_opened_tokens: openedAppleTokens.length,
-          apple_pkpass_invalidated: appleCacheInvalidated,
-          apple_pkpass_invalidation_failed: appleCacheInvalidationFailed,
+        pushes: {
+          total_tokens: campaign.apple_jobs + campaign.google_object_jobs,
+          queued: campaign.total_jobs,
+          apple: { queued: campaign.apple_jobs, success: 0, failed: 0 },
+          google: {
+            queued: campaign.google_class_jobs + campaign.google_object_jobs,
+            class_jobs: campaign.google_class_jobs,
+            object_jobs: campaign.google_object_jobs,
+            success: 0,
+            failed: 0,
+          },
         },
       },
       200,
@@ -551,14 +707,12 @@ serve(async (req: Request) => {
     console.error("[update-pass] ERROR:", error);
     const isHttpError = error instanceof HttpError;
     return jsonResponse(
-      isHttpError
-        ? error.payload
-        : {
-            ...errorPayload(
-              "internal_error",
-              "Não foi possível atualizar o passe. Tente novamente.",
-            ),
-          },
+      isHttpError ? error.payload : {
+        ...errorPayload(
+          "internal_error",
+          "Não foi possível atualizar o passe. Tente novamente.",
+        ),
+      },
       isHttpError ? error.status : 500,
       origin,
     );

@@ -60,6 +60,7 @@ Fluxo esperado:
 - `asaas-webhook` marca a sessao de mudanca de plano como `paid` e chama a aplicacao transacional; se for `next_cycle` antes do fim do ciclo, a RPC retorna `scheduled`.
 - `billing-finalize-plan-change` permite finalizar pelo retorno do `/org` quando o webhook ja confirmou o pagamento.
 - `apply_due_billing_plan_changes()` roda via cron e aplica sessoes `paid` + `next_cycle` quando `current_period_end <= now()`.
+- `get_pending_billing_plan_change(project_id)` expoe ao frontend somente a mudanca `next_cycle` ativa do projeto acessivel, para desabilitar o plano ja agendado na UI.
 
 ## 1) Catalogo comercial
 
@@ -174,6 +175,7 @@ Uso esperado:
 - `billing_usage_events` continua sendo o ledger auditavel e fonte da verdade.
 - `billing_cycle_usage_summaries` evita somas repetidas para dashboard, limite do ciclo e pre-fechamento.
 - os campos de excedente sao recalculados a partir do uso agregado e da franquia/preco efetivos do ciclo.
+- mudancas em `billing_subscription_changes` disparam recalc imediato dos resumos do ciclo afetado.
 - `billing_invoices` e `billing_invoice_items` continuam sendo snapshot financeiro gerado no fechamento, nao contador vivo.
 
 ## 6) Retroativo e creditos
@@ -303,6 +305,7 @@ Observacao de consolidacao:
 ### Triggers de resumo por ciclo em `billing_usage_events`
 - `trg_prepare_billing_usage_event_cycle`: antes de inserir/alterar campos de apuracao, tenta preencher `subscription_id` e `billing_cycle_id` usando `billing_cycles` ou a janela atual de `billing_subscriptions`.
 - `trg_sync_billing_cycle_usage_summary`: depois de inserir/alterar/remover eventos de uso, aplica o delta em `billing_cycle_usage_summaries`.
+- `trg_billing_subscription_changes_recalculate_usage_summary`: depois de inserir/alterar/remover mudanca de plano, recalcula os summaries do ciclo afetado para refletir a franquia/preco efetivos.
 
 Regras de contagem:
 - so considera `is_billable = true`
@@ -314,6 +317,7 @@ Garantia operacional:
 - a chave unica `(project_id, subscription_id, period_start, period_end)` evita duplicidade de resumo
 - updates/deletes raros aplicam delta reverso para manter o agregado consistente
 - `public.recalculate_billing_cycle_usage_summary(summary_id)` usa `get_billing_cycle_entitlements` para atualizar franquia/preco efetivos e excedentes sem re-somar `billing_usage_events`
+- `public.recalculate_billing_cycle_usage_summaries_for_subscription_change(...)` localiza summaries afetados por uma linha de `billing_subscription_changes` e chama o recalc individual.
 - um backfill na migration recalcula resumos para eventos ja existentes
 
 ## D) Enriquecimento de mudanca de plano, franquia e excedente
@@ -389,6 +393,14 @@ Responsabilidades:
 - filtrar assinaturas cujo `current_period_end <= now()`;
 - chamar `apply_billing_plan_change(...)` para cada sessao vencida;
 - rodar a cada 15 minutos pelo cron `billing-apply-due-plan-changes`.
+
+### Funcao `get_pending_billing_plan_change(project_id)`
+Retorna a mudanca `next_cycle` ativa para o projeto acessivel pelo usuario logado.
+
+Responsabilidades:
+- manter `billing_plan_change_sessions` privada para escrita/leitura direta;
+- expor somente dados minimos do plano destino e status da sessao;
+- permitir que a UI mostre `Downgrade ja agendado` e bloqueie nova tentativa para o mesmo plano.
 
 ## Regras de negocio principais
 

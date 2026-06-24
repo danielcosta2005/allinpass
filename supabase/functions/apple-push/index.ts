@@ -73,6 +73,7 @@ async function ensureUpdatedPkpass(args: {
   passToken: string;
   requestId: string;
   suppressPointsNotification: boolean;
+  walletRevision?: number | null;
 }) {
   const {
     sbAdmin,
@@ -82,12 +83,22 @@ async function ensureUpdatedPkpass(args: {
     passToken,
     requestId,
     suppressPointsNotification,
+    walletRevision,
   } = args;
 
-  const pkPath = `issued_users/${passId}/${passToken}.pkpass`;
+  const legacyPkPath = `issued_users/${passId}/${passToken}.pkpass`;
+  const revision = Number(walletRevision) > 0 ? Number(walletRevision) : null;
+  const pkPaths = [
+    legacyPkPath,
+    ...(revision
+      ? [`issued_users/${passId}/rev-${revision}/${passToken}.pkpass`]
+      : []),
+  ];
+
   console.info(`[apple-push:${requestId}] regenerate pkpass`, {
-    pkPath,
+    pkPaths,
     suppressPointsNotification,
+    walletRevision: revision,
   });
 
   const genUrl = new URL(`${supabaseUrl}/functions/v1/apple-pass`);
@@ -118,20 +129,23 @@ async function ensureUpdatedPkpass(args: {
     size: bytes.length,
   });
 
-  const up = await sbAdmin.storage.from("pass-assets").upload(pkPath, bytes, {
-    contentType: "application/vnd.apple.pkpass",
-    upsert: true,
-  });
-
-  if (up.error) {
-    console.error(`[apple-push:${requestId}] storage upload failed`, {
-      message: up.error.message,
+  for (const pkPath of pkPaths) {
+    const up = await sbAdmin.storage.from("pass-assets").upload(pkPath, bytes, {
+      contentType: "application/vnd.apple.pkpass",
+      upsert: true,
     });
-    throw new Error(`upload pkpass falhou: ${up.error.message}`);
+
+    if (up.error) {
+      console.error(`[apple-push:${requestId}] storage upload failed`, {
+        pkPath,
+        message: up.error.message,
+      });
+      throw new Error(`upload pkpass falhou (${pkPath}): ${up.error.message}`);
+    }
   }
 
-  console.info(`[apple-push:${requestId}] storage upload ok`, { pkPath });
-  return pkPath;
+  console.info(`[apple-push:${requestId}] storage upload ok`, { pkPaths });
+  return pkPaths;
 }
 
 async function apnsPush(args: {
@@ -276,6 +290,27 @@ serve(async (req) => {
       install_platform: up.install_platform,
     });
 
+    const { data: passRow, error: passErr } = await sbAdmin
+      .from("passes")
+      .select("wallet_revision")
+      .eq("id", up.pass_id)
+      .maybeSingle();
+
+    if (passErr) {
+      console.error(`[apple-push:${requestId}] db_error passes`, {
+        message: passErr.message,
+      });
+      return json(
+        500,
+        { error: "db_error", requestId, message: passErr.message },
+        origin,
+      );
+    }
+
+    const walletRevision = Number(passRow?.wallet_revision) > 0
+      ? Number(passRow?.wallet_revision)
+      : null;
+
     // 3) load passkit registration FROM TABLE
     const { data: reg, error: regErr } = await sbAdmin
       .from("passkit_registrations")
@@ -383,6 +418,7 @@ serve(async (req) => {
       passToken: String(up.pass_token),
       requestId,
       suppressPointsNotification,
+      walletRevision,
     });
 
     // 6) provider token

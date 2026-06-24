@@ -45,7 +45,7 @@ const IMAGE_UPLOAD_RULES = {
   icon: {
     label: 'Icone Apple',
     helpTitle: 'Icone Apple',
-    helpLines: ['Logo que aparece na notificação do seu passe', 'Obrigatorio: PNG', 'Proporcao recomendada: 1:1'],
+    helpLines: ['Logo que aparece na notificação do seu cartão', 'Obrigatorio: PNG', 'Proporcao recomendada: 1:1'],
     recommendedRatio: 1,
     recommendedRatioLabel: '1:1',
   },
@@ -112,9 +112,9 @@ const WALLET_FUNCTION_ERROR_MESSAGES = {
   unauthorized: 'Sessão expirada ou inválida. Faça login novamente.',
   forbidden: 'Você não tem permissão para realizar esta ação.',
   bad_request: 'Revise os dados enviados e tente novamente.',
-  not_found: 'Passe não encontrado para este projeto.',
+  not_found: 'Cartão não encontrado para este projeto.',
   invalid_location_ids: 'Uma ou mais localizações não pertencem ao projeto informado.',
-  missing_app_base_url: 'Não foi possível montar o link do passe. Recarregue a página e tente novamente.',
+  missing_app_base_url: 'Não foi possível montar o link do cartão. Recarregue a página e tente novamente.',
   missing_env: 'Configuração do servidor incompleta. Tente novamente mais tarde.',
   method_not_allowed: 'Método inválido para esta operação.',
   internal_error: 'Não foi possível concluir a operação. Tente novamente.',
@@ -534,7 +534,7 @@ const PassPreview = ({
   showPlatformControls = true,
 }) => {
   const [platform, setPlatform] = useState('apple');
-  const { title = 'Título do Passe', colors = {}, images = {}, dataFields = [], sampleValues = {}, exp_date } = formState;
+  const { title = 'Título do Cartão', colors = {}, images = {}, dataFields = [], sampleValues = {}, exp_date } = formState;
   const { background = '#6c5ce7', text = '#ffffff', label = '#ffffff' } = colors;
   const { logo: legacyLogo, appleLogo, googleLogo, googleHero, appleStrip } = images;
 
@@ -681,7 +681,7 @@ const PassInventory = ({
           {canManagePasses && (
             <Button onClick={onCreateNewPass} className="mt-4 gap-2">
               <PlusCircle className="h-4 w-4" />
-              Novo passe
+              Novo cartão
             </Button>
           )}
         </div>
@@ -691,7 +691,7 @@ const PassInventory = ({
         <div className="space-y-5">
           <div className="flex flex-col items-center text-center">
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Passe sem titulo'}</p>
+              <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Cartão sem titulo'}</p>
               <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
                 {translatePassStatus(activePass.status)}
               </span>
@@ -709,7 +709,7 @@ const PassInventory = ({
                   type="button"
                   onClick={() => goToPass(index)}
                   className={`h-2.5 rounded-full transition-all ${index === activeIndex ? 'w-8 bg-purple-600' : 'w-2.5 bg-slate-300 hover:bg-slate-400'}`}
-                  aria-label={`Ir para passe ${index + 1}`}
+                  aria-label={`Ir para cartão ${index + 1}`}
                 />
               ))}
             </div>
@@ -723,7 +723,7 @@ const PassInventory = ({
                 size="icon"
                 className="absolute left-0 top-1/2 z-20 h-11 w-11 -translate-y-1/2 rounded-full bg-white/95 shadow-lg hover:bg-white"
                 onClick={() => goToPass(activeIndex - 1)}
-                aria-label="Passe anterior"
+                aria-label="Cartão anterior"
               >
                 <ChevronLeft className="h-5 w-5" />
               </Button>
@@ -825,7 +825,7 @@ const PassInventory = ({
                 size="icon"
                 className="absolute right-0 top-1/2 z-20 h-11 w-11 -translate-y-1/2 rounded-full bg-white/95 shadow-lg hover:bg-white"
                 onClick={() => goToPass(activeIndex + 1)}
-                aria-label="Proximo passe"
+                aria-label="Proximo cartão"
               >
                 <ChevronRight className="h-5 w-5" />
               </Button>
@@ -861,7 +861,7 @@ const PassEditorPanel = ({
     <div className="space-y-4 p-4 border rounded-lg">
       <h2 className="font-semibold text-lg flex items-center gap-2">
         <Settings className="w-5 h-5 text-purple-500" />
-        {isEditingPass ? 'Editar passe' : 'Novo passe'}
+        {isEditingPass ? 'Editar cartão' : 'Novo cartão'}
       </h2>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -977,7 +977,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const showManagePermissionToast = () => {
     toast({
       title: 'Acesso somente leitura',
-      description: 'Funcionários podem apenas visualizar passes. Peça a um gestor para alterar cartões.',
+      description: 'Funcionários podem apenas visualizar cartões. Peça a um gestor para alterar cartões.',
       variant: 'destructive',
     });
   };
@@ -1052,7 +1052,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         setPassLocationsByPassId({});
       }
     } catch (error) {
-      toast({ title: 'Erro ao buscar passes', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao buscar cartões', description: error.message, variant: 'destructive' });
     } finally {
       setLoadingPasses(false);
     }
@@ -1178,8 +1178,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     }
     if (isDeletedPass(pass)) {
       toast({
-        title: 'Passe indisponível',
-        description: 'Este passe foi excluído e não pode ser editado.',
+        title: 'Cartão indisponível',
+        description: 'Este cartão foi excluído e não pode ser editado.',
         variant: 'destructive',
       });
       return;
@@ -1205,7 +1205,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         resolvedPass = { ...pass, ...(passRow || {}) };
       } catch (error) {
         toast({
-          title: 'Erro ao carregar dados completos do passe',
+          title: 'Erro ao carregar dados completos do cartão',
           description: error.message,
           variant: 'destructive',
         });
@@ -1227,7 +1227,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       setSelectedPassLocationIds(ids);
       setPassLocationsByPassId((prev) => ({ ...prev, [resolvedPass.id]: ids }));
     } catch (error) {
-      toast({ title: 'Erro ao carregar localizações do passe', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao carregar localizações do cartão', description: error.message, variant: 'destructive' });
       setSelectedPassLocationIds([]);
     }
   };
@@ -1329,7 +1329,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       return;
     }
 
-    const confirmed = window.confirm('Essas mudanças também irão alterar os passes que já estão na carteira dos clientes, deseja confirmar a operação?');
+    const confirmed = window.confirm('Essas mudanças também irão alterar os cartões que já estão na carteira dos clientes, deseja confirmar a operação?');
     if (!confirmed) return;
 
     setIsProcessing(true);
@@ -1355,14 +1355,14 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
       const result = await invokeWalletFunction('update-pass', body);
 
-      const pushes = result?.pushes || {};
-      const appleFailed = pushes?.apple?.failed ?? 0;
-      const googleFailed = pushes?.google?.failed ?? 0;
-      const hasPushFailures = appleFailed > 0 || googleFailed > 0;
+      const sync = result?.sync || {};
+      const queuedJobs = sync?.total_jobs ?? result?.pushes?.queued ?? 0;
       toast({
-        title: hasPushFailures ? 'Passe atualizado com alertas.' : 'Passe atualizado com sucesso.',
-        description: hasPushFailures ? `Push enviado para ${pushes.total_tokens ?? 0} token(s). Apple: ${pushes?.apple?.success ?? 0} ok, ${appleFailed} falhou. Google: ${pushes?.google?.success ?? 0} ok, ${googleFailed} falhou.` : `Atualizações enviadas para os clientes!`,
-        variant: hasPushFailures ? 'destructive' : 'default',
+        title: 'Cartão atualizado com sucesso.',
+        description: queuedJobs > 0
+          ? 'Sincronização com as carteiras em andamento.'
+          : 'Não havia carteiras instaladas para sincronizar.',
+        variant: 'default',
       });
 
       setPassLocationsByPassId((prev) => ({ ...prev, [selectedPass.id]: selectedPassLocationIds }));
@@ -1372,7 +1372,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       setSelectedPass(mergedPass);
       setFormState(passToFormState(mergedPass, templateDefaults));
     } catch (error) {
-      toast({ title: 'Erro ao atualizar passe', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar cartão', description: error.message, variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
@@ -1447,8 +1447,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       });
 
       toast({
-        title: 'Passe excluído',
-        description: `${deletingPass.title || 'Passe'} foi removido da operação.`,
+        title: 'Cartão excluído',
+        description: `${deletingPass.title || 'Cartão'} foi removido da operação.`,
       });
       setPassToDelete(null);
 
@@ -1459,7 +1459,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       await fetchPasses(projectId);
     } catch (error) {
       toast({
-        title: 'Erro ao excluir passe',
+        title: 'Erro ao excluir cartão',
         description: error.message,
         variant: 'destructive',
       });
@@ -1477,9 +1477,9 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Excluir passe?</AlertDialogTitle>
+          <AlertDialogTitle>Excluir cartão?</AlertDialogTitle>
           <AlertDialogDescription>
-            O passe "{passToDelete?.title || 'sem título'}" será removido da operação. Instalações e histórico permanecem preservados.
+            O cartão "{passToDelete?.title || 'sem título'}" será removido da operação. Instalações e histórico permanecem preservados.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1538,22 +1538,22 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         {isEditingPass && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
             <p className="text-sm font-medium">
-              Editando passe criado em {formatPassCreatedAt(selectedPass?.created_at)}.
+              Editando cartão criado em {formatPassCreatedAt(selectedPass?.created_at)}.
             </p>
           </div>
         )}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">{isEditingPass ? 'Editar passe' : 'Novo passe'}</h1>
+            <h1 className="text-3xl font-bold">{isEditingPass ? 'Editar cartão' : 'Novo cartão'}</h1>
             <p className="mt-1 text-sm text-slate-500">
-              {isEditingPass ? 'Ajuste o passe selecionado e salve as mudancas.' : 'Monte um novo passe usando o template do projeto.'}
+              {isEditingPass ? 'Ajuste o cartão selecionado e salve as mudancas.' : 'Monte um novo cartão usando o template do projeto.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={handleBackToPasses} disabled={isProcessing}>
               <ChevronLeft className="mr-2 h-4 w-4" />
-              Voltar para meus passes
+              Voltar para meus cartões
             </Button>
             {canGoBackToProjects && (
               <Button
