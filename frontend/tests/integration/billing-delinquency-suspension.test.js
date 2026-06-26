@@ -61,7 +61,7 @@ describe("billing delinquency suspension", () => {
     expect(runnerSource).not.toContain("status: \"canceled\"");
   });
 
-  test("frontend shows past_due warning and suspended lock without plan-change escape hatch", () => {
+  test("frontend shows past_due warning and dismissible suspended modal with compact topbar notice", () => {
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
     const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
@@ -76,17 +76,27 @@ describe("billing delinquency suspension", () => {
     expect(billingHookSource).toContain("return 'past_due'");
     expect(dashboardSource).toContain("BillingSuspendedState");
     expect(dashboardSource).toContain("BillingPastDueNotice");
+    expect(dashboardSource).toContain("billingSuspensionDismissed");
+    expect(dashboardSource).toContain("onDismiss={() => setBillingSuspensionDismissed(true)}");
+    expect(dashboardSource).toContain("showSuspendedNotice={isBillingSuspended && billingSuspensionDismissed}");
     expect(topbarSource).toContain("pagamento pendente");
     expect(topbarSource).toContain("suspenso");
-    expect(suspendedStateSource).toContain("Trocar de plano nao regulariza a pendencia");
+    expect(topbarSource).toContain("showSuspendedNotice");
+    expect(topbarSource).toContain("Assinatura suspensa.");
+    expect(suspendedStateSource).toContain("Fechar aviso");
+    expect(suspendedStateSource).toContain("fixed inset-0");
+    expect(suspendedStateSource).toContain("backdrop-blur-sm");
+    expect(suspendedStateSource).toContain("role=\"dialog\"");
+    expect(suspendedStateSource).toContain("Trocar de plano não regulariza a pendência");
     expect(pastDueNoticeSource).toContain("Pagamento pendente");
+    expect(pastDueNoticeSource).toContain("período de regularização");
   });
 
   test("documents paid delinquency semantics separately from trial expiration", () => {
     const schemaDoc = readIfExists("docs/database/schema-mod3.md");
     const edgeDoc = readIfExists("docs/backend-edge-functions.md");
 
-    expect(schemaDoc).toContain("`past_due` indica cobranca paga vencida/falha dentro do grace period");
+    expect(schemaDoc).toContain("`past_due` indica cobrança paga vencida/falha dentro do grace period");
     expect(schemaDoc).toContain("`suspended` bloqueia acesso operacional");
     expect(schemaDoc).toContain("`expired` continua reservado para free trial encerrado");
     expect(edgeDoc).toContain("grace_ends_at = delinquent_since + 5 dias");

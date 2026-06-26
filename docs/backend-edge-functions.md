@@ -770,7 +770,7 @@ Function sem JWT Supabase (`verify_jwt = false`), protegida por bearer `SUPABASE
 | `close_billing_cycle_for_overage` | `rpc` | Fecha ciclo, cria invoice de excedente e abre proximo ciclo. |
 | `billing_invoices` | `select`, `update` | Vincula invoices `draft` ao batch/coleta. |
 | `billing_invoice_collection_batches` | `insert`, `update` | Rastreia a cobranca mensal Asaas editada. |
-| `billing_subscriptions` | `select`, `update` | Le assinatura Asaas, grava realinhamento de `nextDueDate` e aplica `suspended` apos o grace. |
+| `billing_subscriptions` | `select`, `update` | Lê assinatura Asaas, grava realinhamento de `nextDueDate` e aplica `suspended` após o grace. |
 
 ### Integracoes externas
 
@@ -797,7 +797,7 @@ O agendamento padrao usa o `cron_secret` do Supabase Vault. A migration cria ess
 - `billing_invoices_overage_cycle_uidx` evita mais de uma invoice de excedente ativa por ciclo.
 - `billing_invoice_collection_batches_gateway_charge_uidx` evita atualizar a mesma cobranca Asaas em batches ativos duplicados.
 - Se nenhuma cobranca mensal editavel existir, a invoice permanece `draft` e sera tentada de novo; a function nao cria cobranca avulsa automaticamente.
-- Suspensao e idempotente: somente linhas `past_due` com `grace_ends_at` vencido sao atualizadas para `suspended`.
+- Suspensão é idempotente: somente linhas `past_due` com `grace_ends_at` vencido são atualizadas para `suspended`.
 
 ## `asaas-webhook`
 
@@ -841,7 +841,7 @@ No `supabase/config.toml`, esta function deve ficar com `verify_jwt = false`, po
 7. Para `PAYMENT_*`, primeiro verifica se `payment.id` pertence a `billing_invoice_collection_batches`.
 8. Se for cobranca de excedente, atualiza batch e `billing_invoices`.
 9. Para `PAYMENT_OVERDUE`, falha ou chargeback, marca a assinatura Asaas local como `past_due` e define `grace_ends_at = delinquent_since + 5 dias`.
-10. Para `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`, limpa inadimplencia e volta a assinatura para `active` somente quando `payment.id` bate com `delinquency_gateway_charge_id`.
+10. Para `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`, limpa inadimplência e volta a assinatura para `active` somente quando `payment.id` bate com `delinquency_gateway_charge_id`.
 11. Se nao for excedente, segue para signup e mudanca de plano.
 12. Ignora payload sem `checkout.id` ou sem status reconhecido.
 13. Busca `signup_checkout_sessions` pelo provider `asaas` e `provider_checkout_id`, desde que ainda nao esteja `finalized`.
@@ -927,7 +927,7 @@ Em erro:
 | `public.signup_checkout_sessions` | `select`, `update` | Localiza a sessao pelo checkout do Asaas e atualiza status/IDs externos. |
 | `public.billing_invoice_collection_batches` | `select`, `update` | Localiza cobranca Asaas de excedente por `gateway_charge_id`. |
 | `public.billing_invoices` | `select`, `update` | Marca invoices de excedente conforme status do pagamento Asaas. |
-| `public.billing_subscriptions` | `select`, `update` | Marca `past_due`/limpa inadimplencia por `payment.subscription` ou batch de excedente. |
+| `public.billing_subscriptions` | `select`, `update` | Marca `past_due`/limpa inadimplência por `payment.subscription` ou batch de excedente. |
 
 ### Funcoes RPC utilizadas
 

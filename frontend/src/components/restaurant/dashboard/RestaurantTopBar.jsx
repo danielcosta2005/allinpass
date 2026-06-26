@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, LogOut, Wallet } from 'lucide-react';
+import { AlertTriangle, Loader2, LogOut, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function RestaurantTopBar({
@@ -9,6 +9,7 @@ function RestaurantTopBar({
   onOpenPlanChange,
   onSignOut,
   projectId,
+  showSuspendedNotice = false,
   signingOut,
   userEmail,
 }) {
@@ -70,6 +71,17 @@ function RestaurantTopBar({
           </div>
         </div>
       </div>
+      {isSuspended && showSuspendedNotice ? (
+        <div className="border-t border-rose-100 bg-rose-50/95">
+          <div className="mx-auto flex max-w-7xl items-start gap-2 px-4 py-2 text-xs text-rose-800 sm:px-6 sm:text-sm lg:px-8">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-rose-700" />
+            <p>
+              <span className="font-semibold">Assinatura suspensa.</span> Regularize a cobrança pendente para
+              liberar as ações operacionais.
+            </p>
+          </div>
+        </div>
+      ) : null}
     </nav>
   );
 }

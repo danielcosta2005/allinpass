@@ -28,6 +28,7 @@ const RestaurantDashboard = () => {
   const { user, projectId, signOut } = useAuth();
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
+  const [billingSuspensionDismissed, setBillingSuspensionDismissed] = useState(false);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
   const {
@@ -73,12 +74,15 @@ const RestaurantDashboard = () => {
   };
 
   const trialBillingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
-  const billingBlocked = trialBillingBlocked || isBillingSuspended;
   const handleOpenPlanChange = () => {
-    if (billingBlocked && !canManageBilling) return;
+    if (trialBillingBlocked && !canManageBilling) return;
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
   };
+
+  useEffect(() => {
+    if (!isBillingSuspended) setBillingSuspensionDismissed(false);
+  }, [isBillingSuspended]);
 
   useEffect(() => {
     if (!ALLOWED_TABS.has(activeTab)) {
@@ -125,6 +129,7 @@ const RestaurantDashboard = () => {
           onOpenPlanChange={handleOpenPlanChange}
           onSignOut={handleSignOut}
           projectId={projectId}
+          showSuspendedNotice={isBillingSuspended && billingSuspensionDismissed}
           signingOut={signingOut}
           userEmail={user?.email}
         />
@@ -159,11 +164,6 @@ const RestaurantDashboard = () => {
               canManageBilling={canManageBilling}
               onOpenPlanChange={handleOpenPlanChange}
               planChangeOptions={planChangeOptions}
-            />
-          ) : isBillingSuspended ? (
-            <BillingSuspendedState
-              billingError={billingError}
-              supportUrl={SUPPORT_WHATSAPP_URL}
             />
           ) : (
             <motion.div
@@ -233,6 +233,14 @@ const RestaurantDashboard = () => {
             </motion.div>
           )}
         </main>
+
+        {projectId && !trialBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
+          <BillingSuspendedState
+            billingError={billingError}
+            onDismiss={() => setBillingSuspensionDismissed(true)}
+            supportUrl={SUPPORT_WHATSAPP_URL}
+          />
+        ) : null}
 
         <div className="group fixed bottom-5 right-5 z-40 flex items-center">
           <a

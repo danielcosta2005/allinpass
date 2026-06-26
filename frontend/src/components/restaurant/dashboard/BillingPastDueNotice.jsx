@@ -23,8 +23,8 @@ function BillingPastDueNotice({ subscription }) {
       <div>
         <p className="font-semibold">Pagamento pendente</p>
         <p className="mt-1 text-amber-800">
-          O acesso continua ativo durante o periodo de regularizacao
-          {graceDate ? `, ate ${graceDate}` : ''}. Regularize a cobranca pendente para evitar a suspensao.
+          O acesso continua ativo durante o período de regularização
+          {graceDate ? `, até ${graceDate}` : ''}. Regularize a cobrança pendente para evitar a suspensão.
         </p>
       </div>
     </div>
