@@ -840,7 +840,7 @@ No `supabase/config.toml`, esta function deve ficar com `verify_jwt = false`, po
    - `CHECKOUT_CREATED` ou `ACTIVE` -> `created`.
 7. Para `PAYMENT_*`, primeiro verifica se `payment.id` pertence a `billing_invoice_collection_batches`.
 8. Se for cobranca de excedente, atualiza batch e `billing_invoices`.
-9. Para `PAYMENT_OVERDUE`, falha ou chargeback, marca a assinatura Asaas local como `past_due` e define `grace_ends_at = delinquent_since + 5 dias`.
+9. Para `PAYMENT_OVERDUE`, falha ou chargeback, marca a assinatura Asaas local como `past_due` e define `grace_ends_at = delinquent_since + 10 dias`.
 10. Para `PAYMENT_CONFIRMED`/`PAYMENT_RECEIVED`, limpa inadimplência e volta a assinatura para `active` somente quando `payment.id` bate com `delinquency_gateway_charge_id`.
 11. Se nao for excedente, segue para signup e mudanca de plano.
 12. Ignora payload sem `checkout.id` ou sem status reconhecido.

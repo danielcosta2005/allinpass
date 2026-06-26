@@ -39,7 +39,7 @@ function isPaidPaymentEvent(event: string, paymentStatus: string) {
     paymentStatus === "PAID";
 }
 
-const DELINQUENCY_GRACE_DAYS = 5;
+const DELINQUENCY_GRACE_DAYS = 10;
 const PAYMENT_DELINQUENCY_STATUSES = new Set([
   "OVERDUE",
   "REFUSED",
@@ -148,6 +148,15 @@ function addDaysIso(value: string, days: number) {
   return date.toISOString();
 }
 
+function laterIsoDate(currentValue: string | null | undefined, policyValue: string) {
+  if (!currentValue) return policyValue;
+  const currentTime = new Date(currentValue).getTime();
+  const policyTime = new Date(policyValue).getTime();
+  if (Number.isNaN(currentTime)) return policyValue;
+  if (Number.isNaN(policyTime)) return currentValue;
+  return currentTime >= policyTime ? currentValue : policyValue;
+}
+
 function isPaymentDelinquencyEvent(event: string, paymentStatus: string) {
   return event === "PAYMENT_OVERDUE" ||
     event === "PAYMENT_FAILED" ||
@@ -213,7 +222,10 @@ async function markSubscriptionPastDueForPayment(
 
   const nowIso = new Date().toISOString();
   const delinquentSince = subscription.delinquent_since || nowIso;
-  const graceEndsAt = subscription.grace_ends_at || addDaysIso(delinquentSince, DELINQUENCY_GRACE_DAYS);
+  const policyGraceEndsAt = addDaysIso(delinquentSince, DELINQUENCY_GRACE_DAYS);
+  const graceEndsAt = subscription.status === "suspended"
+    ? subscription.grace_ends_at || policyGraceEndsAt
+    : laterIsoDate(subscription.grace_ends_at, policyGraceEndsAt);
   const delinquencyGatewayChargeId = subscription.delinquency_gateway_charge_id || options.providerPaymentId;
   const metadata = getMetadata(subscription.metadata);
   const nextStatus = subscription.status === "suspended" ? "suspended" : "past_due";

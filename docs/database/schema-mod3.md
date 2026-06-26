@@ -464,7 +464,7 @@ Responsabilidades:
 10. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
 11. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
 12. Excedente e cobrado junto com uma cobranca mensal Asaas editavel; se nao houver cobranca pendente/vencida, a invoice permanece `draft` para carry-forward.
-13. Inadimplência paga usa `past_due` durante 5 dias de grace e `suspended` como primeiro estado que bloqueia acesso; `billing_cycles.period_end` não expira acesso.
+13. Inadimplência paga usa `past_due` durante 10 dias de grace e `suspended` como primeiro estado que bloqueia acesso; `billing_cycles.period_end` não expira acesso.
 
 ## Fluxo de negocio (fim a fim)
 

@@ -37,7 +37,9 @@ describe("billing delinquency suspension", () => {
   test("asaas webhook records and clears subscription delinquency by payment id", () => {
     const webhookSource = readIfExists("supabase/functions/asaas-webhook/index.ts");
 
-    expect(webhookSource).toContain("const DELINQUENCY_GRACE_DAYS = 5");
+    expect(webhookSource).toContain("const DELINQUENCY_GRACE_DAYS = 10");
+    expect(webhookSource).toContain("laterIsoDate");
+    expect(webhookSource).toContain("const policyGraceEndsAt = addDaysIso(delinquentSince, DELINQUENCY_GRACE_DAYS)");
     expect(webhookSource).toContain("markSubscriptionPastDueForPayment");
     expect(webhookSource).toContain("clearSubscriptionDelinquencyForPayment");
     expect(webhookSource).toContain("reconcileSubscriptionDelinquencyFromPayment");
@@ -99,7 +101,7 @@ describe("billing delinquency suspension", () => {
     expect(schemaDoc).toContain("`past_due` indica cobrança paga vencida/falha dentro do grace period");
     expect(schemaDoc).toContain("`suspended` bloqueia acesso operacional");
     expect(schemaDoc).toContain("`expired` continua reservado para free trial encerrado");
-    expect(edgeDoc).toContain("grace_ends_at = delinquent_since + 5 dias");
+    expect(edgeDoc).toContain("grace_ends_at = delinquent_since + 10 dias");
     expect(edgeDoc).toContain("somente linhas `past_due` com `grace_ends_at` vencido");
   });
 });
