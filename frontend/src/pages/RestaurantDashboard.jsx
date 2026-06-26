@@ -11,7 +11,9 @@ import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
+import BillingPastDueNotice from '@/components/restaurant/dashboard/BillingPastDueNotice';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
+import BillingSuspendedState from '@/components/restaurant/dashboard/BillingSuspendedState';
 import NoProjectSignupState from '@/components/restaurant/dashboard/NoProjectSignupState';
 import TrialExpiredBillingState from '@/components/restaurant/dashboard/TrialExpiredBillingState';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
@@ -32,6 +34,8 @@ const RestaurantDashboard = () => {
     billingSubscription,
     planChangeOptions,
     isTrialExpired,
+    isBillingSuspended,
+    isBillingPastDue,
     billingAccessState,
     canManageBilling,
     billingLoading,
@@ -68,9 +72,11 @@ const RestaurantDashboard = () => {
     } catch (_) {}
   };
 
-  const billingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
+  const trialBillingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
+  const billingBlocked = trialBillingBlocked || isBillingSuspended;
   const handleOpenPlanChange = () => {
     if (billingBlocked && !canManageBilling) return;
+    if (isBillingSuspended) return;
     setPlanChangeOpen(true);
   };
 
@@ -114,6 +120,7 @@ const RestaurantDashboard = () => {
       <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-purple-50 via-white to-indigo-50">
         <RestaurantTopBar
           billingLoading={billingLoading}
+          billingAccessState={billingAccessState}
           billingPlanName={billingPlanName}
           onOpenPlanChange={handleOpenPlanChange}
           onSignOut={handleSignOut}
@@ -145,7 +152,7 @@ const RestaurantDashboard = () => {
               statusError={signupStatusError}
               statusLoading={signupStatusLoading}
             />
-          ) : billingBlocked ? (
+          ) : trialBillingBlocked ? (
             <TrialExpiredBillingState
               billingError={billingError}
               billingLoading={billingLoading}
@@ -153,12 +160,21 @@ const RestaurantDashboard = () => {
               onOpenPlanChange={handleOpenPlanChange}
               planChangeOptions={planChangeOptions}
             />
+          ) : isBillingSuspended ? (
+            <BillingSuspendedState
+              billingError={billingError}
+              supportUrl={SUPPORT_WHATSAPP_URL}
+            />
           ) : (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
+              {isBillingPastDue ? (
+                <BillingPastDueNotice subscription={billingSubscription} />
+              ) : null}
+
               <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
                 <h2 className="min-h-[1.75rem] text-xl font-bold leading-tight text-purple-700 sm:min-h-[2rem] sm:text-2xl">
                   {projectDisplayName ? (

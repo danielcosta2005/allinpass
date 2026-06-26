@@ -72,7 +72,7 @@ describe("billing trial expiration enforcement", () => {
     ];
 
     expect(helperSource).toContain("PROJECT_BILLING_INACTIVE");
-    expect(helperSource).toContain("Trial encerrado. Assine um plano para continuar.");
+    expect(helperSource).toContain("Plano inativo. Regularize sua assinatura para continuar.");
     expect(helperSource).toContain("assertProjectBillingActive");
     expect(helperSource).toContain("status\", [\"trialing\", \"active\", \"past_due\", \"paused\"]");
 

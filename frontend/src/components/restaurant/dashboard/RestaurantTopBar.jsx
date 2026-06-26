@@ -3,6 +3,7 @@ import { Loader2, LogOut, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function RestaurantTopBar({
+  billingAccessState,
   billingLoading,
   billingPlanName,
   onOpenPlanChange,
@@ -11,6 +12,19 @@ function RestaurantTopBar({
   signingOut,
   userEmail,
 }) {
+  const isPastDue = billingAccessState === 'past_due';
+  const isSuspended = billingAccessState === 'suspended';
+  const planTone = isSuspended
+    ? 'text-rose-600 hover:text-rose-800 disabled:text-rose-400'
+    : isPastDue
+      ? 'text-amber-600 hover:text-amber-800 disabled:text-amber-400'
+      : 'text-purple-600 hover:text-purple-800 disabled:text-purple-400';
+  const planLabel = isSuspended
+    ? `${billingPlanName} - suspenso`
+    : isPastDue
+      ? `${billingPlanName} - pagamento pendente`
+      : billingPlanName;
+
   return (
     <nav className="bg-white/80 backdrop-blur-xl border-b border-purple-100 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -33,10 +47,10 @@ function RestaurantTopBar({
               <button
                 type="button"
                 onClick={onOpenPlanChange}
-                disabled={!projectId || billingLoading}
-                className="block max-w-[180px] truncate text-xs font-medium text-purple-600 transition-colors hover:text-purple-800 disabled:cursor-default disabled:text-purple-400"
+                disabled={!projectId || billingLoading || isSuspended}
+                className={`block max-w-[220px] truncate text-xs font-medium transition-colors disabled:cursor-default ${planTone}`}
               >
-                {billingPlanName}
+                {planLabel}
               </button>
             </div>
             <Button
