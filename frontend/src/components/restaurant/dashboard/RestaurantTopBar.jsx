@@ -1,6 +1,6 @@
 import React from 'react';
-import { AlertTriangle, Loader2, LogOut, Wallet } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { AlertTriangle, Wallet } from 'lucide-react';
+import AccountMenu from '@/components/app/AccountMenu';
 
 function RestaurantTopBar({
   billingAccessState,
@@ -16,10 +16,10 @@ function RestaurantTopBar({
   const isPastDue = billingAccessState === 'past_due';
   const isSuspended = billingAccessState === 'suspended';
   const planTone = isSuspended
-    ? 'text-rose-600 hover:text-rose-800 disabled:text-rose-400'
+    ? 'text-rose-600'
     : isPastDue
-      ? 'text-amber-600 hover:text-amber-800 disabled:text-amber-400'
-      : 'text-purple-600 hover:text-purple-800 disabled:text-purple-400';
+      ? 'text-amber-600'
+      : 'text-purple-600';
   const planLabel = isSuspended
     ? `${billingPlanName} - suspenso`
     : isPastDue
@@ -45,29 +45,20 @@ function RestaurantTopBar({
           <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <div className="min-w-0 text-right">
               <p className="hidden max-w-[240px] truncate text-sm text-gray-600 sm:block">{userEmail}</p>
-              <button
-                type="button"
-                onClick={onOpenPlanChange}
-                disabled={!projectId || billingLoading || isSuspended}
-                className={`block max-w-[220px] truncate text-xs font-medium transition-colors disabled:cursor-default ${planTone}`}
-              >
+              <p className={`max-w-[220px] truncate text-xs font-medium ${planTone}`}>
                 {planLabel}
-              </button>
+              </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onSignOut}
-              disabled={signingOut}
-              className="gap-2 whitespace-nowrap"
-            >
-              {signingOut ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <LogOut className="w-4 h-4" />
-              )}
-              Sair
-            </Button>
+            <AccountMenu
+              onOpenPlanChange={onOpenPlanChange}
+              onSignOut={onSignOut}
+              planChangeDisabled={!projectId || billingLoading || isSuspended}
+              profileLabel={userEmail}
+              profileMeta={planLabel}
+              showPlanChangeOption
+              signingOut={signingOut}
+              userEmail={userEmail}
+            />
           </div>
         </div>
       </div>

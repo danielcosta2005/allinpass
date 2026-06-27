@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { LogOut, Users, Wallet, Settings, LayoutDashboard, Bell, Loader2, ShieldCheck } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Users, Wallet, Settings, LayoutDashboard, Bell, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AccountMenu from '@/components/app/AccountMenu';
 import ProjectsTab from '@/components/superadmin/ProjectsTab';
 import MembersTab from '@/components/superadmin/MembersTab';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
@@ -215,20 +215,14 @@ const SuperadminDashboard = () => {
                   <p className="text-sm text-gray-600">{user?.email}</p>
                   <p className="text-xs font-medium text-purple-600">{isSuperadmin ? 'Superadmin' : 'Admin'}</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSignOut}
-                  disabled={signingOut}
-                  className="gap-2"
-                >
-                  {signingOut ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <LogOut className="w-4 h-4" />
-                  )}
-                  Sair
-                </Button>
+                <AccountMenu
+                  onSignOut={handleSignOut}
+                  profileLabel={user?.email}
+                  profileMeta={isSuperadmin ? 'Superadmin' : 'Admin'}
+                  showPlanChangeOption={false}
+                  signingOut={signingOut}
+                  userEmail={user?.email}
+                />
               </div>
             </div>
           </div>
