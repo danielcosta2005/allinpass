@@ -6,6 +6,7 @@ function RestaurantTopBar({
   billingAccessState,
   billingLoading,
   billingPlanName,
+  onOpenBilling,
   onOpenPlanChange,
   onSignOut,
   projectId,
@@ -50,11 +51,14 @@ function RestaurantTopBar({
               </p>
             </div>
             <AccountMenu
+              billingOptionDisabled={!projectId || billingLoading}
+              onOpenBilling={onOpenBilling}
               onOpenPlanChange={onOpenPlanChange}
               onSignOut={onSignOut}
               planChangeDisabled={!projectId || billingLoading || isSuspended}
               profileLabel={userEmail}
               profileMeta={planLabel}
+              showBillingOption
               showPlanChangeOption
               signingOut={signingOut}
               userEmail={userEmail}

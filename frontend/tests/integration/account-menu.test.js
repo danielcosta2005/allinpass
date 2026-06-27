@@ -17,19 +17,25 @@ describe("account menu", () => {
     expect(accountMenuSource).toContain("function AccountMenu");
     expect(accountMenuSource).toContain("Abrir menu da conta");
     expect(accountMenuSource).toContain("Mudar de plano");
+    expect(accountMenuSource).toContain("Faturamento");
     expect(accountMenuSource).toContain("Tema");
     expect(accountMenuSource).toContain("Moon");
     expect(accountMenuSource).toContain("Sun");
     expect(accountMenuSource).toContain("Sair");
     expect(accountMenuSource).toContain("showPlanChangeOption");
+    expect(accountMenuSource).toContain("showBillingOption");
+    expect(accountMenuSource).toContain("onOpenBilling");
 
     expect(restaurantTopBarSource).toContain("<AccountMenu");
     expect(restaurantTopBarSource).toContain("showPlanChangeOption");
+    expect(restaurantTopBarSource).toContain("showBillingOption");
+    expect(restaurantTopBarSource).toContain("onOpenBilling={onOpenBilling}");
     expect(restaurantTopBarSource).toContain("onOpenPlanChange={onOpenPlanChange}");
     expect(restaurantTopBarSource).not.toContain("<Button");
 
     expect(superadminDashboardSource).toContain("<AccountMenu");
     expect(superadminDashboardSource).toContain("showPlanChangeOption={false}");
+    expect(superadminDashboardSource).not.toContain("showBillingOption");
     expect(superadminDashboardSource).not.toContain("<Button");
   });
 });

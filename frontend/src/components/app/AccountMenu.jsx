@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CreditCard, Loader2, LogOut, Moon, Sun } from 'lucide-react';
+import { CreditCard, Loader2, LogOut, Moon, Receipt, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 function getAccountInitials(label) {
@@ -14,11 +14,14 @@ function getAccountInitials(label) {
 }
 
 function AccountMenu({
+  billingOptionDisabled = false,
+  onOpenBilling,
   onOpenPlanChange,
   onSignOut,
   planChangeDisabled = false,
   profileLabel,
   profileMeta,
+  showBillingOption = false,
   showPlanChangeOption = false,
   signingOut = false,
   userEmail,
@@ -53,6 +56,12 @@ function AccountMenu({
     if (planChangeDisabled || !onOpenPlanChange) return;
     setIsOpen(false);
     onOpenPlanChange();
+  };
+
+  const handleBillingClick = () => {
+    if (billingOptionDisabled || !onOpenBilling) return;
+    setIsOpen(false);
+    onOpenBilling();
   };
 
   const handleSignOutClick = () => {
@@ -102,6 +111,19 @@ function AccountMenu({
               >
                 <CreditCard className="h-4 w-4" />
                 <span>Mudar de plano</span>
+              </button>
+            ) : null}
+
+            {showBillingOption ? (
+              <button
+                type="button"
+                role="menuitem"
+                disabled={billingOptionDisabled}
+                onClick={handleBillingClick}
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+              >
+                <Receipt className="h-4 w-4" />
+                <span>Faturamento</span>
               </button>
             ) : null}
 

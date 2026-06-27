@@ -11,6 +11,7 @@ import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
+import BillingDashboardDialog from '@/components/restaurant/dashboard/BillingDashboardDialog';
 import BillingPastDueNotice from '@/components/restaurant/dashboard/BillingPastDueNotice';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import BillingSuspendedState from '@/components/restaurant/dashboard/BillingSuspendedState';
@@ -29,6 +30,7 @@ const RestaurantDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const [billingSuspensionDismissed, setBillingSuspensionDismissed] = useState(false);
+  const [billingDashboardOpen, setBillingDashboardOpen] = useState(false);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
   const {
@@ -126,6 +128,7 @@ const RestaurantDashboard = () => {
           billingLoading={billingLoading}
           billingAccessState={billingAccessState}
           billingPlanName={billingPlanName}
+          onOpenBilling={() => setBillingDashboardOpen(true)}
           onOpenPlanChange={handleOpenPlanChange}
           onSignOut={handleSignOut}
           projectId={projectId}
@@ -144,6 +147,12 @@ const RestaurantDashboard = () => {
           onStartPlanChange={handleStartPlanChange}
           open={planChangeOpen}
           planChangeOptions={planChangeOptions}
+        />
+
+        <BillingDashboardDialog
+          onOpenChange={setBillingDashboardOpen}
+          open={billingDashboardOpen}
+          projectId={projectId}
         />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
