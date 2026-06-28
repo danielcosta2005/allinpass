@@ -142,12 +142,12 @@ describe("billing plan changes", () => {
     expect(readIfExists("frontend/src/hooks/useRestaurantBilling.js")).toContain("useRestaurantBilling");
     expect(readIfExists("frontend/src/hooks/usePaidSignupRecovery.js")).toContain("usePaidSignupRecovery");
     expect(readIfExists("frontend/src/hooks/useProjectName.js")).toContain("useProjectName");
-    expect(readIfExists("frontend/src/components/restaurant/dashboard/RestaurantTopBar.jsx")).toContain("RestaurantTopBar");
+    expect(readIfExists("frontend/src/components/dashboard/DashboardShell.jsx")).toContain("DashboardShell");
     expect(readIfExists("frontend/src/components/restaurant/dashboard/BillingPlanDialog.jsx")).toContain("BillingPlanDialog");
     expect(readIfExists("frontend/src/components/restaurant/dashboard/NoProjectSignupState.jsx")).toContain("NoProjectSignupState");
 
     expect(dashboardSource).toContain("useRestaurantBilling");
-    expect(dashboardSource).toContain("RestaurantTopBar");
+    expect(dashboardSource).toContain("DashboardShell");
     expect(dashboardSource).not.toContain("const BillingPlanChoiceCard");
     expect(dashboardSource).not.toContain("const NoProjectSignupState");
   });

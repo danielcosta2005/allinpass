@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CreditCard, Loader2, LogOut, Moon, Receipt, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -15,12 +16,14 @@ function getAccountInitials(label) {
 
 function AccountMenu({
   billingOptionDisabled = false,
+  menuPlacement = 'bottom-right',
   onOpenBilling,
   onOpenPlanChange,
   onSignOut,
   planChangeDisabled = false,
   profileLabel,
   profileMeta,
+  projectName,
   showBillingOption = false,
   showPlanChangeOption = false,
   signingOut = false,
@@ -30,6 +33,13 @@ function AccountMenu({
   const menuRef = useRef(null);
   const displayLabel = profileLabel || userEmail || 'Conta';
   const initials = useMemo(() => getAccountInitials(displayLabel), [displayLabel]);
+  const menuPositionClasses = {
+    'top-left': 'bottom-full -left-2 mb-3',
+    'top-right': 'bottom-full right-0 mb-3',
+    'bottom-left': 'left-0 mt-3',
+    'bottom-right': 'right-0 mt-3',
+  };
+  const menuPositionClass = menuPositionClasses[menuPlacement] || menuPositionClasses['bottom-right'];
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -84,82 +94,98 @@ function AccountMenu({
         {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : initials}
       </button>
 
-      {isOpen ? (
-        <div
-          role="menu"
-          aria-label="Menu da conta"
-          className="absolute right-0 z-50 mt-3 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white text-left text-slate-900 shadow-xl shadow-slate-950/10"
-        >
-          <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#72577c] text-sm font-semibold text-white">
-              {initials}
+      <AnimatePresence>
+        {isOpen ? (
+          <motion.div
+            role="menu"
+            aria-label="Menu da conta"
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className={cn(
+              'absolute z-50 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white text-left text-slate-900 shadow-xl shadow-slate-950/10',
+              menuPositionClass
+            )}
+          >
+            <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#72577c] text-sm font-semibold text-white">
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-950">{displayLabel}</p>
+                {profileMeta ? <p className="truncate text-xs text-slate-500">{profileMeta}</p> : null}
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-950">{displayLabel}</p>
-              {profileMeta ? <p className="truncate text-xs text-slate-500">{profileMeta}</p> : null}
-            </div>
-          </div>
 
-          <div className="p-2">
-            {showPlanChangeOption ? (
+            <div className="p-2">
+              {projectName ? (
+                <div className="mb-2 rounded-md bg-slate-50 px-3 py-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Projeto</p>
+                  <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">{projectName}</p>
+                </div>
+              ) : null}
+
+              {showPlanChangeOption ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={planChangeDisabled}
+                  onClick={handlePlanChangeClick}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span>Mudar de plano</span>
+                </button>
+              ) : null}
+
+              {showBillingOption ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={billingOptionDisabled}
+                  onClick={handleBillingClick}
+                  className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                >
+                  <Receipt className="h-4 w-4" />
+                  <span>Faturamento</span>
+                </button>
+              ) : null}
+
+              <div className="flex items-center justify-between gap-3 rounded-md px-3 py-2">
+                <span className="text-sm font-medium text-slate-700">Tema</span>
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Tema visual indisponivel"
+                  className="flex h-8 w-[4.75rem] cursor-default items-center rounded-full border border-slate-200 bg-slate-100 p-1 opacity-90"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-amber-500 shadow-sm">
+                    <Sun className="h-4 w-4" />
+                  </span>
+                  <span className="ml-auto flex h-6 w-6 items-center justify-center rounded-full text-slate-500">
+                    <Moon className="h-4 w-4" />
+                  </span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 role="menuitem"
-                disabled={planChangeDisabled}
-                onClick={handlePlanChangeClick}
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                disabled={signingOut}
+                onClick={handleSignOutClick}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent',
+                  signingOut && 'text-slate-400'
+                )}
               >
-                <CreditCard className="h-4 w-4" />
-                <span>Mudar de plano</span>
-              </button>
-            ) : null}
-
-            {showBillingOption ? (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={billingOptionDisabled}
-                onClick={handleBillingClick}
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-purple-50 hover:text-purple-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
-              >
-                <Receipt className="h-4 w-4" />
-                <span>Faturamento</span>
-              </button>
-            ) : null}
-
-            <div className="flex items-center justify-between gap-3 rounded-md px-3 py-2">
-              <span className="text-sm font-medium text-slate-700">Tema</span>
-              <button
-                type="button"
-                disabled
-                aria-label="Tema visual indisponivel"
-                className="flex h-8 w-[4.75rem] cursor-default items-center rounded-full border border-slate-200 bg-slate-100 p-1 opacity-90"
-              >
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-amber-500 shadow-sm">
-                  <Sun className="h-4 w-4" />
-                </span>
-                <span className="ml-auto flex h-6 w-6 items-center justify-center rounded-full text-slate-500">
-                  <Moon className="h-4 w-4" />
-                </span>
+                {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                <span>Sair</span>
               </button>
             </div>
-
-            <button
-              type="button"
-              role="menuitem"
-              disabled={signingOut}
-              onClick={handleSignOutClick}
-              className={cn(
-                'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent',
-                signingOut && 'text-slate-400'
-              )}
-            >
-              {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-              <span>Sair</span>
-            </button>
-          </div>
-        </div>
-      ) : null}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

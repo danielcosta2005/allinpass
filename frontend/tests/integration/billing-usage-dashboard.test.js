@@ -29,7 +29,6 @@ describe("billing usage dashboard", () => {
 
   test("renders invoice total and green/yellow stacked usage bars", () => {
     const dialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingDashboardDialog.jsx");
-    const restaurantTopBarSource = readIfExists("frontend/src/components/restaurant/dashboard/RestaurantTopBar.jsx");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
 
     expect(dialogSource).toContain("function BillingDashboardDialog");
@@ -64,8 +63,8 @@ describe("billing usage dashboard", () => {
     expect(dialogSource).toContain("+{formatCurrencyFromCents(row.overageCents)} de excedente");
     expect(dialogSource).not.toContain("+{formatInteger(row.overageUsage)} excedente");
 
-    expect(restaurantTopBarSource).toContain("showBillingOption");
-    expect(restaurantTopBarSource).toContain("onOpenBilling={onOpenBilling}");
+    expect(dashboardSource).toContain("showBillingOption");
+    expect(dashboardSource).toContain("onOpenBilling");
     expect(dashboardSource).toContain("BillingDashboardDialog");
     expect(dashboardSource).toContain("billingDashboardOpen");
   });

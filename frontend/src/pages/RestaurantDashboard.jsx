@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { MessageCircle } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import DashboardShell from '@/components/dashboard/DashboardShell';
 import ScannerTab from '@/components/restaurant/ScannerTab';
 import KPIsTab from '@/components/restaurant/KPIsTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
@@ -10,7 +11,6 @@ import MembersTab from '@/components/superadmin/MembersTab';
 import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
-import RestaurantTopBar from '@/components/restaurant/dashboard/RestaurantTopBar';
 import BillingDashboardDialog from '@/components/restaurant/dashboard/BillingDashboardDialog';
 import BillingPastDueNotice from '@/components/restaurant/dashboard/BillingPastDueNotice';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
@@ -20,7 +20,13 @@ import TrialExpiredBillingState from '@/components/restaurant/dashboard/TrialExp
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
-import { ALLOWED_TABS, DASHBOARD_TABS, SUPPORT_WHATSAPP_URL } from '@/constants/restaurantDashboard';
+import {
+  ALLOWED_TABS,
+  DASHBOARD_TABS,
+  NOTIFICATION_SUBTABS,
+  REWARD_SUBTABS,
+  SUPPORT_WHATSAPP_URL,
+} from '@/constants/restaurantDashboard';
 import { usePaidSignupRecovery } from '@/hooks/usePaidSignupRecovery';
 import { useProjectName } from '@/hooks/useProjectName';
 import { useRestaurantBilling } from '@/hooks/useRestaurantBilling';
@@ -40,6 +46,7 @@ const RestaurantDashboard = () => {
     isBillingSuspended,
     isBillingPastDue,
     billingAccessState,
+    memberRole,
     canManageBilling,
     billingLoading,
     billingError,
@@ -68,10 +75,42 @@ const RestaurantDashboard = () => {
     }
   });
 
+  const [activeNotificationTab, setActiveNotificationTab] = useState(() => {
+    try {
+      const savedTab = sessionStorage.getItem('restaurant_notifications_tab');
+      return NOTIFICATION_SUBTABS.some((tab) => tab.value === savedTab) ? savedTab : NOTIFICATION_SUBTABS[0].value;
+    } catch (_) {
+      return NOTIFICATION_SUBTABS[0].value;
+    }
+  });
+
+  const [activeRewardTab, setActiveRewardTab] = useState(() => {
+    try {
+      const savedTab = sessionStorage.getItem('restaurant_rewards_tab');
+      return REWARD_SUBTABS.some((tab) => tab.value === savedTab) ? savedTab : REWARD_SUBTABS[0].value;
+    } catch (_) {
+      return REWARD_SUBTABS[0].value;
+    }
+  });
+
   const handleTabChange = (value) => {
     setActiveTab(value);
     try {
       sessionStorage.setItem('restaurant_active_tab', value);
+    } catch (_) {}
+  };
+
+  const handleNotificationSubTabChange = (value) => {
+    setActiveNotificationTab(value);
+    try {
+      sessionStorage.setItem('restaurant_notifications_tab', value);
+    } catch (_) {}
+  };
+
+  const handleRewardSubTabChange = (value) => {
+    setActiveRewardTab(value);
+    try {
+      sessionStorage.setItem('restaurant_rewards_tab', value);
     } catch (_) {}
   };
 
@@ -95,6 +134,92 @@ const RestaurantDashboard = () => {
     }
   }, [activeTab]);
 
+  const isPastDue = billingAccessState === 'past_due';
+  const isSuspended = billingAccessState === 'suspended';
+  const planLabel = isSuspended
+    ? `${billingPlanName} - suspenso`
+    : isPastDue
+      ? `${billingPlanName} - pagamento pendente`
+      : billingPlanName;
+
+  const canSendNotifications = memberRole === 'owner';
+  const notificationSubTabs = useMemo(() => {
+    return canSendNotifications
+      ? NOTIFICATION_SUBTABS
+      : NOTIFICATION_SUBTABS.filter((tab) => tab.value !== 'send');
+  }, [canSendNotifications]);
+  const defaultNotificationTab = notificationSubTabs[0]?.value || 'manager';
+
+  useEffect(() => {
+    if (!notificationSubTabs.some((tab) => tab.value === activeNotificationTab)) {
+      handleNotificationSubTabChange(defaultNotificationTab);
+    }
+  }, [activeNotificationTab, defaultNotificationTab, notificationSubTabs]);
+
+  const navItems = useMemo(() => (
+    DASHBOARD_TABS.map((tab) => {
+      if (tab.value === 'notifications') {
+        return { ...tab, children: notificationSubTabs };
+      }
+
+      return tab;
+    })
+  ), [notificationSubTabs]);
+
+  const navGroups = useMemo(() => [
+    {
+      label: 'Projeto',
+      items: navItems,
+    },
+  ], [navItems]);
+
+  const activeSubItem = activeTab === 'notifications'
+    ? activeNotificationTab
+    : activeTab === 'rewards'
+      ? activeRewardTab
+      : null;
+
+  const handleDashboardNavigate = (value, subValue) => {
+    if (value === 'notifications') {
+      if (!subValue) return;
+      handleNotificationSubTabChange(subValue);
+    }
+
+    if (value === 'rewards') {
+      if (!subValue) return;
+      handleRewardSubTabChange(subValue);
+    }
+
+    handleTabChange(value);
+  };
+
+  const accountMenuProps = useMemo(() => ({
+    billingOptionDisabled: !projectId || billingLoading,
+    onOpenBilling: () => setBillingDashboardOpen(true),
+    onOpenPlanChange: handleOpenPlanChange,
+    onSignOut: handleSignOut,
+    planChangeDisabled: !projectId || billingLoading || isSuspended,
+    profileLabel: user?.email,
+    profileMeta: planLabel,
+    projectName: projectId
+      ? projectDisplayName || (isProjectNameLoading ? 'Carregando projeto...' : 'Projeto')
+      : null,
+    showBillingOption: true,
+    showPlanChangeOption: true,
+    signingOut,
+    userEmail: user?.email,
+  }), [
+    billingLoading,
+    handleOpenPlanChange,
+    isSuspended,
+    planLabel,
+    projectDisplayName,
+    projectId,
+    isProjectNameLoading,
+    signingOut,
+    user?.email,
+  ]);
+
   async function handleSignOut() {
     if (signingOut) return;
     setSigningOut(true);
@@ -103,6 +228,8 @@ const RestaurantDashboard = () => {
       await signOut();
       try {
         sessionStorage.removeItem('restaurant_active_tab');
+        sessionStorage.removeItem('restaurant_notifications_tab');
+        sessionStorage.removeItem('restaurant_rewards_tab');
       } catch (_) {}
     } catch (e) {
       console.error('[logout] erro ao sair', e);
@@ -123,20 +250,19 @@ const RestaurantDashboard = () => {
         <meta name="description" content="Gerencie seu programa de fidelidade" />
       </Helmet>
 
-      <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-purple-50 via-white to-indigo-50">
-        <RestaurantTopBar
-          billingLoading={billingLoading}
-          billingAccessState={billingAccessState}
-          billingPlanName={billingPlanName}
-          onOpenBilling={() => setBillingDashboardOpen(true)}
-          onOpenPlanChange={handleOpenPlanChange}
-          onSignOut={handleSignOut}
-          projectId={projectId}
-          showSuspendedNotice={isBillingSuspended && billingSuspensionDismissed}
-          signingOut={signingOut}
-          userEmail={user?.email}
-        />
-
+      <DashboardShell
+        accountMenuProps={accountMenuProps}
+        activeItem={activeTab}
+        activeSubItem={activeSubItem}
+        brandLabel="Allin Pass"
+        contentHeader={null}
+        navGroups={navGroups}
+        onBrandClick={() => handleTabChange('kpis')}
+        onNavigate={handleDashboardNavigate}
+        statusNotice={isBillingSuspended && billingSuspensionDismissed
+          ? 'Regularize a cobranca pendente para liberar as acoes operacionais.'
+          : null}
+      >
         <BillingPlanDialog
           billingActionPlanCode={billingActionPlanCode}
           billingError={billingError}
@@ -155,93 +281,71 @@ const RestaurantDashboard = () => {
           projectId={projectId}
         />
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 overflow-x-hidden">
-          {!projectId ? (
-            <NoProjectSignupState
-              actionLoading={signupActionLoading}
-              onContinuePayment={handleContinuePayment}
-              onFinalizeActivation={handleFinalizeActivation}
-              onRefreshStatus={handleRefreshSignupStatus}
-              status={signupStatus}
-              statusError={signupStatusError}
-              statusLoading={signupStatusLoading}
-            />
-          ) : trialBillingBlocked ? (
-            <TrialExpiredBillingState
-              billingError={billingError}
-              billingLoading={billingLoading}
-              canManageBilling={canManageBilling}
-              onOpenPlanChange={handleOpenPlanChange}
-              planChangeOptions={planChangeOptions}
-            />
-          ) : (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-            >
-              {isBillingPastDue ? (
-                <BillingPastDueNotice subscription={billingSubscription} />
-              ) : null}
+        {!projectId ? (
+          <NoProjectSignupState
+            actionLoading={signupActionLoading}
+            onContinuePayment={handleContinuePayment}
+            onFinalizeActivation={handleFinalizeActivation}
+            onRefreshStatus={handleRefreshSignupStatus}
+            status={signupStatus}
+            statusError={signupStatusError}
+            statusLoading={signupStatusLoading}
+          />
+        ) : trialBillingBlocked ? (
+          <TrialExpiredBillingState
+            billingError={billingError}
+            billingLoading={billingLoading}
+            canManageBilling={canManageBilling}
+            onOpenPlanChange={handleOpenPlanChange}
+            planChangeOptions={planChangeOptions}
+          />
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            {isBillingPastDue ? (
+              <BillingPastDueNotice subscription={billingSubscription} />
+            ) : null}
 
-              <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-                <h2 className="min-h-[1.75rem] text-xl font-bold leading-tight text-purple-700 sm:min-h-[2rem] sm:text-2xl">
-                  {projectDisplayName ? (
-                    projectDisplayName
-                  ) : isProjectNameLoading ? (
-                    <span
-                      aria-label="Carregando nome do projeto"
-                      className="inline-block h-7 w-52 animate-pulse rounded-md bg-purple-100 align-middle sm:h-8 sm:w-64"
-                    />
-                  ) : (
-                    'Projeto'
-                  )}
-                </h2>
-
-                <TabsList
-                  aria-label="Navegacao do painel do projeto"
-                  className="grid w-full grid-cols-2 gap-2 rounded-xl bg-slate-100/60 p-1.5 shadow-sm sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8"
-                >
-                  {DASHBOARD_TABS.map((tab) => (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      className="h-10 w-full gap-2 px-2 text-xs sm:px-3 sm:text-sm"
-                    >
-                      <tab.icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate">{tab.label}</span>
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                <TabsContent value="kpis">
-                  <KPIsTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="notifications">
-                  <NotificationsDashboard projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="scanner">
-                  <ScannerTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="wallet">
-                  <WalletConfigTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="rewards">
-                  <RewardsTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="customers">
-                  <CustomersTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="members">
-                  <MembersTab projectId={projectId} />
-                </TabsContent>
-                <TabsContent value="visits">
-                  <VisitsTab projectId={projectId} />
-                </TabsContent>
-              </Tabs>
-            </motion.div>
-          )}
-        </main>
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+              <TabsContent value="kpis" className="mt-0">
+                <KPIsTab projectId={projectId} />
+              </TabsContent>
+              <TabsContent value="notifications" className="mt-0">
+                <NotificationsDashboard
+                  activeTab={activeNotificationTab}
+                  memberRole={billingLoading ? undefined : memberRole}
+                  onTabChange={handleNotificationSubTabChange}
+                  projectId={projectId}
+                />
+              </TabsContent>
+              <TabsContent value="scanner" className="mt-0">
+                <ScannerTab projectId={projectId} />
+              </TabsContent>
+              <TabsContent value="wallet" className="mt-0">
+                <WalletConfigTab projectId={projectId} />
+              </TabsContent>
+              <TabsContent value="rewards" className="mt-0">
+                <RewardsTab
+                  activeTab={activeRewardTab}
+                  onTabChange={handleRewardSubTabChange}
+                  projectId={projectId}
+                />
+              </TabsContent>
+              <TabsContent value="customers" className="mt-0">
+                <CustomersTab projectId={projectId} />
+              </TabsContent>
+              <TabsContent value="members" className="mt-0">
+                <MembersTab projectId={projectId} />
+              </TabsContent>
+              <TabsContent value="visits" className="mt-0">
+                <VisitsTab projectId={projectId} />
+              </TabsContent>
+            </Tabs>
+          </motion.div>
+        )}
 
         {projectId && !trialBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
           <BillingSuspendedState
@@ -267,7 +371,7 @@ const RestaurantDashboard = () => {
             <p className="mt-1 text-xs text-slate-600">Precisa de ajuda? Fale com a nossa equipe!</p>
           </div>
         </div>
-      </div>
+      </DashboardShell>
     </>
   );
 };

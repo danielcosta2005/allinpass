@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle,
   Eye,
   Gift,
-  History,
   Loader2,
   Plus,
   ScanLine,
@@ -22,7 +21,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -120,7 +118,7 @@ function RedemptionsTable({ redemptions, isCompact = false }) {
         <tbody>
           {redemptions.map((redemption) => {
             const customer = normalizeCustomer(redemption.customers);
-            const customerName = customer?.name || "Cliente não identificado";
+            const customerName = customer?.name || "Cliente nÃ£o identificado";
             const customerEmail = customer?.email || "-";
 
             return (
@@ -184,7 +182,7 @@ function formatScannerRewardError(body, fallback) {
   return body?.message || body?.error || fallback?.message || "Nao foi possivel resgatar a recompensa.";
 }
 
-export default function RewardsTab({ projectId }) {
+export default function RewardsTab({ activeTab = "rewards", onTabChange, projectId }) {
   const { toast } = useToast();
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
@@ -196,7 +194,7 @@ export default function RewardsTab({ projectId }) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [updatingRewardId, setUpdatingRewardId] = useState(null);
-  const [activeSubTab, setActiveSubTab] = useState("rewards");
+  const activeSubTab = activeTab === "history" ? "history" : "rewards";
 
   const [name, setName] = useState("");
   const [pointsRequired, setPointsRequired] = useState(10);
@@ -216,6 +214,12 @@ export default function RewardsTab({ projectId }) {
     () => rewards.filter((reward) => reward.status === "active"),
     [rewards],
   );
+
+  useEffect(() => {
+    if (activeTab !== "rewards" && activeTab !== "history") {
+      onTabChange?.("rewards");
+    }
+  }, [activeTab, onTabChange]);
 
   const clearResetTimer = useCallback(() => {
     if (resetTimerRef.current) {
@@ -605,29 +609,6 @@ export default function RewardsTab({ projectId }) {
 
   return (
     <div className="space-y-4">
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Gift className="h-5 w-5 text-indigo-600" />
-              <h2 className="text-xl font-semibold text-gray-900">Recompensas</h2>
-            </div>
-            <p className="mt-1 text-sm text-gray-600">
-              Configure benefícios por pontos e contabilize resgates pelo QR Code do cliente.
-            </p>
-          </div>
-
-          <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
-            <Plus className="h-4 w-4" />
-            Criar recompensa
-          </Button>
-        </div>
-      </motion.div>
 
       {isCreating && (
         <motion.div
@@ -738,19 +719,8 @@ export default function RewardsTab({ projectId }) {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="space-y-4">
-        <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
-          <TabsTrigger value="rewards" className="gap-2">
-            <Gift className="h-4 w-4" />
-            Recompensas
-          </TabsTrigger>
-          <TabsTrigger value="history" className="gap-2">
-            <History className="h-4 w-4" />
-            Historico de resgates
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="rewards" className="space-y-4">
+      {activeSubTab === "rewards" ? (
+        <div className="space-y-4">
           {isLoading ? (
             <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
@@ -766,15 +736,22 @@ export default function RewardsTab({ projectId }) {
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-              <table className="w-full min-w-[760px] text-sm">
+            <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+              <div className="flex justify-end border-b px-4 py-3">
+                <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
+                  <Plus className="h-4 w-4" />
+                  Criar recompensa
+                </Button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-gray-50">
                   <tr className="border-b text-left text-gray-600">
                     <th className="px-4 py-3">Recompensa</th>
                     <th className="px-4 py-3">Pontos</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">
-                      <div className="ml-auto w-[220px] text-center">Ações</div>
+                      <div className="ml-auto w-[220px] text-center">AÃ§Ãµes</div>
                     </th>
                   </tr>
                 </thead>
@@ -882,7 +859,8 @@ export default function RewardsTab({ projectId }) {
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
 
               {activeRewards.length === 0 ? (
                 <div className="border-t bg-gray-50 px-4 py-3 text-sm text-gray-600">
@@ -891,9 +869,11 @@ export default function RewardsTab({ projectId }) {
               ) : null}
             </div>
           )}
-        </TabsContent>
+        </div>
+      ) : null}
 
-        <TabsContent value="history" className="space-y-4">
+      {activeSubTab === "history" ? (
+        <div className="space-y-4">
           <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
               <div>
@@ -921,8 +901,8 @@ export default function RewardsTab({ projectId }) {
               <RedemptionsTable redemptions={generalRedemptions} />
             )}
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      ) : null}
     </div>
   );
 }

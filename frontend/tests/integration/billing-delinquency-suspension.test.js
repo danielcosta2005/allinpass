@@ -67,7 +67,7 @@ describe("billing delinquency suspension", () => {
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
     const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
-    const topbarSource = readIfExists("frontend/src/components/restaurant/dashboard/RestaurantTopBar.jsx");
+    const shellSource = readIfExists("frontend/src/components/dashboard/DashboardShell.jsx");
     const suspendedStateSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingSuspendedState.jsx");
     const pastDueNoticeSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPastDueNotice.jsx");
 
@@ -80,11 +80,11 @@ describe("billing delinquency suspension", () => {
     expect(dashboardSource).toContain("BillingPastDueNotice");
     expect(dashboardSource).toContain("billingSuspensionDismissed");
     expect(dashboardSource).toContain("onDismiss={() => setBillingSuspensionDismissed(true)}");
-    expect(dashboardSource).toContain("showSuspendedNotice={isBillingSuspended && billingSuspensionDismissed}");
-    expect(topbarSource).toContain("pagamento pendente");
-    expect(topbarSource).toContain("suspenso");
-    expect(topbarSource).toContain("showSuspendedNotice");
-    expect(topbarSource).toContain("Assinatura suspensa.");
+    expect(dashboardSource).toContain("statusNotice={isBillingSuspended && billingSuspensionDismissed");
+    expect(dashboardSource).toContain("pagamento pendente");
+    expect(dashboardSource).toContain("suspenso");
+    expect(shellSource).toContain("statusNotice");
+    expect(shellSource).toContain("Assinatura suspensa.");
     expect(suspendedStateSource).toContain("Fechar aviso");
     expect(suspendedStateSource).toContain("fixed inset-0");
     expect(suspendedStateSource).toContain("backdrop-blur-sm");
