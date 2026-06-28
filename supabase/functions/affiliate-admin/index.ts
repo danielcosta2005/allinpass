@@ -17,6 +17,12 @@ type AffiliateSellerRow = {
   updated_at: string;
 };
 
+const SELLER_SELECT_FIELDS =
+  "id, name, contact, pix_key, status, created_at, updated_at";
+const VALID_SELLER_STATUSES = new Set(["active", "inactive"]);
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 class HttpError extends Error {
   status: number;
   code: string;
@@ -87,6 +93,56 @@ function mapSeller(seller: AffiliateSellerRow) {
   };
 }
 
+function normalizePage(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.floor(parsed);
+}
+
+function normalizePageSize(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return 25;
+  return Math.min(Math.floor(parsed), 50);
+}
+
+function normalizeStatus(value: unknown, { optional = false } = {}) {
+  const status = String(value ?? "").trim().toLowerCase();
+
+  if (optional && !status) return "";
+
+  if (!VALID_SELLER_STATUSES.has(status)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_STATUS",
+      "Status de afiliado invalido.",
+    );
+  }
+
+  return status;
+}
+
+function validateSellerId(value: unknown) {
+  const sellerId = String(value ?? "").trim();
+
+  if (!sellerId || !UUID_RE.test(sellerId)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_VALIDATION_ERROR",
+      "Vendedor afiliado invalido.",
+    );
+  }
+
+  return sellerId;
+}
+
+function normalizeSearch(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[%_,]/g, " ")
+    .replace(/\s+/g, " ")
+    .slice(0, 80);
+}
+
 function validateRequiredFields(payload: any) {
   const name = String(payload?.name ?? "");
   const contact = String(payload?.contact ?? "");
@@ -121,10 +177,89 @@ async function createSeller(supabaseAdmin: any, caller: Caller, payload: any) {
       created_by: caller.user.id,
       updated_by: caller.user.id,
     })
-    .select("id, name, contact, pix_key, status, created_at, updated_at")
+    .select(SELLER_SELECT_FIELDS)
     .single();
 
   if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      seller: mapSeller(seller),
+    },
+  });
+}
+
+async function listSellers(supabaseAdmin: any, payload: any) {
+  const page = normalizePage(payload?.page);
+  const pageSize = normalizePageSize(payload?.pageSize);
+  const status = normalizeStatus(payload?.status, { optional: true });
+  const search = normalizeSearch(payload?.search);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabaseAdmin
+    .from("affiliate_sellers")
+    .select(SELLER_SELECT_FIELDS, { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  if (search) {
+    query = query.or(`name.ilike.%${search}%,contact.ilike.%${search}%`);
+  }
+
+  const { data: sellers, error, count } = await query;
+
+  if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      sellers: (sellers || []).map(mapSeller),
+      page,
+      pageSize,
+      total: count ?? 0,
+    },
+  });
+}
+
+async function updateSeller(
+  supabaseAdmin: any,
+  caller: Caller,
+  payload: any,
+) {
+  const sellerId = validateSellerId(payload?.sellerId);
+  const { cleanName, cleanContact, cleanPixKey } = validateRequiredFields(
+    payload,
+  );
+  const status = normalizeStatus(payload?.status);
+
+  const { data: seller, error } = await supabaseAdmin
+    .from("affiliate_sellers")
+    .update({
+      name: cleanName,
+      contact: cleanContact,
+      pix_key: cleanPixKey,
+      status,
+      updated_by: caller.user.id,
+    })
+    .eq("id", sellerId)
+    .select(SELLER_SELECT_FIELDS)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!seller) {
+    throw new HttpError(
+      404,
+      "AFFILIATE_SELLER_NOT_FOUND",
+      "Vendedor afiliado nao encontrado.",
+    );
+  }
 
   return jsonResponse({
     success: true,
@@ -167,6 +302,14 @@ Deno.serve(async (req) => {
 
     if (action === "createSeller") {
       return await createSeller(supabaseAdmin, caller, payload);
+    }
+
+    if (action === "listSellers") {
+      return await listSellers(supabaseAdmin, payload);
+    }
+
+    if (action === "updateSeller") {
+      return await updateSeller(supabaseAdmin, caller, payload);
     }
 
     throw new HttpError(

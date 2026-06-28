@@ -12,9 +12,9 @@ function mapSeller(seller = {}) {
   };
 }
 
-export async function createAffiliateSeller({ name, contact, pixKey }) {
+async function invokeAffiliateAdmin(body) {
   const { data, error } = await supabase.functions.invoke('affiliate-admin', {
-    body: { action: 'createSeller', name, contact, pixKey },
+    body,
   });
 
   if (error) {
@@ -27,5 +27,35 @@ export async function createAffiliateSeller({ name, contact, pixKey }) {
     throw new Error(data?.error || 'Edge function retornou resposta invalida');
   }
 
-  return mapSeller(data.data?.seller || data.seller);
+  return data.data || data;
+}
+
+export async function createAffiliateSeller({ name, contact, pixKey }) {
+  const data = await invokeAffiliateAdmin({ action: 'createSeller', name, contact, pixKey });
+
+  return mapSeller(data.seller);
+}
+
+export async function listAffiliateSellers({ page = 1, pageSize = 25, status = '', search = '' } = {}) {
+  const data = await invokeAffiliateAdmin({ action: 'listSellers', page, pageSize, status, search });
+
+  return {
+    sellers: Array.isArray(data.sellers) ? data.sellers.map(mapSeller) : [],
+    page: data.page || page,
+    pageSize: data.pageSize || pageSize,
+    total: data.total || 0,
+  };
+}
+
+export async function updateAffiliateSeller({ sellerId, name, contact, pixKey, status }) {
+  const data = await invokeAffiliateAdmin({
+    action: 'updateSeller',
+    sellerId,
+    name,
+    contact,
+    pixKey,
+    status,
+  });
+
+  return mapSeller(data.seller);
 }

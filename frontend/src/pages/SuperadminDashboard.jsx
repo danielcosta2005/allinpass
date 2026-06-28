@@ -11,6 +11,7 @@ import CustomersTab from '@/components/superadmin/CustomersTab';
 import DashboardTab from '@/components/superadmin/DashboardTab';
 import NotificationsConfigTab from '@/components/superadmin/NotificationsConfigTab';
 import AdminTab from '@/components/superadmin/AdminTab';
+import AffiliatesTab from '@/components/superadmin/AffiliatesTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -107,6 +108,7 @@ const SuperadminDashboard = () => {
       tabs.push(
         { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
         { value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false },
+        { value: 'affiliates', label: 'Afiliados', icon: Users, disabled: false },
       );
     }
 
@@ -293,6 +295,7 @@ const SuperadminDashboard = () => {
 
               {canAccessKpiMembersAndCustomers && <TabsContent value="dashboard"><DashboardTab /></TabsContent>}
               {isSuperadmin && <TabsContent value="admins"><AdminTab /></TabsContent>}
+              {isSuperadmin && <TabsContent value="affiliates"><AffiliatesTab /></TabsContent>}
               <TabsContent value="projects">
                 <ProjectsTab
                   onSelectProject={handleSelectProject}
