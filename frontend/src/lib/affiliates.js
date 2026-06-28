@@ -15,6 +15,8 @@ function mapLink(link = null) {
 }
 
 function mapSeller(seller = {}) {
+  const summary = seller.summary || {};
+
   return {
     id: seller.id,
     name: seller.name,
@@ -24,6 +26,35 @@ function mapSeller(seller = {}) {
     createdAt: seller.createdAt ?? seller.created_at,
     updatedAt: seller.updatedAt ?? seller.updated_at,
     affiliateLink: mapLink(seller.affiliateLink ?? seller.affiliate_link),
+    summary: {
+      attributedClientsCount: summary.attributedClientsCount ?? summary.attributed_clients_count ?? 0,
+      pendingCommissionCents: summary.pendingCommissionCents ?? summary.pending_commission_cents ?? 0,
+      paidCommissionCents: summary.paidCommissionCents ?? summary.paid_commission_cents ?? 0,
+      totalCommissionCents: summary.totalCommissionCents ?? summary.total_commission_cents ?? 0,
+      pendingCommissionCount: summary.pendingCommissionCount ?? summary.pending_commission_count ?? 0,
+      paidCommissionCount: summary.paidCommissionCount ?? summary.paid_commission_count ?? 0,
+    },
+  };
+}
+
+function mapPayout(payout = null) {
+  if (!payout) return null;
+
+  return {
+    id: payout.id,
+    sellerId: payout.sellerId ?? payout.seller_id,
+    competenceMonth: payout.competenceMonth ?? payout.competence_month,
+    amountCents: payout.amountCents ?? payout.amount_cents,
+    commissionCount: payout.commissionCount ?? payout.commission_count,
+    currency: payout.currency,
+    status: payout.status,
+    paymentMethod: payout.paymentMethod ?? payout.payment_method,
+    paidAt: payout.paidAt ?? payout.paid_at,
+    paidBy: payout.paidBy ?? payout.paid_by,
+    note: payout.note,
+    metadata: payout.metadata || {},
+    createdAt: payout.createdAt ?? payout.created_at,
+    updatedAt: payout.updatedAt ?? payout.updated_at,
   };
 }
 
@@ -40,6 +71,10 @@ function mapCommission(commission = {}) {
     planId: commission.planId ?? commission.plan_id,
     competenceMonth: commission.competenceMonth ?? commission.competence_month,
     paidAt: commission.paidAt ?? commission.paid_at,
+    payoutId: commission.payoutId ?? commission.payout_id,
+    markedPaidAt: commission.markedPaidAt ?? commission.marked_paid_at,
+    markedPaidBy: commission.markedPaidBy ?? commission.marked_paid_by,
+    paymentNote: commission.paymentNote ?? commission.payment_note,
     providerPaymentId: commission.providerPaymentId ?? commission.provider_payment_id,
     providerEventId: commission.providerEventId ?? commission.provider_event_id,
     eligibleAmountCents: commission.eligibleAmountCents ?? commission.eligible_amount_cents,
@@ -54,6 +89,7 @@ function mapCommission(commission = {}) {
     seller: commission.seller ?? commission.affiliate_sellers ?? null,
     project: commission.project ?? commission.projects ?? null,
     subscription: commission.subscription ?? commission.billing_subscriptions ?? null,
+    payout: mapPayout(commission.payout ?? commission.affiliate_payouts),
   };
 }
 
@@ -148,8 +184,23 @@ export async function createAffiliateSeller({ name, contact, pixKey }) {
   return mapSeller(data.seller);
 }
 
-export async function listAffiliateSellers({ page = 1, pageSize = 25, status = '', search = '' } = {}) {
-  const data = await invokeAffiliateAdmin({ action: 'listSellers', page, pageSize, status, search });
+export async function listAffiliateSellers({
+  page = 1,
+  pageSize = 25,
+  status = '',
+  search = '',
+  includeSummary = false,
+  competenceMonth = '',
+} = {}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'listSellers',
+    page,
+    pageSize,
+    status,
+    search,
+    includeSummary,
+    competenceMonth,
+  });
 
   return {
     sellers: Array.isArray(data.sellers) ? data.sellers.map(mapSeller) : [],
@@ -196,6 +247,40 @@ export async function listAffiliateCommissionClients({ page = 1, pageSize = 25, 
     page: data.page || page,
     pageSize: data.pageSize || pageSize,
     total: data.total || 0,
+  };
+}
+
+export async function markAffiliateCommissionPaid({ commissionId, note = '' }) {
+  const data = await invokeAffiliateAdmin({
+    action: 'markCommissionPaid',
+    commissionId,
+    note,
+  });
+
+  return {
+    commission: mapCommission(data.commission),
+    payout: mapPayout(data.payout),
+    alreadyPaid: Boolean(data.alreadyPaid),
+  };
+}
+
+export async function markAffiliateSellerCompetencePaid({
+  sellerId,
+  competenceMonth,
+  note = '',
+}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'markSellerCompetencePaid',
+    sellerId,
+    competenceMonth,
+    note,
+  });
+
+  return {
+    commissions: Array.isArray(data.commissions) ? data.commissions.map(mapCommission) : [],
+    payout: mapPayout(data.payout),
+    updatedCount: data.updatedCount || 0,
+    alreadyPaid: Boolean(data.alreadyPaid),
   };
 }
 
