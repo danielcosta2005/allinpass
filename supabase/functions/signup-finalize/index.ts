@@ -80,10 +80,15 @@ type AffiliateAttributionRow = {
   source_code: string;
 };
 
+type AffiliateCommissionRow = {
+  id: string;
+};
+
 const FREE_PLAN_CODE = "free_trial";
 const FINALIZATION_STALE_AFTER_MS = 2 * 60 * 1000;
 const FINALIZATION_WAIT_ATTEMPTS = 20;
 const FINALIZATION_WAIT_DELAY_MS = 350;
+const AFFILIATE_COMMISSION_RATE_BPS = 1000;
 
 type SignupFinalizeErrorCode =
   | "SIGNUP_FINALIZE_METHOD_NOT_ALLOWED"
@@ -725,6 +730,128 @@ async function createAffiliateAttribution({
   );
 }
 
+function getAffiliateCommissionCompetenceMonth(value: string) {
+  const date = new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = safeDate.getUTCFullYear();
+  const month = String(safeDate.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+}
+
+async function findBillingCycleIdForAffiliateCommission(
+  supabaseAdmin: SupabaseAdminClient,
+  subscriptionId: string,
+  paidAt: string,
+) {
+  const { data, error } = await supabaseAdmin
+    .from("billing_cycles")
+    .select("id")
+    .eq("subscription_id", subscriptionId)
+    .eq("cycle_type", "subscription")
+    .lte("period_start", paidAt)
+    .gt("period_end", paidAt)
+    .order("period_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  const cycle = data as { id?: string } | null;
+  return cycle?.id ?? null;
+}
+
+async function createInitialAffiliateCommission({
+  supabaseAdmin,
+  paidCheckoutSession,
+  affiliateAttribution,
+  userId,
+  projectId,
+  subscriptionId,
+  plan,
+}: {
+  supabaseAdmin: SupabaseAdminClient;
+  paidCheckoutSession: SignupCheckoutSessionRow | null;
+  affiliateAttribution: AffiliateAttributionRow | null;
+  userId: string;
+  projectId: string;
+  subscriptionId: string;
+  plan: BillingPlan;
+}): Promise<AffiliateCommissionRow | null> {
+  if (!paidCheckoutSession?.paid_at || !affiliateAttribution) return null;
+
+  const paidAmountCents = Math.max(
+    0,
+    Math.trunc(Number(paidCheckoutSession.amount_cents || 0)),
+  );
+  const basePriceCents = Math.max(
+    0,
+    Math.trunc(Number(plan.base_price_cents || 0)),
+  );
+  const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
+  if (eligibleAmountCents <= 0) return null;
+
+  const commissionCents = Math.round(
+    (eligibleAmountCents * AFFILIATE_COMMISSION_RATE_BPS) / 10000,
+  );
+  const competenceMonth = getAffiliateCommissionCompetenceMonth(
+    paidCheckoutSession.paid_at,
+  );
+  const billingCycleId = await findBillingCycleIdForAffiliateCommission(
+    supabaseAdmin,
+    subscriptionId,
+    paidCheckoutSession.paid_at,
+  );
+
+  const { data, error } = await supabaseAdmin
+    .from("affiliate_commissions")
+    .insert({
+      attribution_id: affiliateAttribution.id,
+      seller_id: affiliateAttribution.seller_id,
+      link_id: affiliateAttribution.link_id,
+      user_id: userId,
+      project_id: projectId,
+      subscription_id: subscriptionId,
+      billing_cycle_id: billingCycleId,
+      plan_id: plan.id,
+      competence_month: competenceMonth,
+      paid_at: paidCheckoutSession.paid_at,
+      provider_payment_id: paidCheckoutSession.provider_payment_id,
+      provider_event_id: "signup_finalize",
+      eligible_amount_cents: eligibleAmountCents,
+      commission_rate_bps: AFFILIATE_COMMISSION_RATE_BPS,
+      commission_cents: commissionCents,
+      currency: "BRL",
+      status: "pending",
+      source: "signup_finalize",
+      metadata: {
+        origin: "signup_finalize",
+        checkout_session_id: paidCheckoutSession.id,
+        provider_checkout_id: paidCheckoutSession.provider_checkout_id,
+        provider_subscription_id: paidCheckoutSession.provider_subscription_id,
+        payment_value_cents: paidAmountCents,
+        subscription_base_price_cents: basePriceCents,
+        billing_cycle_id: billingCycleId,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (!error) return data as unknown as AffiliateCommissionRow;
+
+  if (isUniqueViolation(error)) {
+    const { data: existingData, error: existingError } = await supabaseAdmin
+      .from("affiliate_commissions")
+      .select("id")
+      .eq("attribution_id", affiliateAttribution.id)
+      .eq("competence_month", competenceMonth)
+      .maybeSingle();
+
+    if (existingError) throw existingError;
+    return (existingData as AffiliateCommissionRow | null) ?? null;
+  }
+
+  throw error;
+}
+
 function buildWalletDefaults(projectName: string) {
   return {
     type: "loyalty",
@@ -838,8 +965,7 @@ Deno.serve(async (req) => {
     const checkoutSessionId = String(payload.checkoutSessionId ?? "").trim();
     const establishmentName = String(
       payloadEstablishmentName ||
-        metadataEstablishmentName ||
-        intentEstablishmentName ||
+        metadataEstablishmentName || intentEstablishmentName ||
         "",
     ).trim();
     const planCode = resolvePlanCode({
@@ -1252,6 +1378,15 @@ Deno.serve(async (req) => {
         subscriptionId,
         plan,
       });
+      const affiliateCommission = await createInitialAffiliateCommission({
+        supabaseAdmin,
+        paidCheckoutSession,
+        affiliateAttribution,
+        userId: user.id,
+        projectId,
+        subscriptionId,
+        plan,
+      });
 
       const { error: walletError } = await supabaseAdmin.from(
         "billing_credit_wallets",
@@ -1341,6 +1476,7 @@ Deno.serve(async (req) => {
           ? {
             attribution_id: affiliateAttribution.id,
             source_code: affiliateAttribution.source_code,
+            initial_commission_id: affiliateCommission?.id ?? null,
           }
           : null,
       };

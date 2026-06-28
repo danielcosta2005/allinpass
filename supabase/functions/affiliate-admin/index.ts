@@ -31,6 +31,7 @@ const SELLER_SELECT_FIELDS =
 const LINK_SELECT_FIELDS =
   "id, seller_id, code, status, created_at, updated_at";
 const VALID_SELLER_STATUSES = new Set(["active", "inactive"]);
+const VALID_COMMISSION_STATUSES = new Set(["pending", "paid", "void"]);
 const LINK_CODE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const LINK_CODE_LENGTH = 10;
 const LINK_CODE_MAX_ATTEMPTS = 5;
@@ -167,6 +168,22 @@ function normalizeStatus(value: unknown, { optional = false } = {}) {
   return status;
 }
 
+function normalizeCommissionStatus(value: unknown, { optional = false } = {}) {
+  const status = String(value ?? "").trim().toLowerCase();
+
+  if (optional && !status) return "";
+
+  if (!VALID_COMMISSION_STATUSES.has(status)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_COMMISSION_STATUS",
+      "Status de comissao invalido.",
+    );
+  }
+
+  return status;
+}
+
 function validateSellerId(value: unknown) {
   const sellerId = String(value ?? "").trim();
 
@@ -179,6 +196,37 @@ function validateSellerId(value: unknown) {
   }
 
   return sellerId;
+}
+
+function validateOptionalSellerId(value: unknown) {
+  const sellerId = String(value ?? "").trim();
+  return sellerId ? validateSellerId(sellerId) : "";
+}
+
+function normalizeCompetenceMonth(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const match = raw.match(/^(\d{4})-(\d{2})(?:-01)?$/);
+  if (!match) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_COMPETENCE_MONTH",
+      "Competencia de comissao invalida.",
+    );
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || month < 1 || month > 12) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_COMPETENCE_MONTH",
+      "Competencia de comissao invalida.",
+    );
+  }
+
+  return `${match[1]}-${match[2]}-01`;
 }
 
 function normalizeSearch(value: unknown) {
@@ -289,6 +337,133 @@ async function listSellers(supabaseAdmin: any, payload: any) {
       sellers: safeSellers.map((seller: AffiliateSellerRow) =>
         mapSeller(seller, linksBySellerId.get(seller.id))
       ),
+      page,
+      pageSize,
+      total: count ?? 0,
+    },
+  });
+}
+
+async function listCommissions(supabaseAdmin: any, payload: any) {
+  const page = normalizePage(payload?.page);
+  const pageSize = normalizePageSize(payload?.pageSize);
+  const sellerId = validateOptionalSellerId(payload?.sellerId);
+  const competenceMonth = normalizeCompetenceMonth(payload?.competenceMonth);
+  const status = normalizeCommissionStatus(payload?.status, {
+    optional: true,
+  });
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabaseAdmin
+    .from("affiliate_commissions")
+    .select(
+      [
+        "id",
+        "attribution_id",
+        "seller_id",
+        "link_id",
+        "user_id",
+        "project_id",
+        "subscription_id",
+        "billing_cycle_id",
+        "plan_id",
+        "competence_month",
+        "paid_at",
+        "provider_payment_id",
+        "provider_event_id",
+        "eligible_amount_cents",
+        "commission_rate_bps",
+        "commission_cents",
+        "currency",
+        "status",
+        "source",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "affiliate_sellers(id, name, contact, pix_key, status)",
+        "projects(id, name, slug)",
+        "billing_subscriptions(id, status, plan_id, base_price_cents, currency)",
+      ].join(", "),
+      { count: "exact" },
+    )
+    .order("competence_month", { ascending: false })
+    .order("paid_at", { ascending: false })
+    .range(from, to);
+
+  if (sellerId) {
+    query = query.eq("seller_id", sellerId);
+  }
+
+  if (competenceMonth) {
+    query = query.eq("competence_month", competenceMonth);
+  }
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data: commissions, error, count } = await query;
+  if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      commissions: commissions || [],
+      page,
+      pageSize,
+      total: count ?? 0,
+    },
+  });
+}
+
+async function listCommissionClients(supabaseAdmin: any, payload: any) {
+  const page = normalizePage(payload?.page);
+  const pageSize = normalizePageSize(payload?.pageSize);
+  const sellerId = validateOptionalSellerId(payload?.sellerId);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabaseAdmin
+    .from("affiliate_attributions")
+    .select(
+      [
+        "id",
+        "seller_id",
+        "link_id",
+        "user_id",
+        "project_id",
+        "subscription_id",
+        "checkout_session_id",
+        "plan_id",
+        "source_code",
+        "status",
+        "attributed_at",
+        "metadata",
+        "created_at",
+        "updated_at",
+        "affiliate_sellers(id, name, contact, pix_key, status)",
+        "affiliate_links(id, code, status)",
+        "projects(id, name, slug)",
+        "billing_subscriptions(id, status, plan_id, base_price_cents, currency, current_period_start, current_period_end)",
+        "affiliate_commissions(id, competence_month, paid_at, provider_payment_id, eligible_amount_cents, commission_rate_bps, commission_cents, currency, status)",
+      ].join(", "),
+      { count: "exact" },
+    )
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (sellerId) {
+    query = query.eq("seller_id", sellerId);
+  }
+
+  const { data: clients, error, count } = await query;
+  if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      clients: clients || [],
       page,
       pageSize,
       total: count ?? 0,
@@ -468,6 +643,14 @@ Deno.serve(async (req) => {
 
     if (action === "listSellers") {
       return await listSellers(supabaseAdmin, payload);
+    }
+
+    if (action === "listCommissions") {
+      return await listCommissions(supabaseAdmin, payload);
+    }
+
+    if (action === "listCommissionClients") {
+      return await listCommissionClients(supabaseAdmin, payload);
     }
 
     if (action === "getOrCreateSellerLink") {

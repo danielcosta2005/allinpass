@@ -27,6 +27,62 @@ function mapSeller(seller = {}) {
   };
 }
 
+function mapCommission(commission = {}) {
+  return {
+    id: commission.id,
+    attributionId: commission.attributionId ?? commission.attribution_id,
+    sellerId: commission.sellerId ?? commission.seller_id,
+    linkId: commission.linkId ?? commission.link_id,
+    userId: commission.userId ?? commission.user_id,
+    projectId: commission.projectId ?? commission.project_id,
+    subscriptionId: commission.subscriptionId ?? commission.subscription_id,
+    billingCycleId: commission.billingCycleId ?? commission.billing_cycle_id,
+    planId: commission.planId ?? commission.plan_id,
+    competenceMonth: commission.competenceMonth ?? commission.competence_month,
+    paidAt: commission.paidAt ?? commission.paid_at,
+    providerPaymentId: commission.providerPaymentId ?? commission.provider_payment_id,
+    providerEventId: commission.providerEventId ?? commission.provider_event_id,
+    eligibleAmountCents: commission.eligibleAmountCents ?? commission.eligible_amount_cents,
+    rateBps: commission.rateBps ?? commission.commission_rate_bps,
+    commissionCents: commission.commissionCents ?? commission.commission_cents,
+    currency: commission.currency,
+    status: commission.status,
+    source: commission.source,
+    metadata: commission.metadata || {},
+    createdAt: commission.createdAt ?? commission.created_at,
+    updatedAt: commission.updatedAt ?? commission.updated_at,
+    seller: commission.seller ?? commission.affiliate_sellers ?? null,
+    project: commission.project ?? commission.projects ?? null,
+    subscription: commission.subscription ?? commission.billing_subscriptions ?? null,
+  };
+}
+
+function mapCommissionClient(client = {}) {
+  const rawCommissions = client.commissions ?? client.affiliate_commissions ?? [];
+
+  return {
+    id: client.id,
+    sellerId: client.sellerId ?? client.seller_id,
+    linkId: client.linkId ?? client.link_id,
+    userId: client.userId ?? client.user_id,
+    projectId: client.projectId ?? client.project_id,
+    subscriptionId: client.subscriptionId ?? client.subscription_id,
+    checkoutSessionId: client.checkoutSessionId ?? client.checkout_session_id,
+    planId: client.planId ?? client.plan_id,
+    sourceCode: client.sourceCode ?? client.source_code,
+    status: client.status,
+    attributedAt: client.attributedAt ?? client.attributed_at,
+    metadata: client.metadata || {},
+    createdAt: client.createdAt ?? client.created_at,
+    updatedAt: client.updatedAt ?? client.updated_at,
+    seller: client.seller ?? client.affiliate_sellers ?? null,
+    link: client.link ?? client.affiliate_links ?? null,
+    project: client.project ?? client.projects ?? null,
+    subscription: client.subscription ?? client.billing_subscriptions ?? null,
+    commissions: Array.isArray(rawCommissions) ? rawCommissions.map(mapCommission) : [],
+  };
+}
+
 export function buildAffiliateLinkUrl(code) {
   const cleanCode = String(code || '').trim();
   const path = `/?ref=${encodeURIComponent(cleanCode)}#planos`;
@@ -97,6 +153,46 @@ export async function listAffiliateSellers({ page = 1, pageSize = 25, status = '
 
   return {
     sellers: Array.isArray(data.sellers) ? data.sellers.map(mapSeller) : [],
+    page: data.page || page,
+    pageSize: data.pageSize || pageSize,
+    total: data.total || 0,
+  };
+}
+
+export async function listAffiliateCommissions({
+  page = 1,
+  pageSize = 25,
+  sellerId = '',
+  competenceMonth = '',
+  status = '',
+} = {}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'listCommissions',
+    page,
+    pageSize,
+    sellerId,
+    competenceMonth,
+    status,
+  });
+
+  return {
+    commissions: Array.isArray(data.commissions) ? data.commissions.map(mapCommission) : [],
+    page: data.page || page,
+    pageSize: data.pageSize || pageSize,
+    total: data.total || 0,
+  };
+}
+
+export async function listAffiliateCommissionClients({ page = 1, pageSize = 25, sellerId = '' } = {}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'listCommissionClients',
+    page,
+    pageSize,
+    sellerId,
+  });
+
+  return {
+    clients: Array.isArray(data.clients) ? data.clients.map(mapCommissionClient) : [],
     page: data.page || page,
     pageSize: data.pageSize || pageSize,
     total: data.total || 0,

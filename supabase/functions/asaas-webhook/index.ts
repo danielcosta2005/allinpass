@@ -24,9 +24,15 @@ function normalizeAsaasStatus(value: unknown) {
 
 function getCheckoutLocalStatus(event: string, checkoutStatus: string) {
   if (event === "CHECKOUT_PAID" || checkoutStatus === "PAID") return "paid";
-  if (event === "CHECKOUT_CANCELED" || checkoutStatus === "CANCELED") return "canceled";
-  if (event === "CHECKOUT_EXPIRED" || checkoutStatus === "EXPIRED") return "expired";
-  if (event === "CHECKOUT_CREATED" || checkoutStatus === "ACTIVE") return "created";
+  if (event === "CHECKOUT_CANCELED" || checkoutStatus === "CANCELED") {
+    return "canceled";
+  }
+  if (event === "CHECKOUT_EXPIRED" || checkoutStatus === "EXPIRED") {
+    return "expired";
+  }
+  if (event === "CHECKOUT_CREATED" || checkoutStatus === "ACTIVE") {
+    return "created";
+  }
   return "";
 }
 
@@ -39,6 +45,15 @@ function isPaidPaymentEvent(event: string, paymentStatus: string) {
     paymentStatus === "PAID";
 }
 
+function isAffiliateCommissionPaidPaymentEvent(
+  event: string,
+  paymentStatus: string,
+) {
+  return isPaidPaymentEvent(event, paymentStatus) &&
+    !NON_COMMISSIONABLE_PAYMENT_EVENTS.has(event) &&
+    !NON_COMMISSIONABLE_PAYMENT_STATUSES.has(paymentStatus);
+}
+
 const SUBSCRIPTION_EVENTS = new Set([
   "SUBSCRIPTION_CREATED",
   "SUBSCRIPTION_UPDATED",
@@ -46,11 +61,42 @@ const SUBSCRIPTION_EVENTS = new Set([
   "SUBSCRIPTION_DELETED",
 ]);
 
+const AFFILIATE_COMMISSION_RATE_BPS = 1000;
+const NON_COMMISSIONABLE_SUBSCRIPTION_STATUSES = new Set([
+  "canceled",
+  "expired",
+  "paused",
+]);
+const NON_COMMISSIONABLE_PAYMENT_EVENTS = new Set([
+  "PAYMENT_CREATED",
+  "PAYMENT_UPDATED",
+  "PAYMENT_OVERDUE",
+  "PAYMENT_DELETED",
+  "PAYMENT_REFUNDED",
+  "PAYMENT_REFUND_IN_PROGRESS",
+  "PAYMENT_CHARGEBACK_REQUESTED",
+  "PAYMENT_CHARGEBACK_DISPUTE",
+  "PAYMENT_AWAITING_CHARGEBACK_REVERSAL",
+]);
+const NON_COMMISSIONABLE_PAYMENT_STATUSES = new Set([
+  "PENDING",
+  "OVERDUE",
+  "CANCELED",
+  "DELETED",
+  "REFUNDED",
+  "AWAITING_RISK_ANALYSIS",
+  "CHARGEBACK_REQUESTED",
+  "CHARGEBACK_DISPUTE",
+  "AWAITING_CHARGEBACK_REVERSAL",
+]);
+
 function getDate(value: unknown) {
   const text = String(value ?? "").trim();
   if (!text) return new Date().toISOString();
   const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  return Number.isNaN(parsed.getTime())
+    ? new Date().toISOString()
+    : parsed.toISOString();
 }
 
 function readString(value: unknown) {
@@ -87,8 +133,35 @@ function readFirstString(...values: unknown[]) {
   return null;
 }
 
+function readMoneyCents(...values: unknown[]) {
+  for (const value of values) {
+    const text = readString(value).replace(",", ".");
+    if (!text) continue;
+
+    const amount = Number(text);
+    if (Number.isFinite(amount) && amount > 0) {
+      return Math.round(amount * 100);
+    }
+  }
+
+  return 0;
+}
+
+function getCompetenceMonth(value: string) {
+  const date = new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const year = safeDate.getUTCFullYear();
+  const month = String(safeDate.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+}
+
 function isAsaasSubscriptionId(value: unknown) {
   return /^sub_[a-z0-9]+$/i.test(readString(value));
+}
+
+function isUniqueViolation(error: any) {
+  return error?.code === "23505" ||
+    String(error?.message || "").toLowerCase().includes("duplicate key");
 }
 
 type SupabaseAdmin = any;
@@ -107,8 +180,24 @@ type BillingSubscriptionWebhookMatch = {
   id: string;
   project_id: string;
   billing_account_id: string;
+  plan_id?: string | null;
+  status?: string | null;
+  base_price_cents?: number | null;
+  currency?: string | null;
   metadata: Record<string, unknown> | null;
   gateway_subscription_id?: string | null;
+};
+
+type AffiliateAttributionWebhookMatch = {
+  id: string;
+  seller_id: string;
+  link_id: string | null;
+  user_id: string | null;
+  project_id: string;
+  subscription_id: string;
+  plan_id: string | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
 };
 
 type InvoiceCollectionBatchWebhookMatch = {
@@ -134,7 +223,9 @@ function buildProviderPatch({
 }) {
   const patch: Record<string, unknown> = {};
   if (providerCustomerId) patch.provider_customer_id = providerCustomerId;
-  if (providerSubscriptionId) patch.provider_subscription_id = providerSubscriptionId;
+  if (providerSubscriptionId) {
+    patch.provider_subscription_id = providerSubscriptionId;
+  }
   if (providerPaymentId) patch.provider_payment_id = providerPaymentId;
   return patch;
 }
@@ -184,18 +275,25 @@ async function syncFinalizedSignupBillingFromSession(
   },
   payload: unknown,
 ) {
-  if (!providerIds.providerCustomerId && !providerIds.providerSubscriptionId) return false;
+  if (!providerIds.providerCustomerId && !providerIds.providerSubscriptionId) {
+    return false;
+  }
 
-  const { data: subscriptionData, error: subscriptionError } = await supabaseAdmin
-    .from("billing_subscriptions")
-    .select("id, project_id, billing_account_id, metadata, gateway_subscription_id")
-    .eq("metadata->>checkout_session_id", checkoutSessionId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const { data: subscriptionData, error: subscriptionError } =
+    await supabaseAdmin
+      .from("billing_subscriptions")
+      .select(
+        "id, project_id, billing_account_id, metadata, gateway_subscription_id",
+      )
+      .eq("metadata->>checkout_session_id", checkoutSessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
   if (subscriptionError) throw subscriptionError;
-  const localSubscription = subscriptionData as BillingSubscriptionWebhookMatch | null;
+  const localSubscription = subscriptionData as
+    | BillingSubscriptionWebhookMatch
+    | null;
   if (!localSubscription) return false;
 
   const subscriptionPatch: Record<string, unknown> = {
@@ -206,8 +304,12 @@ async function syncFinalizedSignupBillingFromSession(
     },
   };
 
-  if (providerIds.providerSubscriptionId && !isAsaasSubscriptionId(localSubscription.gateway_subscription_id)) {
-    subscriptionPatch.gateway_subscription_id = providerIds.providerSubscriptionId;
+  if (
+    providerIds.providerSubscriptionId &&
+    !isAsaasSubscriptionId(localSubscription.gateway_subscription_id)
+  ) {
+    subscriptionPatch.gateway_subscription_id =
+      providerIds.providerSubscriptionId;
   }
 
   const { error: updateSubscriptionError } = await supabaseAdmin
@@ -244,19 +346,25 @@ async function applyPlanChangeIfReady(
 ) {
   if (session.status === "applied") return true;
 
-  const providerSubscriptionId = providerIds.providerSubscriptionId || session.provider_subscription_id || null;
-  const providerCustomerId = providerIds.providerCustomerId || session.provider_customer_id || null;
-  const providerPaymentId = providerIds.providerPaymentId || session.provider_payment_id || null;
+  const providerSubscriptionId = providerIds.providerSubscriptionId ||
+    session.provider_subscription_id || null;
+  const providerCustomerId = providerIds.providerCustomerId ||
+    session.provider_customer_id || null;
+  const providerPaymentId = providerIds.providerPaymentId ||
+    session.provider_payment_id || null;
 
   if (!providerSubscriptionId || !providerCustomerId) return false;
 
-  const { error: applyError } = await supabaseAdmin.rpc("apply_billing_plan_change", {
-    p_session_id: session.id,
-    p_actor_user_id: session.requested_by ?? null,
-    p_provider_subscription_id: providerSubscriptionId,
-    p_provider_customer_id: providerCustomerId,
-    p_provider_payment_id: providerPaymentId,
-  });
+  const { error: applyError } = await supabaseAdmin.rpc(
+    "apply_billing_plan_change",
+    {
+      p_session_id: session.id,
+      p_actor_user_id: session.requested_by ?? null,
+      p_provider_subscription_id: providerSubscriptionId,
+      p_provider_customer_id: providerCustomerId,
+      p_provider_payment_id: providerPaymentId,
+    },
+  );
 
   if (applyError) throw applyError;
   return true;
@@ -283,7 +391,9 @@ async function updateSignupSessionFromProvider(
     },
   };
 
-  if (options.nextStatus && session.status !== "finalized") updatePayload.status = options.nextStatus;
+  if (options.nextStatus && session.status !== "finalized") {
+    updatePayload.status = options.nextStatus;
+  }
   if (options.paidAt) updatePayload.paid_at = options.paidAt;
 
   const { error } = await supabaseAdmin
@@ -298,8 +408,10 @@ async function updateSignupSessionFromProvider(
       supabaseAdmin,
       session.id,
       {
-        providerCustomerId: options.providerCustomerId || session.provider_customer_id || null,
-        providerSubscriptionId: options.providerSubscriptionId || session.provider_subscription_id || null,
+        providerCustomerId: options.providerCustomerId ||
+          session.provider_customer_id || null,
+        providerSubscriptionId: options.providerSubscriptionId ||
+          session.provider_subscription_id || null,
       },
       options.payload,
     );
@@ -328,7 +440,9 @@ async function updatePlanChangeSessionFromProvider(
     },
   };
 
-  if (options.nextStatus && session.status !== "applied") updatePayload.status = options.nextStatus;
+  if (options.nextStatus && session.status !== "applied") {
+    updatePayload.status = options.nextStatus;
+  }
   if (options.paidAt) updatePayload.paid_at = options.paidAt;
 
   const { error } = await supabaseAdmin
@@ -344,9 +458,12 @@ async function updatePlanChangeSessionFromProvider(
 
   if (shouldApply) {
     await applyPlanChangeIfReady(supabaseAdmin, session, {
-      providerCustomerId: options.providerCustomerId || session.provider_customer_id || null,
-      providerSubscriptionId: options.providerSubscriptionId || session.provider_subscription_id || null,
-      providerPaymentId: options.providerPaymentId || session.provider_payment_id || null,
+      providerCustomerId: options.providerCustomerId ||
+        session.provider_customer_id || null,
+      providerSubscriptionId: options.providerSubscriptionId ||
+        session.provider_subscription_id || null,
+      providerPaymentId: options.providerPaymentId ||
+        session.provider_payment_id || null,
     });
   }
 }
@@ -370,7 +487,9 @@ async function handleSignupCheckoutWebhook(
   const providerCustomerId = readProviderId(checkout.customer);
   const providerSubscriptionId = readProviderId(checkout.subscription);
   const providerPaymentId = readProviderId(checkout.payment);
-  const paidAt = localStatus === "paid" ? getDate((payload as { dateCreated?: unknown }).dateCreated) : null;
+  const paidAt = localStatus === "paid"
+    ? getDate((payload as { dateCreated?: unknown }).dateCreated)
+    : null;
 
   await updateSignupSessionFromProvider(supabaseAdmin, session, {
     nextStatus: localStatus,
@@ -413,7 +532,9 @@ async function handlePlanChangeCheckoutWebhook(
   const providerCustomerId = readProviderId(checkout.customer);
   const providerSubscriptionId = readProviderId(checkout.subscription);
   const providerPaymentId = readProviderId(checkout.payment);
-  const paidAt = localStatus === "paid" ? getDate((payload as { dateCreated?: unknown }).dateCreated) : null;
+  const paidAt = localStatus === "paid"
+    ? getDate((payload as { dateCreated?: unknown }).dateCreated)
+    : null;
 
   await updatePlanChangeSessionFromProvider(supabaseAdmin, session, {
     nextStatus: localStatus,
@@ -477,13 +598,17 @@ async function updateSessionsFromSubscriptionWebhook(
     identifiers,
   );
   if (planChangeSession) {
-    await updatePlanChangeSessionFromProvider(supabaseAdmin, planChangeSession, {
-      providerCustomerId,
-      providerSubscriptionId,
-      metadataKey: "last_asaas_subscription_webhook",
-      payload,
-      applyWhenReady: planChangeSession.status === "paid",
-    });
+    await updatePlanChangeSessionFromProvider(
+      supabaseAdmin,
+      planChangeSession,
+      {
+        providerCustomerId,
+        providerSubscriptionId,
+        metadataKey: "last_asaas_subscription_webhook",
+        payload,
+        applyWhenReady: planChangeSession.status === "paid",
+      },
+    );
     handled = true;
   }
 
@@ -497,7 +622,9 @@ async function handleSubscriptionWebhook(
 ) {
   if (!SUBSCRIPTION_EVENTS.has(event)) return false;
 
-  const subscription = asRecord((payload as { subscription?: unknown }).subscription);
+  const subscription = asRecord(
+    (payload as { subscription?: unknown }).subscription,
+  );
   const providerSubscriptionId = readProviderId(subscription);
   if (!providerSubscriptionId) return false;
   const providerCustomerId = readProviderId(subscription.customer);
@@ -510,15 +637,20 @@ async function handleSubscriptionWebhook(
     providerCustomerId,
   );
 
-  const { data: subscriptionData, error: subscriptionError } = await supabaseAdmin
-    .from("billing_subscriptions")
-    .select("id, project_id, billing_account_id, metadata, gateway_subscription_id")
-    .eq("gateway_provider", "asaas")
-    .eq("gateway_subscription_id", providerSubscriptionId)
-    .maybeSingle();
+  const { data: subscriptionData, error: subscriptionError } =
+    await supabaseAdmin
+      .from("billing_subscriptions")
+      .select(
+        "id, project_id, billing_account_id, metadata, gateway_subscription_id",
+      )
+      .eq("gateway_provider", "asaas")
+      .eq("gateway_subscription_id", providerSubscriptionId)
+      .maybeSingle();
 
   if (subscriptionError) throw subscriptionError;
-  let localSubscription = subscriptionData as BillingSubscriptionWebhookMatch | null;
+  let localSubscription = subscriptionData as
+    | BillingSubscriptionWebhookMatch
+    | null;
 
   if (!localSubscription && providerCustomerId) {
     const { data: accountData, error: accountError } = await supabaseAdmin
@@ -533,7 +665,9 @@ async function handleSubscriptionWebhook(
     for (const account of accountData ?? []) {
       const { data: candidateData, error: candidateError } = await supabaseAdmin
         .from("billing_subscriptions")
-        .select("id, project_id, billing_account_id, metadata, gateway_subscription_id")
+        .select(
+          "id, project_id, billing_account_id, metadata, gateway_subscription_id",
+        )
         .eq("billing_account_id", account.id)
         .eq("project_id", account.project_id)
         .eq("gateway_provider", "asaas")
@@ -567,7 +701,9 @@ async function handleSubscriptionWebhook(
   if (!isAsaasSubscriptionId(localSubscription.gateway_subscription_id)) {
     statusPatch.gateway_subscription_id = providerSubscriptionId;
   }
-  if (event === "SUBSCRIPTION_INACTIVATED" || event === "SUBSCRIPTION_DELETED") {
+  if (
+    event === "SUBSCRIPTION_INACTIVATED" || event === "SUBSCRIPTION_DELETED"
+  ) {
     statusPatch.status = "canceled";
     statusPatch.canceled_at = new Date().toISOString();
     statusPatch.ended_at = new Date().toISOString();
@@ -596,10 +732,18 @@ async function handleSubscriptionWebhook(
   return true;
 }
 
-function getOverageInvoicePaymentStatus(event: string, paymentStatus: string, isPaid: boolean) {
+function getOverageInvoicePaymentStatus(
+  event: string,
+  paymentStatus: string,
+  isPaid: boolean,
+) {
   if (isPaid) return "paid";
-  if (event === "PAYMENT_OVERDUE" || paymentStatus === "OVERDUE") return "past_due";
-  if (event === "PAYMENT_REFUNDED" || paymentStatus === "REFUNDED") return "refunded";
+  if (event === "PAYMENT_OVERDUE" || paymentStatus === "OVERDUE") {
+    return "past_due";
+  }
+  if (event === "PAYMENT_REFUNDED" || paymentStatus === "REFUNDED") {
+    return "refunded";
+  }
   if (
     event === "PAYMENT_DELETED" ||
     paymentStatus === "CANCELED" ||
@@ -642,7 +786,8 @@ async function updateOverageInvoicesForBatch(
   for (const invoice of invoicesData ?? []) {
     const totalCents = Math.max(0, Number(invoice.total_cents || 0));
     const isPaid = nextStatus === "paid";
-    const isTerminalWithoutDebt = nextStatus === "canceled" || nextStatus === "refunded";
+    const isTerminalWithoutDebt = nextStatus === "canceled" ||
+      nextStatus === "refunded";
 
     const invoicePatch: Record<string, unknown> = {
       status: nextStatus,
@@ -679,7 +824,11 @@ async function handleOverageInvoicePaymentWebhook(
 ) {
   if (!providerPaymentId) return false;
 
-  const nextStatus = getOverageInvoicePaymentStatus(event, paymentStatus, isPaid);
+  const nextStatus = getOverageInvoicePaymentStatus(
+    event,
+    paymentStatus,
+    isPaid,
+  );
   if (!nextStatus) return false;
 
   const { data, error } = await supabaseAdmin
@@ -728,6 +877,204 @@ async function handleOverageInvoicePaymentWebhook(
   return true;
 }
 
+async function findBillingCycleIdForCommission(
+  supabaseAdmin: SupabaseAdmin,
+  subscriptionId: string,
+  paidAt: string,
+) {
+  const { data, error } = await supabaseAdmin
+    .from("billing_cycles")
+    .select("id")
+    .eq("subscription_id", subscriptionId)
+    .eq("cycle_type", "subscription")
+    .lte("period_start", paidAt)
+    .gt("period_end", paidAt)
+    .order("period_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
+async function getExistingAffiliateCommission(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    attributionId: string;
+    competenceMonth: string;
+    providerPaymentId?: string | null;
+  },
+) {
+  if (options.providerPaymentId) {
+    const { data, error } = await supabaseAdmin
+      .from("affiliate_commissions")
+      .select("id")
+      .eq("provider_payment_id", options.providerPaymentId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("affiliate_commissions")
+    .select("id")
+    .eq("attribution_id", options.attributionId)
+    .eq("competence_month", options.competenceMonth)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+async function createAffiliateCommission(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    event: string;
+    payload: unknown;
+    payment: Record<string, unknown>;
+    providerPaymentId?: string | null;
+    providerCustomerId?: string | null;
+    providerSubscriptionId?: string | null;
+    paymentStatus: string;
+    paidAt?: string | null;
+  },
+) {
+  if (!options.paidAt || !options.providerSubscriptionId) return false;
+
+  const paidAmountCents = readMoneyCents(
+    options.payment.value,
+    options.payment.amount,
+    options.payment.totalValue,
+  );
+  if (paidAmountCents <= 0) return false;
+
+  const { data: subscriptionData, error: subscriptionError } =
+    await supabaseAdmin
+      .from("billing_subscriptions")
+      .select([
+        "id",
+        "project_id",
+        "billing_account_id",
+        "plan_id",
+        "status",
+        "base_price_cents",
+        "currency",
+        "metadata",
+        "gateway_subscription_id",
+      ].join(", "))
+      .eq("gateway_provider", "asaas")
+      .eq("gateway_subscription_id", options.providerSubscriptionId)
+      .maybeSingle();
+
+  if (subscriptionError) throw subscriptionError;
+  const subscription = subscriptionData as
+    | BillingSubscriptionWebhookMatch
+    | null;
+  if (!subscription) return false;
+
+  const subscriptionStatus = String(subscription.status || "").toLowerCase();
+  if (NON_COMMISSIONABLE_SUBSCRIPTION_STATUSES.has(subscriptionStatus)) {
+    return false;
+  }
+
+  const basePriceCents = Math.max(
+    0,
+    Math.trunc(Number(subscription.base_price_cents || 0)),
+  );
+  if (basePriceCents <= 0) return false;
+
+  const { data: attributionData, error: attributionError } = await supabaseAdmin
+    .from("affiliate_attributions")
+    .select([
+      "id",
+      "seller_id",
+      "link_id",
+      "user_id",
+      "project_id",
+      "subscription_id",
+      "plan_id",
+      "status",
+      "metadata",
+    ].join(", "))
+    .eq("subscription_id", subscription.id)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (attributionError) throw attributionError;
+  const attribution = attributionData as
+    | AffiliateAttributionWebhookMatch
+    | null;
+  if (!attribution) return false;
+
+  const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
+  if (eligibleAmountCents <= 0) return false;
+
+  const commissionCents = Math.round(
+    (eligibleAmountCents * AFFILIATE_COMMISSION_RATE_BPS) / 10000,
+  );
+  const competenceMonth = getCompetenceMonth(options.paidAt);
+  const billingCycleId = await findBillingCycleIdForCommission(
+    supabaseAdmin,
+    subscription.id,
+    options.paidAt,
+  );
+
+  const insertPayload = {
+    attribution_id: attribution.id,
+    seller_id: attribution.seller_id,
+    link_id: attribution.link_id,
+    user_id: attribution.user_id,
+    project_id: attribution.project_id || subscription.project_id,
+    subscription_id: subscription.id,
+    billing_cycle_id: billingCycleId,
+    plan_id: subscription.plan_id || attribution.plan_id,
+    competence_month: competenceMonth,
+    paid_at: options.paidAt,
+    provider_payment_id: options.providerPaymentId ?? null,
+    provider_event_id: readFirstString(
+      (options.payload as Record<string, unknown>)?.id,
+      (options.payload as Record<string, unknown>)?.eventId,
+      options.event,
+    ),
+    eligible_amount_cents: eligibleAmountCents,
+    commission_rate_bps: AFFILIATE_COMMISSION_RATE_BPS,
+    commission_cents: commissionCents,
+    currency: readString(subscription.currency || "BRL").toUpperCase() || "BRL",
+    status: "pending",
+    source: "asaas_webhook",
+    metadata: {
+      origin: "asaas_webhook",
+      event: options.event,
+      payment_status: options.paymentStatus,
+      provider_subscription_id: options.providerSubscriptionId,
+      provider_customer_id: options.providerCustomerId ?? null,
+      payment_value_cents: paidAmountCents,
+      subscription_base_price_cents: basePriceCents,
+      billing_cycle_id: billingCycleId,
+    },
+  };
+
+  const { error } = await supabaseAdmin
+    .from("affiliate_commissions")
+    .insert(insertPayload)
+    .select("id")
+    .single();
+
+  if (!error) return true;
+
+  if (isUniqueViolation(error)) {
+    await getExistingAffiliateCommission(supabaseAdmin, {
+      attributionId: attribution.id,
+      competenceMonth,
+      providerPaymentId: options.providerPaymentId,
+    });
+    return true;
+  }
+
+  throw error;
+}
+
 async function handlePaymentWebhook(
   supabaseAdmin: SupabaseAdmin,
   event: string,
@@ -752,11 +1099,22 @@ async function handlePaymentWebhook(
   );
   const paymentStatus = normalizeAsaasStatus(payment.status);
   const isPaid = isPaidPaymentEvent(event, paymentStatus);
+  const isCommissionEligiblePayment = isAffiliateCommissionPaidPaymentEvent(
+    event,
+    paymentStatus,
+  );
   const paidAt = isPaid
-    ? getDate(payment.confirmedDate ?? payment.clientPaymentDate ?? payment.paymentDate ?? (payload as { dateCreated?: unknown }).dateCreated)
+    ? getDate(
+      payment.confirmedDate ?? payment.clientPaymentDate ??
+        payment.paymentDate ??
+        (payload as { dateCreated?: unknown }).dateCreated,
+    )
     : null;
 
-  if (!providerPaymentId && !providerCheckoutId && !externalReference && !providerSubscriptionId) return false;
+  if (
+    !providerPaymentId && !providerCheckoutId && !externalReference &&
+    !providerSubscriptionId
+  ) return false;
 
   if (
     await handleOverageInvoicePaymentWebhook(
@@ -773,6 +1131,8 @@ async function handlePaymentWebhook(
   }
 
   let handled = false;
+  let commissionProviderSubscriptionId = providerSubscriptionId;
+  let commissionProviderPaymentId = providerPaymentId;
   const identifiers = {
     providerCheckoutId,
     externalReference,
@@ -797,6 +1157,12 @@ async function handlePaymentWebhook(
       metadataKey: "last_asaas_payment_webhook",
       payload,
     });
+    commissionProviderSubscriptionId = commissionProviderSubscriptionId ||
+      signupSession.provider_subscription_id ||
+      null;
+    commissionProviderPaymentId = commissionProviderPaymentId ||
+      signupSession.provider_payment_id ||
+      null;
     handled = true;
   }
 
@@ -817,17 +1183,41 @@ async function handlePaymentWebhook(
   );
 
   if (planChangeSession) {
-    await updatePlanChangeSessionFromProvider(supabaseAdmin, planChangeSession, {
-      nextStatus: isPaid ? "paid" : undefined,
-      paidAt,
-      providerCustomerId,
-      providerSubscriptionId,
-      providerPaymentId,
-      metadataKey: "last_asaas_payment_webhook",
-      payload,
-      applyWhenReady: isPaid || planChangeSession.status === "paid",
-    });
+    await updatePlanChangeSessionFromProvider(
+      supabaseAdmin,
+      planChangeSession,
+      {
+        nextStatus: isPaid ? "paid" : undefined,
+        paidAt,
+        providerCustomerId,
+        providerSubscriptionId,
+        providerPaymentId,
+        metadataKey: "last_asaas_payment_webhook",
+        payload,
+        applyWhenReady: isPaid || planChangeSession.status === "paid",
+      },
+    );
+    commissionProviderSubscriptionId = commissionProviderSubscriptionId ||
+      planChangeSession.provider_subscription_id ||
+      null;
+    commissionProviderPaymentId = commissionProviderPaymentId ||
+      planChangeSession.provider_payment_id ||
+      null;
     handled = true;
+  }
+
+  if (isCommissionEligiblePayment) {
+    const commissionHandled = await createAffiliateCommission(supabaseAdmin, {
+      event,
+      payload,
+      payment,
+      providerPaymentId: commissionProviderPaymentId,
+      providerCustomerId,
+      providerSubscriptionId: commissionProviderSubscriptionId,
+      paymentStatus,
+      paidAt,
+    });
+    handled = commissionHandled || handled;
   }
 
   return handled;
@@ -845,9 +1235,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const webhookToken = String(Deno.env.get("ASAAS_WEBHOOK_TOKEN") ?? "").trim();
+    const webhookToken = String(Deno.env.get("ASAAS_WEBHOOK_TOKEN") ?? "")
+      .trim();
     if (webhookToken) {
-      const receivedToken = String(req.headers.get("asaas-access-token") ?? "").trim();
+      const receivedToken = String(req.headers.get("asaas-access-token") ?? "")
+        .trim();
       if (receivedToken !== webhookToken) {
         return jsonResponse(origin, { error: "Webhook nao autorizado." }, 401);
       }
@@ -878,11 +1270,27 @@ Deno.serve(async (req) => {
       return jsonResponse(origin, { received: true, ignored: true });
     }
 
-    if (await handleSignupCheckoutWebhook(supabaseAdmin, providerCheckoutId, localStatus, payload, checkout)) {
+    if (
+      await handleSignupCheckoutWebhook(
+        supabaseAdmin,
+        providerCheckoutId,
+        localStatus,
+        payload,
+        checkout,
+      )
+    ) {
       return jsonResponse(origin, { received: true });
     }
 
-    if (await handlePlanChangeCheckoutWebhook(supabaseAdmin, providerCheckoutId, localStatus, payload, checkout)) {
+    if (
+      await handlePlanChangeCheckoutWebhook(
+        supabaseAdmin,
+        providerCheckoutId,
+        localStatus,
+        payload,
+        checkout,
+      )
+    ) {
       return jsonResponse(origin, { received: true });
     }
 
