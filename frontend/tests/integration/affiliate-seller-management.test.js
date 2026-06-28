@@ -55,7 +55,8 @@ describe("affiliate seller management UI and backend", () => {
     expect(tabSource).toContain("useToast");
     expect(tabSource).toContain("Novo vendedor");
     expect(tabSource).toContain("Editar vendedor");
-    expect(tabSource).toContain("Aguardando link");
+    expect(tabSource).toContain("Gerar link");
+    expect(tabSource).toContain("Copiar link");
     expect(tabSource).toContain("Ativo");
     expect(tabSource).toContain("Inativo");
   });

@@ -1,6 +1,19 @@
 import { supabase } from '@/lib/supabaseClient';
 
 export const DEFAULT_PLAN_KEY = 'starter';
+export const AFFILIATE_DISCOUNT_BPS = 1000;
+
+const AFFILIATE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
+
+export const normalizeAffiliateRef = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '')
+    .slice(0, 40);
+
+  return AFFILIATE_REF_PATTERN.test(normalized) ? normalized : '';
+};
 
 const PLAN_ORDER = ['free_trial', 'starter', 'pro', 'premium'];
 
@@ -311,5 +324,9 @@ export const findPlanByKey = (planKey, plans = subscriptionPlans) =>
 
 export const isPaidPlan = (plan) => plan?.type === 'paid';
 
-export const buildSignupPath = (planKey) =>
-  `/cadastro?plano=${encodeURIComponent(planKey)}`;
+export const buildSignupPath = (planKey, { ref = '' } = {}) => {
+  const params = new URLSearchParams({ plano: String(planKey || DEFAULT_PLAN_KEY) });
+  const affiliateRef = normalizeAffiliateRef(ref);
+  if (affiliateRef) params.set('ref', affiliateRef);
+  return `/cadastro?${params.toString()}`;
+};

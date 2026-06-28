@@ -1,9 +1,18 @@
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
+import {
+  createClient,
+  type SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
 const FREE_PLAN_CODE = "free_trial";
 const ACTIVE_CHECKOUT_STATUSES = new Set(["pending", "created"]);
-const RETRYABLE_CHECKOUT_STATUSES = new Set(["pending", "created", "failed", "canceled", "expired"]);
+const RETRYABLE_CHECKOUT_STATUSES = new Set([
+  "pending",
+  "created",
+  "failed",
+  "canceled",
+  "expired",
+]);
 
 type CheckoutSessionRow = {
   id: string;
@@ -18,6 +27,7 @@ type CheckoutSessionRow = {
   establishment_name: string;
   amount_cents: number;
   currency: string;
+  affiliate_code: string | null;
 };
 
 type ExistingCustomerSignupIntentRow = {
@@ -92,9 +102,12 @@ function deriveSignupState({
 
   if (latestSession) {
     const expiredByTime = hasCheckoutExpired(latestSession, now);
-    const hasReusableCheckoutUrl = Boolean(latestSession.checkout_url) && !expiredByTime;
+    const hasReusableCheckoutUrl = Boolean(latestSession.checkout_url) &&
+      !expiredByTime;
 
-    if (ACTIVE_CHECKOUT_STATUSES.has(checkoutStatus) && hasReusableCheckoutUrl) {
+    if (
+      ACTIVE_CHECKOUT_STATUSES.has(checkoutStatus) && hasReusableCheckoutUrl
+    ) {
       return "payment_pending";
     }
 
@@ -103,7 +116,9 @@ function deriveSignupState({
     }
   }
 
-  if (paidSignupContextPlanCode && paidSignupContextPlanCode !== FREE_PLAN_CODE) {
+  if (
+    paidSignupContextPlanCode && paidSignupContextPlanCode !== FREE_PLAN_CODE
+  ) {
     return "payment_retry_available";
   }
 
@@ -172,9 +187,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabaseAdmin: SupabaseAdminClient = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const supabaseAdmin: SupabaseAdminClient = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      },
+    );
 
     const { data: memberData, error: memberError } = await supabaseAdmin
       .from("project_members")
@@ -191,7 +210,7 @@ Deno.serve(async (req) => {
     const { data: checkoutData, error: checkoutError } = await supabaseAdmin
       .from("signup_checkout_sessions")
       .select(
-        "id, plan_id, plan_code, status, checkout_url, expires_at, paid_at, created_at, updated_at, establishment_name, amount_cents, currency",
+        "id, plan_id, plan_code, status, checkout_url, expires_at, paid_at, created_at, updated_at, establishment_name, amount_cents, currency, affiliate_code",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
@@ -209,9 +228,11 @@ Deno.serve(async (req) => {
     const metadataPlanCode = normalizePlanCode(user.user_metadata?.plan_code);
     const sessionPlanCode = normalizePlanCode(latestSession?.plan_code);
     const intentPlanCode = normalizePlanCode(existingCustomerIntent?.plan_code);
+    // deno-fmt-ignore
     const paidSignupContextPlanCode = sessionPlanCode || intentPlanCode || metadataPlanCode;
     const planCode = paidSignupContextPlanCode || null;
-    const checkoutStatus = normalizeCheckoutStatus(latestSession?.status) || null;
+    const checkoutStatus = normalizeCheckoutStatus(latestSession?.status) ||
+      null;
     const signupState = deriveSignupState({
       hasProject,
       latestSession,
@@ -222,11 +243,17 @@ Deno.serve(async (req) => {
     const checkoutUrl = signupState === "payment_pending" && !checkoutExpired
       ? latestSession?.checkout_url ?? null
       : null;
-    const sessionEstablishmentName = String(latestSession?.establishment_name ?? "").trim();
-    const metadataEstablishmentName = String(user.user_metadata?.establishment_name ?? "").trim();
-    const intentEstablishmentName = String(existingCustomerIntent?.establishment_name ?? "").trim();
-    const establishmentName =
-      sessionEstablishmentName || metadataEstablishmentName || intentEstablishmentName;
+    const sessionEstablishmentName = String(
+      latestSession?.establishment_name ?? "",
+    ).trim();
+    const metadataEstablishmentName = String(
+      user.user_metadata?.establishment_name ?? "",
+    ).trim();
+    const intentEstablishmentName = String(
+      existingCustomerIntent?.establishment_name ?? "",
+    ).trim();
+    const establishmentName = sessionEstablishmentName ||
+      metadataEstablishmentName || intentEstablishmentName;
 
     return jsonResponse(origin, {
       success: true,
@@ -239,11 +266,15 @@ Deno.serve(async (req) => {
       checkout_session_id: latestSession?.id ?? null,
       checkout_url: checkoutUrl,
       checkout_expired: checkoutExpired,
-      expires_at: latestSession?.expires_at ?? existingCustomerIntent?.expires_at ?? null,
+      expires_at: latestSession?.expires_at ??
+        existingCustomerIntent?.expires_at ?? null,
       paid_at: latestSession?.paid_at ?? null,
       amount_cents: latestSession?.amount_cents ?? null,
       currency: latestSession?.currency ?? null,
-      updated_at: latestSession?.updated_at ?? existingCustomerIntent?.updated_at ?? null,
+      affiliate_ref: latestSession?.affiliate_code ??
+        user.user_metadata?.affiliate_ref ?? null,
+      updated_at: latestSession?.updated_at ??
+        existingCustomerIntent?.updated_at ?? null,
     });
   } catch (error) {
     console.error("signup-status error", error);

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
 const SIGNUP_STATUS_DEDUPE_TTL_MS = 5_000;
@@ -79,6 +80,7 @@ export function readExistingCustomerSignupContext() {
     const establishmentName = String(parsed?.establishmentName || '').trim();
     const planCode = String(parsed?.planCode || 'free_trial').trim().toLowerCase();
     const planKey = String(parsed?.planKey || '').trim().toLowerCase();
+    const affiliateRef = normalizeAffiliateRef(parsed?.affiliateRef);
     const createdAt = Number(parsed?.createdAt || 0);
     const passwordSetupCompletedAt = Number(parsed?.passwordSetupCompletedAt || 0);
     const now = Date.now();
@@ -94,6 +96,7 @@ export function readExistingCustomerSignupContext() {
       establishmentName,
       planCode: planCode || 'free_trial',
       planKey,
+      affiliateRef,
       createdAt,
       passwordSetupCompletedAt: Number.isFinite(passwordSetupCompletedAt)
         ? passwordSetupCompletedAt
@@ -110,6 +113,7 @@ export function rememberExistingCustomerSignupContext({
   establishmentName,
   planCode = 'free_trial',
   planKey = '',
+  affiliateRef = '',
 }) {
   if (typeof window === 'undefined') return;
 
@@ -117,6 +121,7 @@ export function rememberExistingCustomerSignupContext({
   const normalizedEstablishmentName = String(establishmentName || '').trim();
   const normalizedPlanCode = String(planCode || 'free_trial').trim().toLowerCase();
   const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
+  const normalizedAffiliateRef = normalizeAffiliateRef(affiliateRef);
 
   if (!normalizedEmail || !normalizedEstablishmentName) {
     clearExistingCustomerSignupContext();
@@ -128,6 +133,7 @@ export function rememberExistingCustomerSignupContext({
     establishmentName: normalizedEstablishmentName,
     planCode: normalizedPlanCode || 'free_trial',
     planKey: normalizedPlanKey,
+    affiliateRef: normalizedAffiliateRef,
     createdAt: Date.now(),
     passwordSetupCompletedAt: 0,
   };
@@ -166,6 +172,7 @@ export async function finalizeSignup({
   establishmentName,
   planCode = 'free_trial',
   checkoutSessionId = '',
+  affiliateRef = '',
   dedupeKey = '',
   initialDelayMs = 0,
   retryDelaysMs = [],
@@ -201,11 +208,12 @@ export async function finalizeSignup({
     while (true) {
       try {
         const { data, error } = await supabase.functions.invoke('signup-finalize', {
-          body: {
-            establishmentName,
-            planCode,
-            checkoutSessionId,
-          },
+      body: {
+        establishmentName,
+        planCode,
+        checkoutSessionId,
+        affiliateRef,
+      },
         });
 
         if (error) {
@@ -272,12 +280,14 @@ export function markExistingCustomerSignupPasswordReady({
   establishmentName = '',
   planCode = '',
   planKey = '',
+  affiliateRef = '',
 } = {}) {
   if (typeof window === 'undefined') return;
 
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
   const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
+  const normalizedAffiliateRef = normalizeAffiliateRef(affiliateRef);
   const currentContext = readExistingCustomerSignupContext();
   const currentMatchesEmail = currentContext?.email === normalizedEmail;
   const normalizedEstablishmentName = String(
@@ -293,6 +303,7 @@ export function markExistingCustomerSignupPasswordReady({
     establishmentName: normalizedEstablishmentName,
     planCode: normalizedPlanCode || currentContext?.planCode || 'free_trial',
     planKey: normalizedPlanKey || currentContext?.planKey || '',
+    affiliateRef: normalizedAffiliateRef || currentContext?.affiliateRef || '',
     createdAt: currentMatchesEmail ? currentContext.createdAt : Date.now(),
     passwordSetupCompletedAt: Date.now(),
   };
@@ -319,11 +330,13 @@ export async function finalizeFreeTrialSignup({
 export async function startPaidSignupCheckout({
   establishmentName,
   planCode,
+  affiliateRef,
 }) {
   const { data, error } = await supabase.functions.invoke('signup-start-checkout', {
     body: {
       establishmentName,
       planCode,
+      affiliateRef,
     },
   });
 
@@ -369,8 +382,9 @@ function normalizeSignupStatusResponse(data) {
     checkoutExpired: Boolean(data?.checkout_expired),
     expiresAt: data?.expires_at || null,
     paidAt: data?.paid_at || null,
-    amountCents: data?.amount_cents ?? null,
+    amount_cents: data?.amount_cents ?? null,
     currency: data?.currency || null,
+    affiliateRef: normalizeAffiliateRef(data?.affiliate_ref),
     updatedAt: data?.updated_at || null,
   };
 }
@@ -428,8 +442,9 @@ export async function sendExistingCustomerSignupLink({
   establishmentName,
   planCode = 'free_trial',
   planKey = '',
+  affiliateRef = '',
 }) {
-  rememberExistingCustomerSignupContext({ email, establishmentName, planCode, planKey });
+  rememberExistingCustomerSignupContext({ email, establishmentName, planCode, planKey, affiliateRef });
 
   const { error } = await supabase.auth.signInWithOtp({
     email,

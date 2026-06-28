@@ -4,7 +4,9 @@ import { Check, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { formatCurrencyBRL } from '@/lib/subscriptionPlans';
 
-function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick }) {
+function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick, affiliateOffer = null }) {
+  const showAffiliateOffer = plan.type === 'paid' && affiliateOffer?.valid;
+
   return (
     <div
       className={`relative rounded-3xl p-8 transition-all duration-300 ${
@@ -70,6 +72,17 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick }) {
             <span className={`text-sm ${plan.highlighted ? 'text-purple-200' : 'text-gray-500'}`}>/mês</span>
           </div>
         )}
+        {showAffiliateOffer ? (
+          <div
+            className={`mt-4 rounded-lg px-3 py-2 text-xs font-semibold ${
+              plan.highlighted
+                ? 'bg-white/15 text-white'
+                : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+            }`}
+          >
+            10% de desconto no primeiro mes
+          </div>
+        ) : null}
       </div>
 
       <ul className="space-y-3 mb-8">

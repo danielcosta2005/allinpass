@@ -22,6 +22,12 @@ type SignupCheckoutSessionRow = {
   provider_customer_id: string | null;
   provider_payment_id: string | null;
   amount_cents: number;
+  affiliate_link_id: string | null;
+  affiliate_seller_id: string | null;
+  affiliate_code: string | null;
+  affiliate_discount_bps: number | null;
+  affiliate_discount_cents: number | null;
+  affiliate_original_amount_cents: number | null;
   paid_at: string | null;
 };
 
@@ -67,6 +73,13 @@ type BillingSubscriptionRow = {
   current_period_end: string | null;
 };
 
+type AffiliateAttributionRow = {
+  id: string;
+  seller_id: string;
+  link_id: string;
+  source_code: string;
+};
+
 const FREE_PLAN_CODE = "free_trial";
 const FINALIZATION_STALE_AFTER_MS = 2 * 60 * 1000;
 const FINALIZATION_WAIT_ATTEMPTS = 20;
@@ -83,6 +96,8 @@ type SignupFinalizeErrorCode =
   | "SIGNUP_FINALIZE_CHECKOUT_NOT_FOUND"
   | "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED"
   | "SIGNUP_FINALIZE_PAYMENT_AMOUNT_MISMATCH"
+  | "SIGNUP_FINALIZE_AFFILIATE_ATTRIBUTION_FAILED"
+  | "SIGNUP_FINALIZE_ASAAS_RECURRING_PRICE_RESTORE_FAILED"
   | "SIGNUP_FINALIZE_PROJECT_NOT_CREATED"
   | "SIGNUP_FINALIZE_IN_PROGRESS"
   | "SIGNUP_FINALIZE_INTERNAL_ERROR";
@@ -145,6 +160,42 @@ function normalizePlanCode(value: unknown) {
     .toLowerCase()
     .replace(/-/g, "_")
     .replace(/[^a-z0-9_]/g, "");
+}
+
+function getAsaasApiBaseUrl() {
+  const explicit = String(Deno.env.get("ASAAS_API_BASE_URL") ?? "").trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const env = String(Deno.env.get("ASAAS_ENV") ?? "sandbox").trim()
+    .toLowerCase();
+  return env === "production"
+    ? "https://api.asaas.com/v3"
+    : "https://api-sandbox.asaas.com/v3";
+}
+
+function getAsaasErrorMessage(payload: unknown) {
+  if (payload && typeof payload === "object" && "errors" in payload) {
+    const errors = (payload as { errors?: unknown }).errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors
+        .map((item) => {
+          if (item && typeof item === "object" && "description" in item) {
+            return String(
+              (item as { description?: unknown }).description ?? "",
+            );
+          }
+          return "";
+        })
+        .filter(Boolean)
+        .join(" ");
+    }
+  }
+
+  if (payload && typeof payload === "object" && "message" in payload) {
+    return String((payload as { message?: unknown }).message ?? "");
+  }
+
+  return "";
 }
 
 function resolvePlanCode({
@@ -218,7 +269,9 @@ function delay(ms: number) {
 function getErrorCode(error: unknown) {
   if (error instanceof SignupFinalizeError) return error.code;
   if (typeof error === "object" && error && "code" in error) {
-    return String((error as { code?: unknown }).code || "SIGNUP_FINALIZE_INTERNAL_ERROR");
+    return String(
+      (error as { code?: unknown }).code || "SIGNUP_FINALIZE_INTERNAL_ERROR",
+    );
   }
   return "SIGNUP_FINALIZE_INTERNAL_ERROR";
 }
@@ -226,7 +279,10 @@ function getErrorCode(error: unknown) {
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message?: unknown }).message || "Erro interno ao finalizar cadastro.");
+    return String(
+      (error as { message?: unknown }).message ||
+        "Erro interno ao finalizar cadastro.",
+    );
   }
   return "Erro interno ao finalizar cadastro.";
 }
@@ -240,7 +296,9 @@ function buildFinalizationIdempotencyKey(userId: string) {
 }
 
 function asFinalizationResponse(response: unknown) {
-  if (!response || typeof response !== "object" || Array.isArray(response)) return null;
+  if (!response || typeof response !== "object" || Array.isArray(response)) {
+    return null;
+  }
   return response as Record<string, unknown>;
 }
 
@@ -249,17 +307,16 @@ function withPasswordSetupRequirement(
   passwordSetupRequired: boolean,
 ) {
   const auth = response.auth;
-  const currentAuth =
-    auth && typeof auth === "object" && !Array.isArray(auth)
-      ? auth as Record<string, unknown>
-      : {};
+  const currentAuth = auth && typeof auth === "object" && !Array.isArray(auth)
+    ? auth as Record<string, unknown>
+    : {};
 
   return {
     ...response,
     auth: {
       ...currentAuth,
-      password_setup_required:
-        Boolean(currentAuth.password_setup_required) || passwordSetupRequired,
+      password_setup_required: Boolean(currentAuth.password_setup_required) ||
+        passwordSetupRequired,
     },
   };
 }
@@ -304,7 +361,8 @@ async function reclaimSignupFinalization(
   if (row.status === "failed") {
     query = query.eq("status", "failed");
   } else {
-    const staleBefore = new Date(now.getTime() - FINALIZATION_STALE_AFTER_MS).toISOString();
+    const staleBefore = new Date(now.getTime() - FINALIZATION_STALE_AFTER_MS)
+      .toISOString();
     query = query.eq("status", "processing").lte("updated_at", staleBefore);
   }
 
@@ -343,7 +401,11 @@ async function claimSignupFinalization(
   }
 
   if (row?.status === "failed" || row?.status === "processing") {
-    const reclaimed = await reclaimSignupFinalization(supabaseAdmin, userId, row);
+    const reclaimed = await reclaimSignupFinalization(
+      supabaseAdmin,
+      userId,
+      row,
+    );
     if (reclaimed) return { action: "proceed" };
   }
 
@@ -411,7 +473,10 @@ async function markSignupFinalizationFailed(
     .eq("status", "processing");
 
   if (updateError) {
-    console.error("signup-finalize failed to persist failure state", updateError);
+    console.error(
+      "signup-finalize failed to persist failure state",
+      updateError,
+    );
   }
 }
 
@@ -471,6 +536,12 @@ async function getPaidCheckoutSession(
         "provider_customer_id",
         "provider_payment_id",
         "amount_cents",
+        "affiliate_link_id",
+        "affiliate_seller_id",
+        "affiliate_code",
+        "affiliate_discount_bps",
+        "affiliate_discount_cents",
+        "affiliate_original_amount_cents",
         "paid_at",
       ].join(", "),
     )
@@ -506,6 +577,7 @@ async function getPaidCheckoutSession(
     );
   }
 
+  // deno-fmt-ignore
   if (!checkoutSession.provider_customer_id || !checkoutSession.provider_subscription_id) {
     throw new SignupFinalizeError(
       "SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED",
@@ -515,6 +587,142 @@ async function getPaidCheckoutSession(
   }
 
   return checkoutSession;
+}
+
+function hasAffiliateCheckout(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  return Boolean(
+    checkoutSession?.affiliate_link_id &&
+      checkoutSession.affiliate_seller_id &&
+      checkoutSession.affiliate_code,
+  );
+}
+
+async function restoreAsaasSubscriptionBasePrice({
+  plan,
+  paidCheckoutSession,
+}: {
+  plan: BillingPlan;
+  paidCheckoutSession: SignupCheckoutSessionRow | null;
+}) {
+  if (
+    !hasAffiliateCheckout(paidCheckoutSession) ||
+    !paidCheckoutSession?.provider_subscription_id
+  ) {
+    return null;
+  }
+
+  const asaasApiKey = requiredEnv("ASAAS_API_KEY");
+  const payload = {
+    value: plan.base_price_cents / 100,
+    cycle: "MONTHLY",
+    description: `Assinatura mensal AllinPass - ${plan.name}`,
+    updatePendingPayments: false,
+  };
+
+  const response = await fetch(
+    `${getAsaasApiBaseUrl()}/subscriptions/${
+      encodeURIComponent(paidCheckoutSession.provider_subscription_id)
+    }`,
+    {
+      method: "PUT",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "access_token": asaasApiKey,
+        "User-Agent": "AllinPass/1.0",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const body = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const message = getAsaasErrorMessage(body) ||
+      "Nao foi possivel restaurar o valor recorrente da assinatura no Asaas.";
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_ASAAS_RECURRING_PRICE_RESTORE_FAILED",
+      message,
+      502,
+    );
+  }
+
+  return body;
+}
+
+async function createAffiliateAttribution({
+  supabaseAdmin,
+  paidCheckoutSession,
+  userId,
+  projectId,
+  subscriptionId,
+  plan,
+}: {
+  supabaseAdmin: SupabaseAdminClient;
+  paidCheckoutSession: SignupCheckoutSessionRow | null;
+  userId: string;
+  projectId: string;
+  subscriptionId: string;
+  plan: BillingPlan;
+}): Promise<AffiliateAttributionRow | null> {
+  if (!hasAffiliateCheckout(paidCheckoutSession)) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("affiliate_attributions")
+    .insert({
+      seller_id: paidCheckoutSession!.affiliate_seller_id,
+      link_id: paidCheckoutSession!.affiliate_link_id,
+      user_id: userId,
+      project_id: projectId,
+      subscription_id: subscriptionId,
+      checkout_session_id: paidCheckoutSession!.id,
+      plan_id: plan.id,
+      source_code: paidCheckoutSession!.affiliate_code,
+      status: "active",
+      metadata: {
+        origin: "signup_finalize",
+        checkout_session_id: paidCheckoutSession!.id,
+        provider_subscription_id: paidCheckoutSession!.provider_subscription_id,
+        plan_code: plan.code,
+        affiliate_discount_bps: paidCheckoutSession!.affiliate_discount_bps ??
+          0,
+        affiliate_discount_cents:
+          paidCheckoutSession!.affiliate_discount_cents ?? 0,
+        affiliate_original_amount_cents:
+          paidCheckoutSession!.affiliate_original_amount_cents ??
+            plan.base_price_cents,
+      },
+    })
+    .select("id, seller_id, link_id, source_code")
+    .single();
+
+  if (!error) return data as unknown as AffiliateAttributionRow;
+
+  if (isUniqueViolation(error)) {
+    const { data: existingData, error: existingError } = await supabaseAdmin
+      .from("affiliate_attributions")
+      .select("id, seller_id, link_id, source_code")
+      .eq("subscription_id", subscriptionId)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new SignupFinalizeError(
+        "SIGNUP_FINALIZE_AFFILIATE_ATTRIBUTION_FAILED",
+        "Nao foi possivel recuperar a atribuicao de afiliado existente.",
+        500,
+      );
+    }
+
+    return (existingData as AffiliateAttributionRow | null) ?? null;
+  }
+
+  throw new SignupFinalizeError(
+    "SIGNUP_FINALIZE_AFFILIATE_ATTRIBUTION_FAILED",
+    "Nao foi possivel criar a atribuicao de afiliado.",
+    500,
+  );
 }
 
 function buildWalletDefaults(projectName: string) {
@@ -611,20 +819,28 @@ Deno.serve(async (req) => {
     });
 
     const payload = await req.json().catch(() => ({}));
-    const existingCustomerIntent = await getExistingCustomerSignupIntent(supabaseAdmin, email);
-    const payloadEstablishmentName = String(payload.establishmentName ?? "").trim();
-    const metadataEstablishmentName = String(user.user_metadata?.establishment_name ?? "").trim();
-    const intentEstablishmentName = String(existingCustomerIntent?.establishment_name ?? "").trim();
+    const existingCustomerIntent = await getExistingCustomerSignupIntent(
+      supabaseAdmin,
+      email,
+    );
+    const payloadEstablishmentName = String(payload.establishmentName ?? "")
+      .trim();
+    const metadataEstablishmentName = String(
+      user.user_metadata?.establishment_name ?? "",
+    ).trim();
+    const intentEstablishmentName = String(
+      existingCustomerIntent?.establishment_name ?? "",
+    ).trim();
     const payloadPlanCode = payload.planCode;
     const metadataPlanCode = user.user_metadata?.plan_code;
     const metadataPlanKey = user.user_metadata?.plan_key;
     const intentPlanCode = existingCustomerIntent?.plan_code;
     const checkoutSessionId = String(payload.checkoutSessionId ?? "").trim();
     const establishmentName = String(
-      payloadEstablishmentName
-        || metadataEstablishmentName
-        || intentEstablishmentName
-        || "",
+      payloadEstablishmentName ||
+        metadataEstablishmentName ||
+        intentEstablishmentName ||
+        "",
     ).trim();
     const planCode = resolvePlanCode({
       payloadPlanCode,
@@ -693,7 +909,19 @@ Deno.serve(async (req) => {
         checkoutSessionId,
       );
 
-      if (paidCheckoutSession.amount_cents !== plan.base_price_cents) {
+      const expectedCheckoutAmountCents =
+        hasAffiliateCheckout(paidCheckoutSession)
+          ? Math.max(
+            0,
+            Number(
+              paidCheckoutSession.affiliate_original_amount_cents ??
+                plan.base_price_cents,
+            ) -
+              Number(paidCheckoutSession.affiliate_discount_cents ?? 0),
+          )
+          : plan.base_price_cents;
+
+      if (paidCheckoutSession.amount_cents !== expectedCheckoutAmountCents) {
         return errorResponse(
           origin,
           "SIGNUP_FINALIZE_PAYMENT_AMOUNT_MISMATCH",
@@ -703,23 +931,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    const finalizationClaim = await claimSignupFinalization(supabaseAdmin, user.id);
+    const finalizationClaim = await claimSignupFinalization(
+      supabaseAdmin,
+      user.id,
+    );
 
     if (finalizationClaim.action === "completed") {
       await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
       return jsonResponse(
         origin,
-        withPasswordSetupRequirement(finalizationClaim.response, Boolean(existingCustomerIntent)),
+        withPasswordSetupRequirement(
+          finalizationClaim.response,
+          Boolean(existingCustomerIntent),
+        ),
       );
     }
 
     if (finalizationClaim.action === "processing") {
-      const completedResponse = await waitForCompletedSignupFinalization(supabaseAdmin, user.id);
+      const completedResponse = await waitForCompletedSignupFinalization(
+        supabaseAdmin,
+        user.id,
+      );
 
       if (completedResponse) {
         return jsonResponse(
           origin,
-          withPasswordSetupRequirement(completedResponse, Boolean(existingCustomerIntent)),
+          withPasswordSetupRequirement(
+            completedResponse,
+            Boolean(existingCustomerIntent),
+          ),
         );
       }
 
@@ -745,17 +985,20 @@ Deno.serve(async (req) => {
 
     if (profileError) throw profileError;
 
-    const { data: existingMemberData, error: memberLookupError } = await supabaseAdmin
-      .from("project_members")
-      .select("project_id, role")
-      .eq("user_id", user.id)
-      .eq("role", "owner")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+    const { data: existingMemberData, error: memberLookupError } =
+      await supabaseAdmin
+        .from("project_members")
+        .select("project_id, role")
+        .eq("user_id", user.id)
+        .eq("role", "owner")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
     if (memberLookupError) throw memberLookupError;
-    const existingMember = existingMemberData as unknown as ProjectMemberRow | null;
+    const existingMember = existingMemberData as unknown as
+      | ProjectMemberRow
+      | null;
 
     let projectId = existingMember?.project_id ?? null;
     let projectSlug: string | null = null;
@@ -810,19 +1053,22 @@ Deno.serve(async (req) => {
 
       projectSlug = project?.slug ?? projectSlug;
 
-      const { error: memberError } = await supabaseAdmin.from("project_members").upsert(
-        {
-          project_id: projectId,
-          user_id: user.id,
-          role: "owner",
-        },
-        { onConflict: "project_id,user_id" },
-      );
+      const { error: memberError } = await supabaseAdmin.from("project_members")
+        .upsert(
+          {
+            project_id: projectId,
+            user_id: user.id,
+            role: "owner",
+          },
+          { onConflict: "project_id,user_id" },
+        );
 
       if (memberError) throw memberError;
 
       if (createdProject) {
-        const { error: templateError } = await supabaseAdmin.from("wallet_templates").upsert(
+        const { error: templateError } = await supabaseAdmin.from(
+          "wallet_templates",
+        ).upsert(
           {
             project_id: projectId,
             name: "Template do Projeto",
@@ -834,41 +1080,52 @@ Deno.serve(async (req) => {
         if (templateError) throw templateError;
       }
 
-      const { data: existingAccountData, error: accountLookupError } = await supabaseAdmin
-        .from("billing_accounts")
-        .select("id")
-        .eq("project_id", projectId)
-        .maybeSingle();
+      const { data: existingAccountData, error: accountLookupError } =
+        await supabaseAdmin
+          .from("billing_accounts")
+          .select("id")
+          .eq("project_id", projectId)
+          .maybeSingle();
 
       if (accountLookupError) throw accountLookupError;
-      const existingAccount = existingAccountData as unknown as BillingAccountRow | null;
+      const existingAccount = existingAccountData as unknown as
+        | BillingAccountRow
+        | null;
 
       let billingAccountId = existingAccount?.id ?? null;
 
       if (!billingAccountId) {
-        const { data: billingAccountData, error: accountError } = await supabaseAdmin
-          .from("billing_accounts")
-          .insert({
-            project_id: projectId,
-            legal_name: establishmentName,
-            billing_email: email,
-            document_type: "other",
-            document_number: "pending",
-            address: {},
-            gateway_provider: isFreeTrial ? "other" : "asaas",
-            gateway_customer_id: paidCheckoutSession?.provider_customer_id ?? null,
-            provider_status: "active",
-            metadata: {
-              origin: "signup_finalize",
-              plan_code: plan.code,
-              checkout_session_id: paidCheckoutSession?.id ?? null,
-            },
-          })
-          .select("id")
-          .single();
+        const { data: billingAccountData, error: accountError } =
+          await supabaseAdmin
+            .from("billing_accounts")
+            .insert({
+              project_id: projectId,
+              legal_name: establishmentName,
+              billing_email: email,
+              document_type: "other",
+              document_number: "pending",
+              address: {},
+              gateway_provider: isFreeTrial ? "other" : "asaas",
+              gateway_customer_id: paidCheckoutSession?.provider_customer_id ??
+                null,
+              provider_status: "active",
+              metadata: {
+                origin: "signup_finalize",
+                plan_code: plan.code,
+                checkout_session_id: paidCheckoutSession?.id ?? null,
+                affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
+                affiliate_discount_cents:
+                  paidCheckoutSession?.affiliate_discount_cents ?? 0,
+                affiliate_original_amount_cents:
+                  paidCheckoutSession?.affiliate_original_amount_cents ?? null,
+              },
+            })
+            .select("id")
+            .single();
 
         if (accountError) throw accountError;
-        const billingAccount = billingAccountData as unknown as BillingAccountRow;
+        const billingAccount =
+          billingAccountData as unknown as BillingAccountRow;
         billingAccountId = billingAccount.id;
       } else if (!isFreeTrial && paidCheckoutSession?.provider_customer_id) {
         const { error: accountUpdateError } = await supabaseAdmin
@@ -882,77 +1139,123 @@ Deno.serve(async (req) => {
         if (accountUpdateError) throw accountUpdateError;
       }
 
-      const { data: existingSubscriptionData, error: subscriptionLookupError } = await supabaseAdmin
-        .from("billing_subscriptions")
-        .select("id, status, trial_ends_at, current_period_end")
-        .eq("project_id", projectId)
-        .in("status", ["trialing", "active", "past_due", "paused"])
-        .limit(1)
-        .maybeSingle();
+      const { data: existingSubscriptionData, error: subscriptionLookupError } =
+        await supabaseAdmin
+          .from("billing_subscriptions")
+          .select("id, status, trial_ends_at, current_period_end")
+          .eq("project_id", projectId)
+          .in("status", ["trialing", "active", "past_due", "paused"])
+          .limit(1)
+          .maybeSingle();
 
       if (subscriptionLookupError) throw subscriptionLookupError;
-      const existingSubscription = existingSubscriptionData as unknown as BillingSubscriptionRow | null;
+      const existingSubscription = existingSubscriptionData as unknown as
+        | BillingSubscriptionRow
+        | null;
 
       let subscriptionId = existingSubscription?.id ?? null;
       const now = new Date();
-      const trialDays = isFreeTrial ? Math.max(0, Number(plan.trial_days ?? 0)) : 0;
+      const trialDays = isFreeTrial
+        ? Math.max(0, Number(plan.trial_days ?? 0))
+        : 0;
       const status = isFreeTrial && trialDays > 0 ? "trialing" : "active";
-      const trialEndsAt = isFreeTrial && trialDays > 0 ? addDays(now, trialDays) : null;
+      const trialEndsAt = isFreeTrial && trialDays > 0
+        ? addDays(now, trialDays)
+        : null;
       const periodEnd = trialEndsAt ?? addMonths(now, 1);
 
       if (!subscriptionId) {
-        const { data: subscriptionData, error: subscriptionError } = await supabaseAdmin
-          .from("billing_subscriptions")
+        const { data: subscriptionData, error: subscriptionError } =
+          await supabaseAdmin
+            .from("billing_subscriptions")
+            .insert({
+              project_id: projectId,
+              billing_account_id: billingAccountId,
+              plan_id: plan.id,
+              status,
+              trial_started_at: trialDays > 0 ? now.toISOString() : null,
+              trial_ends_at: trialEndsAt?.toISOString() ?? null,
+              current_period_start: now.toISOString(),
+              current_period_end: periodEnd.toISOString(),
+              gateway_provider: isFreeTrial ? "other" : "asaas",
+              gateway_subscription_id:
+                paidCheckoutSession?.provider_subscription_id ?? null,
+              base_price_cents: plan.base_price_cents,
+              included_pass_installs: plan.included_pass_installs ?? 0,
+              included_notification_sends: plan.included_notification_sends ??
+                0,
+              overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
+              overage_notification_sent_cents:
+                plan.overage_notification_sent_cents ?? 0,
+              currency: "BRL",
+              metadata: {
+                origin: "signup_finalize",
+                plan_code: plan.code,
+                checkout_session_id: paidCheckoutSession?.id ?? null,
+                provider_checkout_id:
+                  paidCheckoutSession?.provider_checkout_id ?? null,
+                affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
+                affiliate_discount_bps:
+                  paidCheckoutSession?.affiliate_discount_bps ?? 0,
+                affiliate_discount_cents:
+                  paidCheckoutSession?.affiliate_discount_cents ?? 0,
+                affiliate_original_amount_cents:
+                  paidCheckoutSession?.affiliate_original_amount_cents ?? null,
+              },
+            })
+            .select("id")
+            .single();
+
+        if (subscriptionError) throw subscriptionError;
+        const subscription =
+          subscriptionData as unknown as BillingSubscriptionRow;
+        subscriptionId = subscription.id;
+
+        const { error: cycleError } = await supabaseAdmin.from("billing_cycles")
           .insert({
             project_id: projectId,
-            billing_account_id: billingAccountId,
-            plan_id: plan.id,
-            status,
-            trial_started_at: trialDays > 0 ? now.toISOString() : null,
-            trial_ends_at: trialEndsAt?.toISOString() ?? null,
-            current_period_start: now.toISOString(),
-            current_period_end: periodEnd.toISOString(),
-            gateway_provider: isFreeTrial ? "other" : "asaas",
-            gateway_subscription_id: paidCheckoutSession?.provider_subscription_id ?? null,
-            base_price_cents: plan.base_price_cents,
-            included_pass_installs: plan.included_pass_installs ?? 0,
-            included_notification_sends: plan.included_notification_sends ?? 0,
-            overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
-            overage_notification_sent_cents: plan.overage_notification_sent_cents ?? 0,
-            currency: "BRL",
+            subscription_id: subscriptionId,
+            cycle_type: "subscription",
+            frequency: "monthly",
+            period_start: now.toISOString(),
+            period_end: periodEnd.toISOString(),
+            status: "open",
             metadata: {
               origin: "signup_finalize",
               plan_code: plan.code,
               checkout_session_id: paidCheckoutSession?.id ?? null,
-              provider_checkout_id: paidCheckoutSession?.provider_checkout_id ?? null,
+              affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
             },
-          })
-          .select("id")
-          .single();
-
-        if (subscriptionError) throw subscriptionError;
-        const subscription = subscriptionData as unknown as BillingSubscriptionRow;
-        subscriptionId = subscription.id;
-
-        const { error: cycleError } = await supabaseAdmin.from("billing_cycles").insert({
-          project_id: projectId,
-          subscription_id: subscriptionId,
-          cycle_type: "subscription",
-          frequency: "monthly",
-          period_start: now.toISOString(),
-          period_end: periodEnd.toISOString(),
-          status: "open",
-          metadata: {
-            origin: "signup_finalize",
-            plan_code: plan.code,
-            checkout_session_id: paidCheckoutSession?.id ?? null,
-          },
-        });
+          });
 
         if (cycleError) throw cycleError;
       }
 
-      const { error: walletError } = await supabaseAdmin.from("billing_credit_wallets").upsert(
+      if (!subscriptionId) {
+        throw new SignupFinalizeError(
+          "SIGNUP_FINALIZE_INTERNAL_ERROR",
+          "Nao foi possivel identificar a assinatura criada.",
+          500,
+        );
+      }
+
+      const recurringPriceRestoreResult =
+        await restoreAsaasSubscriptionBasePrice({
+          plan,
+          paidCheckoutSession,
+        });
+      const affiliateAttribution = await createAffiliateAttribution({
+        supabaseAdmin,
+        paidCheckoutSession,
+        userId: user.id,
+        projectId,
+        subscriptionId,
+        plan,
+      });
+
+      const { error: walletError } = await supabaseAdmin.from(
+        "billing_credit_wallets",
+      ).upsert(
         {
           project_id: projectId,
           balance_credits: 0,
@@ -964,7 +1267,9 @@ Deno.serve(async (req) => {
 
       if (walletError) throw walletError;
 
-      const { error: notificationsError } = await supabaseAdmin.from("projects_notifications").upsert(
+      const { error: notificationsError } = await supabaseAdmin.from(
+        "projects_notifications",
+      ).upsert(
         {
           project_id: projectId,
           notifications_limit: plan.included_notification_sends,
@@ -977,18 +1282,21 @@ Deno.serve(async (req) => {
 
       if (notificationsError) throw notificationsError;
 
-      const { error: userUpdateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
-        app_metadata: {
-          ...user.app_metadata,
-          signup_project_id: projectId,
-          signup_plan_code: plan.code,
-        },
-        user_metadata: {
-          ...user.user_metadata,
-          establishment_name: establishmentName,
-          plan_code: plan.code,
-        },
-      });
+      const { error: userUpdateError } = await supabaseAdmin.auth.admin
+        .updateUserById(user.id, {
+          app_metadata: {
+            ...user.app_metadata,
+            signup_project_id: projectId,
+            signup_plan_code: plan.code,
+          },
+          user_metadata: {
+            ...user.user_metadata,
+            establishment_name: establishmentName,
+            plan_code: plan.code,
+            affiliate_ref: paidCheckoutSession?.affiliate_code ??
+              user.user_metadata?.affiliate_ref ?? "",
+          },
+        });
 
       if (userUpdateError) throw userUpdateError;
 
@@ -1005,8 +1313,11 @@ Deno.serve(async (req) => {
         subscription: {
           id: subscriptionId,
           status: existingSubscription?.status ?? status,
-          trial_ends_at: existingSubscription?.trial_ends_at ?? trialEndsAt?.toISOString() ?? null,
-          current_period_end: existingSubscription?.current_period_end ?? periodEnd.toISOString(),
+          trial_ends_at: existingSubscription?.trial_ends_at ??
+            trialEndsAt?.toISOString() ?? null,
+          current_period_end: existingSubscription?.current_period_end ??
+            periodEnd.toISOString(),
+          recurring_price_restored: Boolean(recurringPriceRestoreResult),
         },
         plan: {
           code: plan.code,
@@ -1019,11 +1330,27 @@ Deno.serve(async (req) => {
             provider: paidCheckoutSession.provider,
             provider_checkout_id: paidCheckoutSession.provider_checkout_id,
             paid_at: paidCheckoutSession.paid_at,
+            amount_cents: paidCheckoutSession.amount_cents,
+            affiliate_discount_cents:
+              paidCheckoutSession.affiliate_discount_cents ?? 0,
+            affiliate_original_amount_cents:
+              paidCheckoutSession.affiliate_original_amount_cents ?? null,
+          }
+          : null,
+        affiliate: affiliateAttribution
+          ? {
+            attribution_id: affiliateAttribution.id,
+            source_code: affiliateAttribution.source_code,
           }
           : null,
       };
 
-      await completeSignupFinalization(supabaseAdmin, user.id, projectId, responseBody);
+      await completeSignupFinalization(
+        supabaseAdmin,
+        user.id,
+        projectId,
+        responseBody,
+      );
       await completeExistingCustomerSignupIntent(supabaseAdmin, email, user.id);
       claimedFinalizationUserId = null;
 
@@ -1033,11 +1360,24 @@ Deno.serve(async (req) => {
           .update({
             status: "finalized",
             finalized_at: new Date().toISOString(),
+            metadata: {
+              origin: "signup_finalize",
+              checkout_session_id: paidCheckoutSession.id,
+              affiliate_attribution_id: affiliateAttribution?.id ?? null,
+              affiliate_code: paidCheckoutSession.affiliate_code ?? null,
+              affiliate_discount_cents:
+                paidCheckoutSession.affiliate_discount_cents ?? 0,
+              affiliate_original_amount_cents:
+                paidCheckoutSession.affiliate_original_amount_cents ?? null,
+            },
           })
           .eq("id", paidCheckoutSession.id);
 
         if (checkoutUpdateError) {
-          console.error("signup-finalize failed to mark checkout session finalized", checkoutUpdateError);
+          console.error(
+            "signup-finalize failed to mark checkout session finalized",
+            checkoutUpdateError,
+          );
         }
       }
 
@@ -1050,7 +1390,11 @@ Deno.serve(async (req) => {
     }
   } catch (error) {
     if (supabaseAdmin && claimedFinalizationUserId) {
-      await markSignupFinalizationFailed(supabaseAdmin, claimedFinalizationUserId, error);
+      await markSignupFinalizationFailed(
+        supabaseAdmin,
+        claimedFinalizationUserId,
+        error,
+      );
     }
 
     console.error("signup-finalize error", error);

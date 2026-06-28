@@ -5,6 +5,7 @@ import {
   getSignupStatus,
   startPaidSignupCheckout,
 } from '@/lib/signup';
+import { normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
 export function usePaidSignupRecovery({
   projectId,
@@ -18,6 +19,7 @@ export function usePaidSignupRecovery({
 
   const userMetadataPlanCode = user?.user_metadata?.plan_code || '';
   const userMetadataEstablishmentName = user?.user_metadata?.establishment_name || '';
+  const userMetadataAffiliateRef = user?.user_metadata?.affiliate_ref || '';
 
   useEffect(() => {
     if (projectId || !user?.id) {
@@ -74,11 +76,16 @@ export function usePaidSignupRecovery({
     const establishmentName = String(
       signupStatus?.establishmentName || userMetadataEstablishmentName || '',
     ).trim();
+    const affiliateRef = normalizeAffiliateRef(
+      signupStatus?.affiliateRef || userMetadataAffiliateRef || '',
+    );
 
-    return { planCode, establishmentName };
+    return { planCode, establishmentName, affiliateRef };
   }, [
     signupStatus?.establishmentName,
+    signupStatus?.affiliateRef,
     signupStatus?.planCode,
+    userMetadataAffiliateRef,
     userMetadataEstablishmentName,
     userMetadataPlanCode,
   ]);
@@ -86,7 +93,7 @@ export function usePaidSignupRecovery({
   const handleContinuePayment = useCallback(async () => {
     if (signupActionLoading) return;
 
-    const { planCode, establishmentName } = resolvePendingSignupData();
+    const { planCode, establishmentName, affiliateRef } = resolvePendingSignupData();
     if (!planCode || planCode === 'free_trial' || !establishmentName) {
       toast({
         title: 'Nao foi possivel continuar',
@@ -99,7 +106,7 @@ export function usePaidSignupRecovery({
     setSignupActionLoading(true);
 
     try {
-      const checkout = await startPaidSignupCheckout({ establishmentName, planCode });
+      const checkout = await startPaidSignupCheckout({ establishmentName, planCode, affiliateRef });
       window.location.assign(checkout.checkout_url);
     } catch (error) {
       const message = error?.message || 'Nao foi possivel iniciar o checkout.';
@@ -116,7 +123,7 @@ export function usePaidSignupRecovery({
   const handleFinalizeActivation = useCallback(async () => {
     if (signupActionLoading) return;
 
-    const { planCode, establishmentName } = resolvePendingSignupData();
+    const { planCode, establishmentName, affiliateRef } = resolvePendingSignupData();
     const checkoutSessionId = String(signupStatus?.checkoutSessionId || '').trim();
 
     if (!planCode || planCode === 'free_trial' || !establishmentName || !checkoutSessionId) {
@@ -135,6 +142,7 @@ export function usePaidSignupRecovery({
         establishmentName,
         planCode,
         checkoutSessionId,
+        affiliateRef,
         dedupeKey: `org-finalize:${planCode}:${checkoutSessionId}`,
         retryDelaysMs: PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
       });

@@ -17,9 +17,23 @@ type AffiliateSellerRow = {
   updated_at: string;
 };
 
+type AffiliateLinkRow = {
+  id: string;
+  seller_id: string;
+  code: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
 const SELLER_SELECT_FIELDS =
   "id, name, contact, pix_key, status, created_at, updated_at";
+const LINK_SELECT_FIELDS =
+  "id, seller_id, code, status, created_at, updated_at";
 const VALID_SELLER_STATUSES = new Set(["active", "inactive"]);
+const LINK_CODE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+const LINK_CODE_LENGTH = 10;
+const LINK_CODE_MAX_ATTEMPTS = 5;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -81,7 +95,23 @@ function ensureSuperadmin(caller: Caller) {
   }
 }
 
-function mapSeller(seller: AffiliateSellerRow) {
+function mapLink(link?: AffiliateLinkRow | null) {
+  if (!link) return null;
+
+  return {
+    id: link.id,
+    sellerId: link.seller_id,
+    code: link.code,
+    status: link.status,
+    createdAt: link.created_at,
+    updatedAt: link.updated_at,
+  };
+}
+
+function mapSeller(
+  seller: AffiliateSellerRow,
+  affiliateLink?: AffiliateLinkRow | null,
+) {
   return {
     id: seller.id,
     name: seller.name,
@@ -90,7 +120,23 @@ function mapSeller(seller: AffiliateSellerRow) {
     status: seller.status,
     createdAt: seller.created_at,
     updatedAt: seller.updated_at,
+    affiliateLink: mapLink(affiliateLink),
   };
+}
+
+function generateLinkCode() {
+  const bytes = new Uint8Array(LINK_CODE_LENGTH);
+  crypto.getRandomValues(bytes);
+
+  return Array.from(
+    bytes,
+    (byte) => LINK_CODE_ALPHABET[byte % LINK_CODE_ALPHABET.length],
+  ).join("");
+}
+
+function isUniqueViolation(error: any) {
+  return error?.code === "23505" ||
+    String(error?.message || "").toLowerCase().includes("duplicate key");
 }
 
 function normalizePage(value: unknown) {
@@ -190,6 +236,21 @@ async function createSeller(supabaseAdmin: any, caller: Caller, payload: any) {
   });
 }
 
+async function getLinksBySellerIds(supabaseAdmin: any, sellerIds: string[]) {
+  if (sellerIds.length === 0) return new Map<string, AffiliateLinkRow>();
+
+  const { data: links, error } = await supabaseAdmin
+    .from("affiliate_links")
+    .select(LINK_SELECT_FIELDS)
+    .in("seller_id", sellerIds);
+
+  if (error) throw error;
+
+  return new Map<string, AffiliateLinkRow>(
+    (links || []).map((link: AffiliateLinkRow) => [link.seller_id, link]),
+  );
+}
+
 async function listSellers(supabaseAdmin: any, payload: any) {
   const page = normalizePage(payload?.page);
   const pageSize = normalizePageSize(payload?.pageSize);
@@ -216,15 +277,116 @@ async function listSellers(supabaseAdmin: any, payload: any) {
 
   if (error) throw error;
 
+  const safeSellers = sellers || [];
+  const linksBySellerId = await getLinksBySellerIds(
+    supabaseAdmin,
+    safeSellers.map((seller: AffiliateSellerRow) => seller.id),
+  );
+
   return jsonResponse({
     success: true,
     data: {
-      sellers: (sellers || []).map(mapSeller),
+      sellers: safeSellers.map((seller: AffiliateSellerRow) =>
+        mapSeller(seller, linksBySellerId.get(seller.id))
+      ),
       page,
       pageSize,
       total: count ?? 0,
     },
   });
+}
+
+async function findSellerLink(supabaseAdmin: any, sellerId: string) {
+  const { data: link, error } = await supabaseAdmin
+    .from("affiliate_links")
+    .select(LINK_SELECT_FIELDS)
+    .eq("seller_id", sellerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return link as AffiliateLinkRow | null;
+}
+
+async function getOrCreateSellerLink(
+  supabaseAdmin: any,
+  caller: Caller,
+  payload: any,
+) {
+  const sellerId = validateSellerId(payload?.sellerId);
+
+  const { data: seller, error: sellerError } = await supabaseAdmin
+    .from("affiliate_sellers")
+    .select("id, status")
+    .eq("id", sellerId)
+    .maybeSingle();
+
+  if (sellerError) throw sellerError;
+
+  if (!seller) {
+    throw new HttpError(
+      404,
+      "AFFILIATE_SELLER_NOT_FOUND",
+      "Vendedor afiliado nao encontrado.",
+    );
+  }
+
+  if (seller.status !== "active") {
+    throw new HttpError(
+      409,
+      "AFFILIATE_SELLER_INACTIVE",
+      "Vendedor inativo nao pode gerar link de afiliado.",
+    );
+  }
+
+  const existingLink = await findSellerLink(supabaseAdmin, sellerId);
+  if (existingLink) {
+    return jsonResponse({
+      success: true,
+      data: { link: mapLink(existingLink) },
+    });
+  }
+
+  for (let attempt = 0; attempt < LINK_CODE_MAX_ATTEMPTS; attempt += 1) {
+    const { data: link, error } = await supabaseAdmin
+      .from("affiliate_links")
+      .insert({
+        seller_id: sellerId,
+        code: generateLinkCode(),
+        status: "active",
+        created_by: caller.user.id,
+        updated_by: caller.user.id,
+      })
+      .select(LINK_SELECT_FIELDS)
+      .single();
+
+    if (!error) {
+      return jsonResponse({
+        success: true,
+        data: { link: mapLink(link) },
+      });
+    }
+
+    if (
+      isUniqueViolation(error) &&
+      String(error?.message || "").includes("affiliate_links_seller_id_uidx")
+    ) {
+      const concurrentLink = await findSellerLink(supabaseAdmin, sellerId);
+      if (concurrentLink) {
+        return jsonResponse({
+          success: true,
+          data: { link: mapLink(concurrentLink) },
+        });
+      }
+    }
+
+    if (!isUniqueViolation(error)) throw error;
+  }
+
+  throw new HttpError(
+    409,
+    "AFFILIATE_LINK_CODE_COLLISION",
+    "Nao foi possivel gerar um codigo unico de afiliado.",
+  );
 }
 
 async function updateSeller(
@@ -306,6 +468,10 @@ Deno.serve(async (req) => {
 
     if (action === "listSellers") {
       return await listSellers(supabaseAdmin, payload);
+    }
+
+    if (action === "getOrCreateSellerLink") {
+      return await getOrCreateSellerLink(supabaseAdmin, caller, payload);
     }
 
     if (action === "updateSeller") {

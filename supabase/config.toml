@@ -450,6 +450,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/affiliate-admin/index.ts"
 
+[functions.affiliate-public]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/affiliate-public/index.ts"
+
 [functions.teste]
 enabled = true
 verify_jwt = true

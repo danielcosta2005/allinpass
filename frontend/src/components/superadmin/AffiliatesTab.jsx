@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Edit3, Loader2, RefreshCw, Search, UserPlus } from 'lucide-react';
+import { Copy, Edit3, Link as LinkIcon, Loader2, RefreshCw, Search, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,9 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import {
+  buildAffiliateLinkUrl,
   createAffiliateSeller,
+  getOrCreateAffiliateLink,
   listAffiliateSellers,
   updateAffiliateSeller,
 } from '@/lib/affiliates';
@@ -65,6 +67,8 @@ const AffiliatesTab = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingLinkSellerId, setGeneratingLinkSellerId] = useState(null);
+  const [copyingLinkSellerId, setCopyingLinkSellerId] = useState(null);
   const [formMode, setFormMode] = useState('');
   const [activeSeller, setActiveSeller] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -144,6 +148,84 @@ const AffiliatesTab = () => {
     setStatusFilter(value === 'all' ? '' : value);
   };
 
+  const updateSellerLink = (sellerId, affiliateLink) => {
+    setSellers((current) => current.map((seller) => (
+      seller.id === sellerId ? { ...seller, affiliateLink } : seller
+    )));
+  };
+
+  const handleGenerateLink = async (seller) => {
+    if (seller.status === 'inactive') {
+      toast({
+        title: 'Vendedor inativo',
+        description: 'Ative o vendedor antes de gerar um link de afiliado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGeneratingLinkSellerId(seller.id);
+    try {
+      const affiliateLink = await getOrCreateAffiliateLink({ sellerId: seller.id });
+      updateSellerLink(seller.id, affiliateLink);
+      toast({
+        title: 'Link gerado',
+        description: `Link de ${seller.name} pronto para copiar.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao gerar link',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingLinkSellerId(null);
+    }
+  };
+
+  const handleCopyLink = async (seller) => {
+    if (seller.status === 'inactive') {
+      toast({
+        title: 'Vendedor inativo',
+        description: 'Links de vendedores inativos nao devem ser usados para venda.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const code = seller.affiliateLink?.code;
+    if (!code) {
+      toast({
+        title: 'Link ausente',
+        description: 'Gere o link antes de copiar.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCopyingLinkSellerId(seller.id);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Area de transferencia indisponivel neste navegador.');
+      }
+
+      const url = buildAffiliateLinkUrl(code);
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link copiado',
+        description: url,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao copiar link',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setCopyingLinkSellerId(null);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -199,6 +281,59 @@ const AffiliatesTab = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const renderSellerLink = (seller) => {
+    if (seller.status === 'inactive') {
+      return <span className="text-gray-500">Vendedor inativo</span>;
+    }
+
+    const affiliateLink = seller.affiliateLink;
+    if (!affiliateLink?.code) {
+      const isGenerating = generatingLinkSellerId === seller.id;
+
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          onClick={() => handleGenerateLink(seller)}
+          disabled={isGenerating}
+        >
+          {isGenerating ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <LinkIcon className="h-4 w-4" />
+          )}
+          Gerar link
+        </Button>
+      );
+    }
+
+    const isCopying = copyingLinkSellerId === seller.id;
+
+    return (
+      <div className="flex min-w-64 items-center gap-2">
+        <span className="max-w-56 truncate font-mono text-xs text-gray-700">
+          {`/?ref=${affiliateLink.code}#planos`}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={`Copiar link de ${seller.name}`}
+          onClick={() => handleCopyLink(seller)}
+          disabled={isCopying}
+        >
+          {isCopying ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    );
   };
 
   return (
@@ -304,7 +439,7 @@ const AffiliatesTab = () => {
                     <td className="px-5 py-4">
                       <StatusBadge status={seller.status} />
                     </td>
-                    <td className="px-5 py-4 text-gray-500">Aguardando link</td>
+                    <td className="px-5 py-4">{renderSellerLink(seller)}</td>
                     <td className="whitespace-nowrap px-5 py-4 text-gray-700">
                       {formatDate(seller.updatedAt || seller.createdAt)}
                     </td>
