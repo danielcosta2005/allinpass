@@ -22,14 +22,14 @@ import { Button } from '@/components/ui/button';
 import { useBillingUsageDashboard } from '@/hooks/useBillingUsageDashboard';
 
 const STATUS_TONE = {
-  current: 'border-purple-200 bg-purple-50 text-purple-700',
+  current: 'border-primary/20 bg-primary/10 text-primary',
   paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   pending: 'border-amber-200 bg-amber-50 text-amber-700',
   open: 'border-amber-200 bg-amber-50 text-amber-700',
   draft: 'border-amber-200 bg-amber-50 text-amber-700',
   past_due: 'border-rose-200 bg-rose-50 text-rose-700',
   failed: 'border-rose-200 bg-rose-50 text-rose-700',
-  canceled: 'border-slate-200 bg-slate-50 text-slate-600',
+  canceled: 'border-border bg-muted text-muted-foreground',
   refunded: 'border-sky-200 bg-sky-50 text-sky-700',
 };
 
@@ -140,8 +140,8 @@ function UsageTooltip({ active, payload }) {
   if (!row) return null;
 
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-700 shadow-lg">
-      <p className="font-semibold text-slate-950">{row.name}</p>
+    <div className="rounded-md border border-border bg-popover p-3 text-xs text-popover-foreground shadow-lg">
+      <p className="font-semibold text-foreground">{row.name}</p>
       <p className="mt-1">Uso total: {formatInteger(row.total)}</p>
       <p>Franquia: {formatInteger(row.allowance)}</p>
       <p>Excedente: {formatInteger(row.overageUsage)}</p>
@@ -159,14 +159,14 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
   const row = data[0];
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4 text-purple-600" />
-            <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+            <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             {formatInteger(row?.total)} de {formatInteger(row?.allowance)} incluídos
           </p>
         </div>
@@ -195,7 +195,7 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+      <div className="mt-2 flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-sm bg-[#16a34a]" />
           Franquia consumida
@@ -211,12 +211,12 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
 
 function AmountTile({ label, value, tone = 'default' }) {
   const toneClass = tone === 'strong'
-    ? 'border-purple-200 bg-purple-50 text-purple-950'
-    : 'border-slate-200 bg-white text-slate-950';
+    ? 'border-primary/30 bg-primary/10 text-foreground'
+    : 'border-border bg-card text-foreground';
 
   return (
     <div className={`rounded-lg border p-4 ${toneClass}`}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-2 text-2xl font-bold">{formatCurrencyFromCents(value)}</p>
     </div>
   );
@@ -231,16 +231,16 @@ function HistoryItem({ cycle, isSelected, onSelect }) {
       onClick={() => onSelect(cycle.id)}
       className={`flex w-full items-center justify-between gap-4 rounded-lg border px-4 py-3 text-left transition ${
         isSelected
-          ? 'border-purple-300 bg-purple-50'
-          : 'border-slate-200 bg-white hover:border-purple-200 hover:bg-purple-50/50'
+          ? 'border-primary/40 bg-primary/10'
+          : 'border-border bg-card hover:border-primary/30 hover:bg-accent/60'
       }`}
     >
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-slate-950">{title}</p>
-        <p className="mt-1 text-xs text-slate-500">{formatPeriod(cycle)}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{formatPeriod(cycle)}</p>
       </div>
       <div className="shrink-0 text-right">
-        <p className="text-sm font-bold text-slate-950">{formatCurrencyFromCents(cycle.totalInvoiceCents)}</p>
+        <p className="text-sm font-bold text-foreground">{formatCurrencyFromCents(cycle.totalInvoiceCents)}</p>
         <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusTone(cycle.status)}`}>
           {title.replace('Fatura ', '')}
         </span>
@@ -284,10 +284,10 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
       <DialogContent className="max-h-[92vh] overflow-y-auto p-0 sm:max-w-6xl">
         <div ref={topRef} className="bg-gradient-to-b from-white to-purple-50/40 px-5 py-8 sm:px-8">
           <DialogHeader className="mx-auto max-w-3xl text-center">
-            <span className="mx-auto inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold uppercase text-purple-700">
+            <span className="mx-auto inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary">
               Faturamento
             </span>
-            <DialogTitle className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+            <DialogTitle className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               Uso e faturas
             </DialogTitle>
             <DialogDescription>
@@ -313,22 +313,22 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
             ) : null}
 
             {billingUsageLoading ? (
-              <div className="flex items-center gap-2 rounded-md border border-purple-100 bg-purple-50 p-4 text-sm text-purple-700">
+              <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/10 p-4 text-sm text-primary">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Carregando faturamento
               </div>
             ) : selectedCycle ? (
               <>
-                <section className="rounded-xl border border-purple-100 bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${getStatusTone(selectedCycle.status)}`}>
                         {selectedCycleTitle}
                       </span>
-                      <h2 className="mt-3 text-2xl font-bold text-slate-950">
+                      <h2 className="mt-3 text-2xl font-bold text-foreground">
                         {formatCurrencyFromCents(selectedCycle.totalInvoiceCents)}
                       </h2>
-                      <p className="mt-1 text-sm text-slate-500">{formatPeriod(selectedCycle)}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{formatPeriod(selectedCycle)}</p>
                     </div>
 
                     {!selectedCycle.isCurrent && currentCycle ? (
@@ -366,10 +366,10 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
                   />
                 </div>
 
-                <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-center gap-2">
                     <Receipt className="h-4 w-4 text-purple-600" />
-                    <h3 className="text-base font-semibold text-slate-950">Faturas anteriores</h3>
+                    <h3 className="text-base font-semibold text-foreground">Faturas anteriores</h3>
                   </div>
 
                   {historicalCycles.length > 0 ? (
@@ -384,14 +384,14 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
                       ))}
                     </div>
                   ) : (
-                    <div className="mt-4 rounded-md border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                    <div className="mt-4 rounded-md border border-dashed border-border bg-muted p-4 text-sm text-muted-foreground">
                       Nenhuma fatura anterior encontrada.
                     </div>
                   )}
                 </section>
               </>
             ) : (
-              <div className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+              <div className="rounded-md border border-dashed border-border bg-muted p-6 text-center text-sm text-muted-foreground">
                 Nenhum ciclo de faturamento encontrado.
               </div>
             )}

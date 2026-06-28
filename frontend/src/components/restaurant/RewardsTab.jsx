@@ -97,7 +97,7 @@ function normalizeCustomer(customer) {
 function RedemptionsTable({ redemptions, isCompact = false }) {
   if (!redemptions?.length) {
     return (
-      <div className="px-4 py-6 text-sm text-gray-500">
+      <div className="px-4 py-6 text-sm text-muted-foreground">
         Nenhum resgate encontrado.
       </div>
     );
@@ -106,7 +106,7 @@ function RedemptionsTable({ redemptions, isCompact = false }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-left text-sm">
-        <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+        <thead className="bg-muted text-xs uppercase text-muted-foreground">
           <tr>
             {!isCompact && <th className="px-4 py-3">Recompensa</th>}
             <th className="px-4 py-3">Cliente</th>
@@ -124,14 +124,14 @@ function RedemptionsTable({ redemptions, isCompact = false }) {
             return (
               <tr key={redemption.id} className="border-t">
                 {!isCompact && (
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-foreground">
                     {redemption.reward_name || "-"}
                   </td>
                 )}
-                <td className="px-4 py-3 text-gray-800">{customerName}</td>
-                <td className="px-4 py-3 text-gray-700">{customerEmail}</td>
-                <td className="px-4 py-3 text-gray-700">{formatDateTime(redemption.created_at)}</td>
-                <td className="px-4 py-3 text-center font-medium text-gray-800">
+                <td className="px-4 py-3 text-foreground">{customerName}</td>
+                <td className="px-4 py-3 text-muted-foreground">{customerEmail}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDateTime(redemption.created_at)}</td>
+                <td className="px-4 py-3 text-center font-medium text-foreground">
                   {redemption.points_before} -&gt; {redemption.points_after}
                 </td>
               </tr>
@@ -614,18 +614,18 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg"
+          className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         >
-          <h3 className="text-lg font-semibold text-gray-900">Nova recompensa</h3>
+          <h3 className="text-lg font-semibold text-foreground">Nova recompensa</h3>
           <div className="mt-4 grid gap-4 md:grid-cols-[1fr_180px]">
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Nome
               </label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Cafe gratis" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Pontos
               </label>
               <Input
@@ -655,7 +655,7 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
           if (!open) closeRedeem();
         }}
       >
-        <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-purple-100 bg-white p-5 shadow-2xl">
+        <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-border bg-card p-5 shadow-2xl">
           <DialogHeader className="pr-8">
             <DialogTitle>Resgatar recompensa</DialogTitle>
             <DialogDescription>
@@ -722,21 +722,21 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
       {activeSubTab === "rewards" ? (
         <div className="space-y-4">
           {isLoading ? (
-            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
-              <p className="mt-3 text-sm text-gray-600">Carregando recompensas...</p>
+              <p className="mt-3 text-sm text-muted-foreground">Carregando recompensas...</p>
             </div>
           ) : rewards.length === 0 ? (
-            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
-              <Gift className="mx-auto h-10 w-10 text-gray-400" />
-              <p className="mt-4 text-base font-medium text-gray-800">Voce ainda nao possui recompensas</p>
+            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+              <Gift className="mx-auto h-10 w-10 text-muted-foreground/70" />
+              <p className="mt-4 text-base font-medium text-foreground">Voce ainda nao possui recompensas</p>
               <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
                 <Plus className="h-4 w-4" />
                 Criar recompensa
               </Button>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
               <div className="flex justify-end border-b px-4 py-3">
                 <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
                   <Plus className="h-4 w-4" />
@@ -745,8 +745,8 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="border-b text-left text-gray-600">
+                <thead className="bg-muted">
+                  <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="px-4 py-3">Recompensa</th>
                     <th className="px-4 py-3">Pontos</th>
                     <th className="px-4 py-3">Status</th>
@@ -766,9 +766,9 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
                       <React.Fragment key={reward.id}>
                         <tr className="border-b last:border-b-0">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-gray-900">{reward.name}</p>
+                            <p className="font-medium text-foreground">{reward.name}</p>
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
+                          <td className="px-4 py-3 text-muted-foreground">
                             {reward.points_required} ponto(s)
                           </td>
                           <td className="px-4 py-3">
@@ -778,11 +778,11 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
                                 disabled={updatingRewardId === reward.id}
                                 onChange={() => toggleRewardStatus(reward)}
                               />
-                              <span className="text-xs font-medium text-gray-600">
+                              <span className="text-xs font-medium text-muted-foreground">
                                 {isActive ? "On" : "Off"}
                               </span>
                               {updatingRewardId === reward.id && (
-                                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                               )}
                             </div>
                           </td>
@@ -809,10 +809,10 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
                                     side="top"
                                     align="end"
                                     sideOffset={10}
-                                    className="w-56 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl"
+                                    className="w-56 rounded-xl border border-border bg-popover p-3 text-left text-popover-foreground shadow-xl"
                                   >
                                     <p className="text-sm font-semibold">Visualizar resgates</p>
-                                    <p className="mt-1 text-xs text-slate-600">
+                                    <p className="mt-1 text-xs text-muted-foreground">
                                       Veja o historico desta recompensa.
                                     </p>
                                   </TooltipContent>
@@ -832,14 +832,14 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
                         </tr>
 
                         {isExpanded ? (
-                          <tr className="border-b bg-gray-50">
+                          <tr className="border-b border-border bg-muted/50">
                             <td colSpan={4} className="px-4 py-4">
-                              <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                                 <div className="flex items-center justify-between border-b px-4 py-3">
-                                  <div className="text-sm font-semibold text-gray-900">
+                                  <div className="text-sm font-semibold text-foreground">
                                     Historico de resgates
                                   </div>
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-muted-foreground">
                                     {isLoadingRedemptions ? "Carregando..." : `${redemptions.length} resgate(s)`}
                                   </div>
                                 </div>
@@ -863,7 +863,7 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
               </div>
 
               {activeRewards.length === 0 ? (
-                <div className="border-t bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                <div className="border-t border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
                   Todas as recompensas estao inativas.
                 </div>
               ) : null}
@@ -874,11 +874,11 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
 
       {activeSubTab === "history" ? (
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Historico geral de resgates</h3>
-                <p className="mt-1 text-sm text-gray-600">
+                <h3 className="text-base font-semibold text-foreground">Historico geral de resgates</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
                   Todos os resgates contabilizados pelo scanner neste projeto.
                 </p>
               </div>

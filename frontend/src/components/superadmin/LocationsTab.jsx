@@ -312,7 +312,7 @@ const LocationsTab = ({
             {selectionMode ? 'Localizações do Passe' : 'Localizações'}
           </h2>
           {selectionMode && (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Selecione os locais deste passe. Selecionadas: {selectedIdsSet.size}
             </p>
           )}
@@ -341,7 +341,7 @@ const LocationsTab = ({
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+          className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         >
           <form onSubmit={handleSearchAddress} className="space-y-4">
             <div>
@@ -361,12 +361,12 @@ const LocationsTab = ({
                 <div className="relative group flex items-center">
                   <button
                     type="button"
-                    className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
+                    className="inline-flex items-center justify-center p-1 text-muted-foreground transition hover:text-foreground"
                     aria-label="Informacoes sobre descricao do local"
                   >
                     <Info className="h-4 w-4" />
                   </button>
-                  <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-600 shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+                  <div className="pointer-events-none absolute left-0 top-full z-30 mt-2 w-80 rounded-xl border border-border bg-popover p-3 text-left text-xs text-popover-foreground shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
                     Esse é o texto que vai aparecer no celular dos clientes que utilizam iPhone quando eles se aproximarem do seu estabelecimento.
                   </div>
                 </div>
@@ -440,19 +440,19 @@ const LocationsTab = ({
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 onClick={canSelect ? () => toggleLocationSelection(location.id, !isSelected) : undefined}
-                className={`bg-white rounded-2xl p-6 shadow-lg border border-purple-100 flex justify-between items-start ${canSelect ? 'cursor-pointer transition-colors' : ''} ${canSelect && isSelected ? 'ring-2 ring-indigo-400 bg-indigo-50' : ''}`}
+                className={`rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20 flex justify-between items-start ${canSelect ? 'cursor-pointer transition-colors hover:border-primary/30 hover:bg-accent/30' : ''} ${canSelect && isSelected ? 'ring-2 ring-indigo-400 bg-primary/10' : ''}`}
               >
                 <div className="flex items-start gap-3">
-                  <div className="bg-purple-100 p-2 rounded-lg">
-                    <MapPin className="w-5 h-5 text-purple-600" />
+                  <div className="bg-primary/10 p-2 rounded-lg">
+                    <MapPin className="w-5 h-5 text-primary" />
                   </div>
 
                   <div className="flex-1">
                     <h3 className="font-bold mb-1">{location.label}</h3>
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {shortAddress || 'Sem endereco salvo'}
                     </p>
-                    <p className="text-gray-400 text-xs mt-2">
+                    <p className="text-muted-foreground text-xs mt-2">
                       {(Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lng ?? location.long)))
                         ? `( ${location.lat}, ${location.lng ?? location.long} )`
                         : 'Coordenadas não definidas'}
@@ -485,7 +485,7 @@ const LocationsTab = ({
               </motion.div>
             );
           }) : (
-            <p className="text-gray-500 col-span-full text-center py-4">
+            <p className="text-muted-foreground col-span-full text-center py-4">
               {selectionMode
                 ? readOnly
                   ? 'Nenhuma localização cadastrada.'
@@ -543,7 +543,7 @@ const LocationsTab = ({
                 <Label>Opções retornadas</Label>
                 <div className="mt-2 space-y-2 max-h-64 overflow-auto rounded-md border p-2">
                   {searchResults.map((item) => (
-                    <label key={item.id} className="flex items-start gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                    <label key={item.id} className="flex items-start gap-3 p-2 rounded hover:bg-accent cursor-pointer">
                       <input
                         type="radio"
                         name="geocode-option-modal"
@@ -553,7 +553,7 @@ const LocationsTab = ({
                       />
                       <div>
                         <p className="text-sm font-medium">{buildShortAddress(item.addressShort || item.address)}</p>
-                        <p className="text-xs text-gray-500">{item.lat}, {item.lng}</p>
+                        <p className="text-xs text-muted-foreground">{item.lat}, {item.lng}</p>
                         {item.partialMatch && (
                           <p className="text-xs text-amber-600">Correspondência parcial, confira o ponto no mapa.</p>
                         )}
@@ -565,12 +565,12 @@ const LocationsTab = ({
 
               <div>
                 <Label>MiniMapa</Label>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Clique no mapa ou arraste o marcador para ajustar a coordenada.
                 </p>
                 <Suspense
                   fallback={(
-                    <div className="mt-2 rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500">
+                    <div className="mt-2 rounded-lg border border-border bg-muted h-64 flex items-center justify-center text-sm text-muted-foreground">
                       Carregando mapa...
                     </div>
                   )}

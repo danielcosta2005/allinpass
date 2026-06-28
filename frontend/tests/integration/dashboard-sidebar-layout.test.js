@@ -22,10 +22,14 @@ describe("dashboard sidebar layout", () => {
     expect(shellSource).toContain("aria-expanded");
     expect(shellSource).toContain("DashboardNavChildren");
     const navChildrenSource = shellSource.match(/function DashboardNavChildren\([\s\S]*?\n}\n\nfunction DashboardSidebarContent/)?.[0] || "";
-    expect(navChildrenSource).toContain("? 'text-purple-700'");
+    expect(navChildrenSource).toContain("? 'text-primary'");
     expect(navChildrenSource).not.toContain("bg-purple-50 text-purple-700 ring-1 ring-purple-100");
     expect(navChildrenSource).not.toContain("focus:ring-2 focus:ring-purple-500");
-    expect(navChildrenSource).toContain("childActive ? 'text-purple-600' : 'text-slate-400'");
+    expect(navChildrenSource).toContain("childActive ? 'text-primary' : 'text-muted-foreground'");
+    expect(shellSource).toContain("bg-background");
+    expect(shellSource).toContain("bg-card");
+    expect(shellSource).toContain("border-border");
+    expect(shellSource).toContain("text-muted-foreground");
     expect(shellSource).toContain("AnimatePresence");
     expect(shellSource).toContain("motion.div");
     expect(shellSource).toContain("initial={{ height: 0, opacity: 0, y: -4 }}");

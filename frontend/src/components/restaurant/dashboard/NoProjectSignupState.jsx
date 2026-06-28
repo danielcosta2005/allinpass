@@ -91,11 +91,11 @@ function NoProjectSignupState({
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-lg"
+        className="rounded-2xl border border-border bg-card p-6 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20"
       >
         <Loader2 className="mx-auto h-8 w-8 animate-spin text-purple-600" />
-        <p className="mt-3 font-semibold text-slate-900">Verificando sua assinatura...</p>
-        <p className="mt-1 text-sm text-slate-600">Estamos conferindo se existe pagamento pendente para sua conta.</p>
+        <p className="mt-3 font-semibold text-foreground">Verificando sua assinatura...</p>
+        <p className="mt-1 text-sm text-muted-foreground">Estamos conferindo se existe pagamento pendente para sua conta.</p>
       </motion.div>
     );
   }
@@ -114,7 +114,7 @@ function NoProjectSignupState({
           type="button"
           variant="outline"
           onClick={onRefreshStatus}
-          className="mt-5 border-red-200 bg-white text-red-700 hover:bg-red-100"
+          className="mt-5 border-red-200 bg-card text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:bg-red-500/10"
         >
           Tentar novamente
         </Button>
@@ -146,13 +146,13 @@ function NoProjectSignupState({
             </div>
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.18em]">{copy.eyebrow}</p>
-              <h2 className="mt-2 text-2xl font-bold text-slate-950">{copy.title}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">{copy.description}</p>
-              <div className="mt-4 rounded-xl border border-white/70 bg-white/70 p-3 text-sm text-slate-700">
-                <span className="font-semibold text-slate-950">Plano:</span> {planName}
+              <h2 className="mt-2 text-2xl font-bold text-foreground">{copy.title}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{copy.description}</p>
+              <div className="mt-4 rounded-xl border border-border bg-card/80 p-3 text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">Plano:</span> {planName}
                 {status?.checkoutStatus ? (
                   <span className="ml-3">
-                    <span className="font-semibold text-slate-950">Status:</span> {status.checkoutStatus}
+                    <span className="font-semibold text-foreground">Status:</span> {status.checkoutStatus}
                   </span>
                 ) : null}
               </div>

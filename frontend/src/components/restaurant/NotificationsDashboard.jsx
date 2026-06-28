@@ -31,7 +31,7 @@ export default function NotificationsDashboard({
   return (
     <div className="space-y-4">
       {isLoadingMemberRole ? (
-        <div className="rounded-xl border bg-white p-6 text-sm text-gray-600 shadow-sm">
+        <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
           Carregando permissoes...
         </div>

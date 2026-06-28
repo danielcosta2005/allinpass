@@ -366,9 +366,9 @@ const RestaurantDashboard = () => {
             <MessageCircle className="h-7 w-7" />
           </a>
 
-          <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-3 w-56 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl opacity-0 transition duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-3 w-56 rounded-xl border border-border bg-popover p-3 text-left text-popover-foreground shadow-xl opacity-0 transition duration-75 group-hover:opacity-100 group-focus-within:opacity-100">
             <p className="text-sm font-semibold">Suporte pelo WhatsApp</p>
-            <p className="mt-1 text-xs text-slate-600">Precisa de ajuda? Fale com a nossa equipe!</p>
+            <p className="mt-1 text-xs text-muted-foreground">Precisa de ajuda? Fale com a nossa equipe!</p>
           </div>
         </div>
       </DashboardShell>

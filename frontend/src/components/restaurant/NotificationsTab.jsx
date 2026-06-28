@@ -647,11 +647,11 @@ function handleConfirmEnqueue() {
       transition={{ duration: 0.35 }}
       className="space-y-6"
     >
-      <div className="bg-white p-6 rounded-lg shadow-xl border space-y-6">
+      <div className="rounded-lg border border-border bg-card p-6 text-card-foreground shadow-xl shadow-slate-950/5 dark:shadow-black/20 space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">Notificações Segmentadas</h2>
-            <p className="text-gray-600 mt-1">
+            <h2 className="text-2xl font-bold text-foreground">Notificações Segmentadas</h2>
+            <p className="text-muted-foreground mt-1">
               Selecione clientes/passes manualmente ou use filtros para segmentar. Depois escreva a mensagem e envie!
             </p>
           </div>
@@ -709,7 +709,7 @@ function handleConfirmEnqueue() {
               >
                 Sem visita
               </Button>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>≥</span>
                 <Input
                   value={inactiveDays}
@@ -730,7 +730,7 @@ function handleConfirmEnqueue() {
               >
                 Prestes a expirar
               </Button>
-              <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>≤</span>
                 <Input
                   value={expiringDays}
@@ -747,7 +747,7 @@ function handleConfirmEnqueue() {
 
         {/* Seleção */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-gray-700">
+          <div className="text-sm text-muted-foreground">
             <span className="font-semibold">{filteredRows.length}</span> resultado(s) visíveis •{" "}
             <span className="font-semibold">{selectedCount}</span> selecionado(s)
           </div>
@@ -770,10 +770,10 @@ function handleConfirmEnqueue() {
         </div>
 
         {/* Tabela */}
-        <div className="border rounded-lg overflow-hidden shadow-md">
+        <div className="overflow-hidden rounded-lg border border-border shadow-md">
           <div className="max-h-[360px] overflow-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-gray-50 border-b">
+              <thead className="sticky top-0 bg-muted border-b border-border text-muted-foreground">
                 <tr className="text-left">
                   <th className="p-3 w-[56px]">
                     <input
@@ -794,7 +794,7 @@ function handleConfirmEnqueue() {
               <tbody>
                 {(isLoadingCustomers || isLoadingVisits) ? (
                   <tr>
-                    <td className="p-6 text-center text-gray-500" colSpan={7}>
+                    <td className="p-6 text-center text-muted-foreground" colSpan={7}>
                       <div className="inline-flex items-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Carregando {isLoadingCustomers ? "passes" : "visitas"}...
@@ -803,7 +803,7 @@ function handleConfirmEnqueue() {
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td className="p-6 text-center text-gray-500" colSpan={7}>
+                    <td className="p-6 text-center text-muted-foreground" colSpan={7}>
                       Nenhum passe encontrado com os filtros atuais.
                     </td>
                   </tr>
@@ -816,7 +816,7 @@ function handleConfirmEnqueue() {
                     const lastVisitIso = lastVisitByUserPassId.get(p.id) ?? null;
 
                     return (
-                      <tr key={p.id} className="border-b last:border-b-0 hover:bg-gray-50">
+                      <tr key={p.id} className="border-b border-border last:border-b-0 hover:bg-accent/60">
                         <td className="p-3">
                           <input
                             type="checkbox"
@@ -826,7 +826,7 @@ function handleConfirmEnqueue() {
                         </td>
 
                         <td className="p-3">
-                          <div className="font-medium text-gray-900">{name}</div>
+                          <div className="font-medium text-foreground">{name}</div>
                         </td>
 
                         <td className="p-3">{email}</td>
@@ -846,7 +846,7 @@ function handleConfirmEnqueue() {
         {/* Mensagem + envio */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-8 space-y-2">
-            <label className="text-sm font-medium text-gray-800">Mensagem</label>
+            <label className="text-sm font-medium text-foreground">Mensagem</label>
             <Textarea
               placeholder="Escreva sua mensagem aqui..."
               value={message}
@@ -854,30 +854,30 @@ function handleConfirmEnqueue() {
               className="min-h-[120px] text-base"
               maxLength={maxMessageLen}
             />
-            <div className="text-right text-xs text-gray-500">
+            <div className="text-right text-xs text-muted-foreground">
               {message.length} / {maxMessageLen}
             </div>
           </div>
 
           <div className="lg:col-span-4 space-y-3">
-            <div className="p-4 rounded-lg border bg-gray-50 shadow-md">
-              <div className="text-sm font-semibold text-gray-800 mb-1">Resumo do envio</div>
-              <div className="text-sm text-gray-700">
+            <div className="p-4 rounded-lg border border-border bg-muted shadow-md">
+              <div className="text-sm font-semibold text-foreground mb-1">Resumo do envio</div>
+              <div className="text-sm text-muted-foreground">
                 Selecionados: <span className="font-semibold">{selectedCount}</span>
               </div>
-              <div className="text-xs text-gray-500 mt-2">
+              <div className="text-xs text-muted-foreground mt-2">
                 <b>Dica:</b> use os filtros para auto-selecionar e depois revise a lista.
               </div>
             </div>
 
             {/* ✅ Agendamento agora perto do botão */}
-            <div className="p-4 rounded-lg border bg-white shadow-md space-y-3">
+            <div className="p-4 rounded-lg border border-border bg-card shadow-md space-y-3">
               <div className="flex items-center justify-between">
-                <div className="inline-flex items-center gap-2 text-sm font-semibold text-gray-800">
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                   <Clock className="w-4 h-4" />
                   Agendamento
                 </div>
-                <span className="text-[11px] text-gray-500">{schedulingStatusLabel}</span>
+                <span className="text-[11px] text-muted-foreground">{schedulingStatusLabel}</span>
               </div>
 
               <div className="flex gap-2">
@@ -908,14 +908,14 @@ function handleConfirmEnqueue() {
               {sendMode === "schedule" && (
                 <div className="space-y-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-gray-600">Frequência do envio</label>
-                    <div className="grid grid-cols-2 gap-2 rounded-lg border bg-gray-50 p-1">
+                    <label className="text-xs text-muted-foreground">Frequência do envio</label>
+                    <div className="grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted p-1">
                       <button
                         type="button"
                         className={`h-11 rounded-md px-3 text-sm font-medium transition ${
                           !isRecurringWeekly
-                            ? "bg-white text-gray-900 shadow-sm"
-                            : "text-gray-600 hover:text-gray-900"
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
                         }`}
                         onClick={() => setIsRecurringWeekly(false)}
                       >
@@ -925,8 +925,8 @@ function handleConfirmEnqueue() {
                         type="button"
                         className={`inline-flex h-11 items-center justify-center gap-1 rounded-md px-3 text-sm font-medium transition ${
                           isRecurringWeekly
-                            ? "bg-white text-indigo-700 shadow-sm"
-                            : "text-gray-600 hover:text-gray-900"
+                            ? "bg-background text-primary shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
                         }`}
                         onClick={() => {
                           setIsRecurringWeekly(true);
@@ -943,7 +943,7 @@ function handleConfirmEnqueue() {
 
                   {!isRecurringWeekly ? (
                     <div className="space-y-2">
-                      <label className="text-xs text-gray-600">Data e hora do envio</label>
+                      <label className="text-xs text-muted-foreground">Data e hora do envio</label>
                       <Input
                         type="datetime-local"
                         value={scheduledLocal}
@@ -951,9 +951,9 @@ function handleConfirmEnqueue() {
                       />
                     </div>
                   ) : (
-                    <div className="space-y-3 rounded-lg border bg-indigo-50/40 p-3">
+                    <div className="space-y-3 rounded-lg border border-primary/20 bg-primary/10 p-3">
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-gray-700">Dias da semana</label>
+                        <label className="text-xs font-medium text-muted-foreground">Dias da semana</label>
                         <div className="flex flex-nowrap items-center gap-1.5">
                           {WEEKDAY_OPTIONS.map((day) => {
                             const isActive = weeklyDays.includes(day.iso);
@@ -966,7 +966,7 @@ function handleConfirmEnqueue() {
                                 className={`h-8 w-8 shrink-0 rounded-full border text-xs font-semibold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 sm:h-9 sm:w-9 sm:text-sm ${
                                   isActive
                                     ? "border-indigo-600 bg-indigo-600 text-white shadow-sm"
-                                    : "border-gray-300 bg-white text-gray-700 hover:border-indigo-300 hover:text-indigo-700"
+                                    : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary"
                                 }`}
                                 onClick={() => toggleWeeklyDay(day.iso)}
                               >
@@ -978,7 +978,7 @@ function handleConfirmEnqueue() {
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-xs font-medium text-gray-700">Hora dos dias selecionados</label>
+                        <label className="text-xs font-medium text-muted-foreground">Hora dos dias selecionados</label>
                         <Input
                           type="time"
                           step={300}
@@ -991,7 +991,7 @@ function handleConfirmEnqueue() {
                         className={`rounded-md border px-3 py-2 text-xs ${
                           isRecurringSelectionInvalid
                             ? "border-red-200 bg-red-50 text-red-700"
-                            : "border-indigo-200 bg-white text-indigo-700"
+                            : "border-primary/20 bg-card text-primary"
                         }`}
                       >
                         {weeklySummaryLabel}
@@ -999,9 +999,9 @@ function handleConfirmEnqueue() {
                     </div>
                   )}
 
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     Prévia:{" "}
-                    <span className="text-gray-800 font-medium">
+                    <span className="text-foreground font-medium">
                       {isRecurringWeekly
                         ? `${weeklySummaryLabel}${recurrenceTimeOfDay ? ` (${RECURRENCE_TIMEZONE})` : ""}`
                         : scheduledLocal
@@ -1069,24 +1069,24 @@ function handleConfirmEnqueue() {
                 </DialogHeader>
 
                 <div className="my-4 space-y-3">
-                  <div className="p-4 bg-gray-100 rounded-md border text-gray-800">
-                    <div className="text-xs text-gray-500 mb-2">Mensagem</div>
+                  <div className="p-4 bg-muted rounded-md border border-border text-foreground">
+                    <div className="text-xs text-muted-foreground mb-2">Mensagem</div>
                     <p className="whitespace-pre-wrap">{message}</p>
                   </div>
 
                   {sendMode === "schedule" && (
-                    <div className="p-4 bg-white rounded-md border">
+                    <div className="p-4 bg-card rounded-md border border-border">
                       {!isRecurringWeekly ? (
                         <>
-                          <div className="text-xs text-gray-500 mb-1">Agendado para</div>
-                          <div className="text-sm font-semibold text-gray-800">
+                          <div className="text-xs text-muted-foreground mb-1">Agendado para</div>
+                          <div className="text-sm font-semibold text-foreground">
                             {scheduledLocal ? fmtDateTime(new Date(scheduledLocal)) : "-"}
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="text-xs text-gray-500 mb-1">Recorrência semanal</div>
-                          <div className="text-sm font-semibold text-gray-800">
+                          <div className="text-xs text-muted-foreground mb-1">Recorrência semanal</div>
+                          <div className="text-sm font-semibold text-foreground">
                             {weeklySummaryLabel}
                           </div>
                         </>
@@ -1100,23 +1100,23 @@ function handleConfirmEnqueue() {
                   )}
 
                   <div className="p-4 bg-green-50 rounded-md border border-green-200">
-                    <div className="text-xs text-gray-500 mb-2">Amostra de selecionados</div>
-                    <ul className="text-sm text-gray-800 list-disc pl-5 space-y-1">
+                    <div className="text-xs text-muted-foreground mb-2">Amostra de selecionados</div>
+                    <ul className="text-sm text-foreground list-disc pl-5 space-y-1">
                       {previewSelected.map((p) => {
                         const meta = p?.metadata ?? null;
                         return (
                           <li key={p.id}>
                             {getDisplayName(meta)}{" "}
-                            <span className="text-gray-500">
+                            <span className="text-muted-foreground">
                               ({getEmail(meta) || "sem email"}) • pass: {p?.pass_type || "-"}
                             </span>
                           </li>
                         );
                       })}
                       {allowedCount > 5 && (
-                        <li className="text-gray-500">... e mais {allowedCount - 5}</li>
+                        <li className="text-muted-foreground">... e mais {allowedCount - 5}</li>
                       )}
-                      {allowedCount === 0 && <li className="text-gray-500">Nenhum passe será enfileirado.</li>}
+                      {allowedCount === 0 && <li className="text-muted-foreground">Nenhum passe será enfileirado.</li>}
                     </ul>
                   </div>
 

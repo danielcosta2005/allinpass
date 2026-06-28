@@ -25,22 +25,22 @@ function DashboardNavItem({
       className={cn(
         'flex h-11 w-full items-center gap-3 overflow-hidden rounded-lg px-3 text-left text-sm font-medium transition',
         collapsed && 'justify-center px-2',
-        'focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-white',
+        'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
         active
-          ? 'bg-purple-50 text-purple-700 shadow-sm ring-1 ring-purple-100'
-          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950',
-        disabled && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-slate-600'
+          ? 'bg-primary/10 text-primary shadow-sm ring-1 ring-primary/15'
+          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+        disabled && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground'
       )}
     >
-      {Icon ? <Icon className={cn('h-5 w-5 shrink-0', active ? 'text-purple-600' : 'text-slate-400')} /> : null}
+      {Icon ? <Icon className={cn('h-5 w-5 shrink-0', active ? 'text-primary' : 'text-muted-foreground')} /> : null}
       <span className={cn('dashboard-shell-label min-w-0 flex-1 truncate', collapsed && 'sr-only')}>
         {label}
       </span>
       {hasChildren && !collapsed ? (
         <ChevronDown
           className={cn(
-            'h-4 w-4 shrink-0 text-slate-400 transition-transform',
-            expanded && 'rotate-180 text-purple-500'
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            expanded && 'rotate-180 text-primary'
           )}
         />
       ) : null}
@@ -60,7 +60,7 @@ function DashboardNavChildren({
   if (collapsed || !items?.length) return null;
 
   return (
-    <div className="dashboard-nav-children ml-5 space-y-1 border-l border-slate-200 pl-3">
+    <div className="dashboard-nav-children ml-5 space-y-1 border-l border-border pl-3">
       {items.map((child) => {
         const childActive = activeItem === parentValue && activeSubItem === child.value;
         const ChildIcon = child.icon;
@@ -75,15 +75,15 @@ function DashboardNavChildren({
             title={child.label}
             className={cn(
               'flex h-9 w-full items-center gap-2 overflow-hidden rounded-md px-3 text-left text-sm font-medium transition',
-              'focus:outline-none focus-visible:bg-slate-100',
+              'focus:outline-none focus-visible:bg-accent',
               childActive
-                ? 'text-purple-700'
-                : 'text-slate-500 hover:bg-slate-100 hover:text-slate-950',
-              childDisabled && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-slate-500'
+                ? 'text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground',
+              childDisabled && 'cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground'
             )}
           >
             {ChildIcon ? (
-              <ChildIcon className={cn('h-4 w-4 shrink-0', childActive ? 'text-purple-600' : 'text-slate-400')} />
+              <ChildIcon className={cn('h-4 w-4 shrink-0', childActive ? 'text-primary' : 'text-muted-foreground')} />
             ) : null}
             <span className="min-w-0 flex-1 truncate">{child.label}</span>
           </button>
@@ -143,8 +143,8 @@ function DashboardSidebarContent({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className={cn('border-b border-slate-200 py-4', sidebarCollapsed ? 'px-2' : 'px-5')}>
+    <div className="flex h-full min-h-0 flex-col bg-card text-card-foreground">
+      <div className={cn('border-b border-border py-4', sidebarCollapsed ? 'px-2' : 'px-5')}>
         <div className={cn('flex min-w-0 items-center gap-3', sidebarCollapsed && 'justify-center')}>
           {sidebarCollapsed ? (
             <button
@@ -169,8 +169,8 @@ function DashboardSidebarContent({
                 <Wallet className="h-5 w-5" />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-bold text-slate-950">{brandLabel}</p>
-                {brandMeta ? <p className="truncate text-xs font-medium text-slate-500">{brandMeta}</p> : null}
+                <p className="truncate text-base font-bold text-card-foreground">{brandLabel}</p>
+                {brandMeta ? <p className="truncate text-xs font-medium text-muted-foreground">{brandMeta}</p> : null}
               </div>
               {onCollapseSidebar ? (
                 <button
@@ -178,7 +178,7 @@ function DashboardSidebarContent({
                   aria-label="Fechar barra lateral"
                   title="Fechar barra lateral"
                   onClick={onCollapseSidebar}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <PanelLeftClose className="h-5 w-5" />
                 </button>
@@ -197,7 +197,7 @@ function DashboardSidebarContent({
             return (
               <div key={group.label || visibleItems.map((item) => item.value).join('-')} className="space-y-2">
                 {group.label && !sidebarCollapsed ? (
-                  <p className="px-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  <p className="px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {group.label}
                   </p>
                 ) : null}
@@ -252,26 +252,26 @@ function DashboardSidebarContent({
       </div>
 
       {statusNotice && !sidebarCollapsed ? (
-        <div className="border-t border-rose-100 bg-rose-50 px-5 py-3 text-xs leading-relaxed text-rose-800">
+        <div className="border-t border-rose-500/20 bg-rose-500/10 px-5 py-3 text-xs leading-relaxed text-rose-700 dark:text-rose-200">
           <p>
             <span className="font-semibold">Assinatura suspensa.</span> {statusNotice}
           </p>
         </div>
       ) : null}
 
-      <div id="dashboard-shell-account" className={cn('dashboard-shell-account border-t border-slate-200 py-4', sidebarCollapsed ? 'px-2' : 'px-4')}>
-        <div className={cn('flex min-w-0 items-center gap-3 rounded-lg bg-slate-50 py-3', sidebarCollapsed ? 'justify-center px-2' : 'px-3')}>
+      <div id="dashboard-shell-account" className={cn('dashboard-shell-account border-t border-border py-4', sidebarCollapsed ? 'px-2' : 'px-4')}>
+        <div className={cn('flex min-w-0 items-center gap-3 rounded-lg bg-muted py-3', sidebarCollapsed ? 'justify-center px-2' : 'px-3')}>
           <div className="dashboard-shell-account-avatar shrink-0">
             <AccountMenu {...accountMenuProps} menuPlacement="top-left" />
           </div>
           {!sidebarCollapsed ? (
             <div className="dashboard-shell-account-copy min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-950">
-              {accountMenuProps?.profileLabel || accountMenuProps?.userEmail || 'Conta'}
-            </p>
-            {accountMenuProps?.profileMeta ? (
-              <p className="truncate text-xs font-medium text-slate-500">{accountMenuProps.profileMeta}</p>
-            ) : null}
+              <p className="truncate text-sm font-semibold text-foreground">
+                {accountMenuProps?.profileLabel || accountMenuProps?.userEmail || 'Conta'}
+              </p>
+              {accountMenuProps?.profileMeta ? (
+                <p className="truncate text-xs font-medium text-muted-foreground">{accountMenuProps.profileMeta}</p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -298,10 +298,10 @@ function DashboardShell({
   const hasContentHeader = Boolean(contentHeader);
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
+    <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
       <aside
         className={cn(
-          'hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:flex-col lg:border-r lg:border-slate-200 lg:bg-white lg:shadow-sm lg:transition-all lg:duration-200',
+          'hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-50 lg:flex lg:flex-col lg:border-r lg:border-border lg:bg-card lg:shadow-sm lg:transition-all lg:duration-200',
           sidebarCollapsed ? 'lg:w-16' : 'lg:w-72'
         )}
       >
@@ -329,13 +329,13 @@ function DashboardShell({
             className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
             onClick={() => setMobileNavOpen(false)}
           />
-          <div className="relative flex h-full w-[min(22rem,88vw)] flex-col border-r border-slate-200 bg-white shadow-2xl">
+          <div className="relative flex h-full w-[min(22rem,88vw)] flex-col border-r border-border bg-card shadow-2xl">
             <div className="absolute right-3 top-3 z-10">
               <button
                 type="button"
                 aria-label="Fechar navegacao"
                 onClick={() => setMobileNavOpen(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -361,7 +361,7 @@ function DashboardShell({
         <header
           className={cn(
             hasContentHeader ? 'sticky top-0 z-30' : 'sticky top-0 z-30 lg:hidden',
-            'border-b border-slate-200 bg-white/90 backdrop-blur'
+            'border-b border-border bg-card/90 backdrop-blur'
           )}
         >
           <div className="flex min-h-16 items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -369,7 +369,7 @@ function DashboardShell({
               type="button"
               aria-label="Abrir navegacao"
               onClick={() => setMobileNavOpen(true)}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-purple-500 lg:hidden"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-input bg-background text-muted-foreground shadow-sm transition hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring lg:hidden"
             >
               <Menu className="h-5 w-5" />
             </button>

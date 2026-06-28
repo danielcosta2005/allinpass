@@ -188,18 +188,18 @@ const SuperadminDashboard = () => {
   const contentHeader = (
     <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {isProjectTabActive && selectedProject ? 'Projeto selecionado' : 'Painel Administrativo'}
         </p>
-        <h1 className="truncate text-xl font-bold leading-tight text-slate-950 sm:text-2xl">
+        <h1 className="truncate text-xl font-bold leading-tight text-foreground sm:text-2xl">
           {isProjectTabActive && selectedProject
             ? selectedProject.name || 'Projeto'
             : activeTabConfig?.label || 'Painel Administrativo'}
         </h1>
       </div>
       <div className="hidden shrink-0 text-right md:block">
-        <p className="text-sm font-semibold text-slate-700">{activeTabConfig?.label || 'Dashboard'}</p>
-        <p className="text-xs font-medium text-slate-500">{isSuperadmin ? 'Superadmin' : 'Admin'}</p>
+        <p className="text-sm font-semibold text-foreground">{activeTabConfig?.label || 'Dashboard'}</p>
+        <p className="text-xs font-medium text-muted-foreground">{isSuperadmin ? 'Superadmin' : 'Admin'}</p>
       </div>
     </div>
   );

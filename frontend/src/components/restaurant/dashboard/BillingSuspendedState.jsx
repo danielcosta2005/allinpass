@@ -14,7 +14,7 @@ function BillingSuspendedState({
         aria-labelledby="billing-suspended-title"
         aria-modal="true"
         role="dialog"
-        className="relative flex w-full max-w-2xl flex-col items-center rounded-xl border border-rose-200 bg-white px-6 py-10 text-center shadow-2xl shadow-slate-900/20"
+        className="relative flex w-full max-w-2xl flex-col items-center rounded-xl border border-rose-500/30 bg-card px-6 py-10 text-center shadow-2xl shadow-slate-900/20"
       >
         <button
           type="button"
@@ -31,10 +31,10 @@ function BillingSuspendedState({
         </div>
 
         <p className="mt-5 text-xs font-bold uppercase tracking-wide text-rose-700">Assinatura suspensa</p>
-        <h2 id="billing-suspended-title" className="mt-2 text-3xl font-bold text-slate-950">
+        <h2 id="billing-suspended-title" className="mt-2 text-3xl font-bold text-foreground">
           Regularize o pagamento para continuar
         </h2>
-        <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
+        <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
           A cobrança pendente passou do período de regularização. Os dados do projeto foram preservados, mas as
           ações operacionais ficam bloqueadas até a confirmação do pagamento.
         </p>
@@ -46,7 +46,7 @@ function BillingSuspendedState({
           </div>
         ) : null}
 
-        <div className="mt-7 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <div className="mt-7 rounded-md border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
           Trocar de plano não regulariza a pendência. Pague a cobrança em aberto ou fale com o suporte.
         </div>
 

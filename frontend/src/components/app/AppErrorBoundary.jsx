@@ -22,12 +22,12 @@ class AppErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-6">
-          <div className="w-full max-w-md rounded-2xl border bg-white p-6 shadow text-center space-y-4">
-            <h1 className="text-xl font-semibold text-gray-900">
+        <div className="min-h-screen flex items-center justify-center bg-background p-6">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow text-center space-y-4">
+            <h1 className="text-xl font-semibold text-foreground">
               Ocorreu um erro inesperado
             </h1>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               Atualize a página para tentar novamente.
             </p>
             <Button onClick={this.handleReload} className="w-full">

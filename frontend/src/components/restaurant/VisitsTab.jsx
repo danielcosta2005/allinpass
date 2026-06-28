@@ -38,13 +38,13 @@ const VisitsTab = ({ projectId }) => {
     >
       <h2 className="text-2xl font-bold">Histórico de Visitas</h2>
 
-      <div className="bg-white rounded-2xl p-6 shadow-xl border border-purple-100">
+      <div className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-xl shadow-slate-950/5 dark:shadow-black/20">
         {loading ? (
            <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : visits.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-6 py-3">Data e Hora</th>
                   <th scope="col" className="px-6 py-3">Email do Cliente</th>
@@ -53,7 +53,7 @@ const VisitsTab = ({ projectId }) => {
               </thead>
               <tbody>
                 {visits.map(visit => (
-                  <tr key={visit.id} className="bg-white border-b">
+                  <tr key={visit.id} className="border-b border-border bg-card">
                     <td className="px-6 py-4">
                       {new Date(visit.visited_at).toLocaleString('pt-BR', {
                         timeZone: 'America/Sao_Paulo',
@@ -69,8 +69,8 @@ const VisitsTab = ({ projectId }) => {
             </table>
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
-            <History className="mx-auto h-12 w-12 text-gray-400" />
+          <div className="text-center py-8 text-muted-foreground">
+            <History className="mx-auto h-12 w-12 text-muted-foreground/70" />
             <p className="mt-2">Nenhuma visita registrada neste projeto ainda.</p>
           </div>
         )}

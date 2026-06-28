@@ -19,7 +19,7 @@ import React, { useState, useEffect, useCallback } from 'react';
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="bg-white rounded-2xl shadow-lg border border-purple-100 overflow-hidden"
+          className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         >
           <div className="p-6">
             <div className="flex justify-between items-start">
@@ -29,11 +29,11 @@ import React, { useState, useEffect, useCallback } from 'react';
                   if (canManage) onSelect(project);
                 }}
               >
-                {project.logo_url ? <img src={project.logo_url} alt={project.name} className="h-12 w-auto mb-4 rounded-md object-contain" /> : <div className="h-12 w-12 bg-gray-100 rounded-md mb-4 flex items-center justify-center text-gray-400">Logo</div>}
+                {project.logo_url ? <img src={project.logo_url} alt={project.name} className="h-12 w-auto mb-4 rounded-md object-contain" /> : <div className="h-12 w-12 bg-muted rounded-md mb-4 flex items-center justify-center text-muted-foreground">Logo</div>}
                 <h3 className="text-lg font-bold mb-2">{project.name || '(Sem nome)'}</h3>
-                <p className="text-sm text-gray-600 h-10 overflow-hidden">{project.description || 'Sem descrição.'}</p>
+                <p className="text-sm text-muted-foreground h-10 overflow-hidden">{project.description || 'Sem descrição.'}</p>
                 {!canManage && (
-                  <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
+                  <div className="mt-3 inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
                     <Eye className="h-3.5 w-3.5" />
                     Somente visualização
                   </div>
@@ -53,12 +53,12 @@ import React, { useState, useEffect, useCallback } from 'react';
               </div>
             </div>
           </div>
-          <div className="bg-gray-50 p-4 flex items-center justify-between">
-            <a href={qrUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-gray-500 truncate hover:text-purple-600 hover:underline">
+          <div className="bg-muted p-4 flex items-center justify-between">
+            <a href={qrUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-muted-foreground truncate hover:text-primary hover:underline">
               {qrUrl}
             </a>
             <a href={qrUrl} target="_blank" rel="noopener noreferrer">
-              <QrCode className="h-5 w-5 text-purple-600 hover:text-purple-800" />
+              <QrCode className="h-5 w-5 text-primary hover:text-primary/80" />
             </a>
           </div>
         </motion.div>

@@ -132,7 +132,7 @@ export default function QRTab({ projectId }) {
   // Estados de carregamento/erro
   if (!projectId) {
     return (
-      <div className="p-6 bg-white rounded-lg shadow-md">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-md">
         Nenhum projeto associado.
       </div>
     );
@@ -140,7 +140,7 @@ export default function QRTab({ projectId }) {
 
   if (loadingProject) {
     return (
-      <div className="p-6 bg-white rounded-lg shadow-md">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-md">
         Carregando projeto...
       </div>
     );
@@ -148,7 +148,7 @@ export default function QRTab({ projectId }) {
 
   if (!project) {
     return (
-      <div className="p-6 bg-white rounded-lg shadow-md">
+      <div className="rounded-lg border border-border bg-card p-6 shadow-md">
         Não foi possível carregar o projeto. (Verifique vínculo/RLS)
       </div>
     );
@@ -159,12 +159,12 @@ export default function QRTab({ projectId }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
-      className="p-6 bg-white rounded-lg shadow-md"
+      className="rounded-lg border border-border bg-card p-6 text-card-foreground shadow-md"
     >
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">QR Code e Link de Resgate</h2>
+      <h2 className="text-2xl font-bold mb-6 text-foreground">QR Code e Link de Resgate</h2>
 
       <div className="grid md:grid-cols-2 gap-8 items-center">
-        <div className="flex flex-col items-center justify-center p-6 border rounded-lg bg-gray-50">
+        <div className="theme-preserve-light flex flex-col items-center justify-center p-6 border rounded-lg bg-white text-slate-950">
           {claimUrl ? (
             <QRCode id="qr-code-canvas" value={claimUrl} size={256} level="H" />
           ) : (
@@ -180,7 +180,7 @@ export default function QRTab({ projectId }) {
           <div>
             <Label htmlFor="claimUrl">Link de Resgate do Cliente</Label>
             <div className="flex items-center gap-2 mt-2">
-              <Input id="claimUrl" type="text" value={claimUrl} readOnly className="bg-gray-100" />
+              <Input id="claimUrl" type="text" value={claimUrl} readOnly className="bg-muted" />
               <Button onClick={copyToClipboard} variant="outline" size="icon" disabled={!claimUrl}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"
                   viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -191,13 +191,13 @@ export default function QRTab({ projectId }) {
                 </svg>
               </Button>
             </div>
-            <p className="text-sm text-gray-500 mt-2">
+            <p className="text-sm text-muted-foreground mt-2">
               Compartilhe este link com seus clientes para que eles possam resgatar o passe de fidelidade.
             </p>
           </div>
 
-          <form onSubmit={handleSave} className="space-y-4 pt-4 border-t">
-            <div className="text-lg font-semibold text-gray-700">Configurações Avançadas</div>
+          <form onSubmit={handleSave} className="space-y-4 pt-4 border-t border-border">
+            <div className="text-lg font-semibold text-foreground">Configurações Avançadas</div>
 
             <div>
               <Label htmlFor="claimUrlTemplate">Template do Link de Resgate</Label>
@@ -207,7 +207,7 @@ export default function QRTab({ projectId }) {
                 onChange={(e) => setClaimUrlTemplate(e.target.value)}
                 placeholder="Ex: https://seusite.com/resgate/{projectId}"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Use {'{projectId}'} e {'{googleSub}'}. Deixe em branco para usar o padrão.
               </p>
             </div>
@@ -220,7 +220,7 @@ export default function QRTab({ projectId }) {
                 onChange={(e) => setQrPayloadTemplate(e.target.value)}
                 placeholder="Ex: https://seusistema.com/scan?p={projectId}&c={googleSub}"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Template para leitura em scanners. Use {'{projectId}'} e {'{googleSub}'}.
               </p>
             </div>

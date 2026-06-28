@@ -31,38 +31,54 @@
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 262.1 83.3% 57.8%;
+
+    --chart-1: 262.1 83.3% 57.8%;
+    --chart-2: 221.2 83.2% 53.3%;
+    --chart-3: 173.4 80.4% 40%;
+    --chart-4: 37.7 92.1% 50.2%;
+    --chart-5: 346.8 77.2% 49.8%;
  
     --radius: 0.75rem;
+
+    color-scheme: light;
   }
  
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 226 43% 7%;
+    --foreground: 220 28% 96%;
  
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
+    --card: 226 34% 11%;
+    --card-foreground: 220 28% 96%;
  
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 226 36% 12%;
+    --popover-foreground: 220 28% 96%;
  
-    --primary: 263.4 95.2% 66.1%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 263 88% 69%;
+    --primary-foreground: 226 43% 7%;
  
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 229 30% 17%;
+    --secondary-foreground: 220 28% 96%;
  
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 226 26% 16%;
+    --muted-foreground: 222 15% 72%;
  
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 263 62% 21%;
+    --accent-foreground: 262 92% 88%;
  
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 352 72% 58%;
+    --destructive-foreground: 220 28% 96%;
  
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 263.4 95.2% 66.1%;
+    --border: 227 23% 24%;
+    --input: 227 23% 24%;
+    --ring: 263 88% 69%;
+
+    --chart-1: 263 88% 69%;
+    --chart-2: 217 91% 69%;
+    --chart-3: 173 76% 51%;
+    --chart-4: 38 92% 58%;
+    --chart-5: 346 87% 68%;
+
+    color-scheme: dark;
   }
 }
  
@@ -77,5 +93,22 @@
   body {
     @apply bg-background text-foreground;
     overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .dark .recharts-cartesian-grid line {
+    stroke: hsl(var(--border));
+  }
+
+  .dark .recharts-text,
+  .dark .recharts-legend-item-text {
+    fill: hsl(var(--muted-foreground));
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  .dark .recharts-tooltip-cursor {
+    fill: hsl(var(--muted));
+    opacity: 0.35;
   }
 }
