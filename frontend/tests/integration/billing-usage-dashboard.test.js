@@ -41,6 +41,12 @@ describe("billing usage dashboard", () => {
     expect(dialogSource).toContain("Excedente");
     expect(dialogSource).toContain("Total da fatura");
     expect(dialogSource).toContain("Ver fatura atual");
+    expect(dialogSource).toContain("from-background");
+    expect(dialogSource).toContain("dark:from-card");
+    expect(dialogSource).toContain("dark:to-background");
+    expect(dialogSource).toContain("dark:bg-amber-500/10");
+    expect(dialogSource).toContain("dark:bg-rose-500/10");
+    expect(dialogSource).not.toContain("from-white");
     expect(dialogSource).toContain("ResponsiveContainer");
     expect(dialogSource).toContain("BarChart");
     expect(dialogSource).toContain("stackId=\"usage\"");

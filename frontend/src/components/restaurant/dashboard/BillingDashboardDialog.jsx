@@ -23,14 +23,14 @@ import { useBillingUsageDashboard } from '@/hooks/useBillingUsageDashboard';
 
 const STATUS_TONE = {
   current: 'border-primary/20 bg-primary/10 text-primary',
-  paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  pending: 'border-amber-200 bg-amber-50 text-amber-700',
-  open: 'border-amber-200 bg-amber-50 text-amber-700',
-  draft: 'border-amber-200 bg-amber-50 text-amber-700',
-  past_due: 'border-rose-200 bg-rose-50 text-rose-700',
-  failed: 'border-rose-200 bg-rose-50 text-rose-700',
+  paid: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300',
+  pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300',
+  open: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300',
+  draft: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300',
+  past_due: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300',
+  failed: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300',
   canceled: 'border-border bg-muted text-muted-foreground',
-  refunded: 'border-sky-200 bg-sky-50 text-sky-700',
+  refunded: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-300',
 };
 
 const INVOICE_STATUS_LABELS = {
@@ -163,7 +163,7 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 text-purple-600" />
+            <Icon className="h-4 w-4 text-purple-600 dark:text-primary" />
             <h3 className="text-sm font-semibold text-foreground">{title}</h3>
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -171,7 +171,7 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
           </p>
         </div>
         {row?.overageUsage > 0 ? (
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300">
             +{formatCurrencyFromCents(row.overageCents)} de excedente
           </span>
         ) : null}
@@ -281,8 +281,8 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto p-0 sm:max-w-6xl">
-        <div ref={topRef} className="bg-gradient-to-b from-white to-purple-50/40 px-5 py-8 sm:px-8">
+      <DialogContent className="max-h-[92vh] overflow-y-auto bg-card p-0 sm:max-w-6xl">
+        <div ref={topRef} className="bg-gradient-to-b from-background to-primary/5 px-5 py-8 dark:from-card dark:to-background sm:px-8">
           <DialogHeader className="mx-auto max-w-3xl text-center">
             <span className="mx-auto inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary">
               Faturamento
@@ -297,13 +297,13 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
 
           <div className="mt-8 space-y-6">
             {billingUsageError ? (
-              <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              <div className="flex gap-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-400/30 dark:bg-rose-500/10 dark:text-rose-300">
                 <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
                 <div className="min-w-0">
                   <p>{billingUsageError}</p>
                   <button
                     type="button"
-                    className="mt-2 inline-flex text-xs font-semibold text-rose-800 underline"
+                    className="mt-2 inline-flex text-xs font-semibold text-rose-800 underline dark:text-rose-200"
                     onClick={refreshBillingUsageDashboard}
                   >
                     Tentar novamente
@@ -368,7 +368,7 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
 
                 <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex items-center gap-2">
-                    <Receipt className="h-4 w-4 text-purple-600" />
+                    <Receipt className="h-4 w-4 text-purple-600 dark:text-primary" />
                     <h3 className="text-base font-semibold text-foreground">Faturas anteriores</h3>
                   </div>
 
