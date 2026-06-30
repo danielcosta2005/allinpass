@@ -126,11 +126,11 @@ function getClientInvestigationStatus(client) {
   const subscriptionStatus = String(client.subscription?.status || '').toLowerCase();
 
   if (commissions.some((commission) => commission.status === 'paid')) {
-    return 'Comissao ja paga';
+    return 'Comissão já paga';
   }
 
   if (commissions.length > 0) {
-    return 'Comissao gerada';
+    return 'Comissão gerada';
   }
 
   if (subscriptionStatus.includes('cancel')) {
@@ -151,8 +151,8 @@ function StatusBadge({ status }) {
     <span
       className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold ${
         isInactive
-          ? 'border-gray-300 bg-gray-100 text-gray-700'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+          ? 'border-border bg-muted text-muted-foreground'
+          : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300'
       }`}
     >
       {getStatusLabel(status)}
@@ -162,9 +162,9 @@ function StatusBadge({ status }) {
 
 function CommissionStatusBadge({ status }) {
   const classes = {
-    paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    void: 'border-gray-300 bg-gray-100 text-gray-700',
-    pending: 'border-amber-200 bg-amber-50 text-amber-700',
+    paid: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300',
+    void: 'border-border bg-muted text-muted-foreground',
+    pending: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-300',
   };
 
   return (
@@ -180,7 +180,7 @@ function CommissionStatusBadge({ status }) {
 
 function SubscriptionStatusBadge({ status }) {
   return (
-    <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
+    <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-300">
       {getSubscriptionStatusLabel(status)}
     </span>
   );
@@ -188,13 +188,13 @@ function SubscriptionStatusBadge({ status }) {
 
 function SummaryTile({ icon: Icon, label, value, helper }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-600">
+    <div className="rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
         <Icon className="h-4 w-4 text-primary" />
         {label}
       </div>
-      <p className="mt-2 text-2xl font-bold text-gray-900">{value}</p>
-      {helper && <p className="mt-1 text-xs text-gray-500">{helper}</p>}
+      <p className="mt-2 text-2xl font-bold text-foreground">{value}</p>
+      {helper && <p className="mt-1 text-xs text-muted-foreground">{helper}</p>}
     </div>
   );
 }
@@ -309,7 +309,7 @@ const AffiliatesTab = () => {
       setCommissionPage(result.page);
     } catch (error) {
       toast({
-        title: 'Erro ao carregar comissoes',
+        title: 'Erro ao carregar comissões',
         description: error.message,
         variant: 'destructive',
       });
@@ -454,7 +454,7 @@ const AffiliatesTab = () => {
     if (seller.status === 'inactive') {
       toast({
         title: 'Vendedor inativo',
-        description: 'Links de vendedores inativos nao devem ser usados para venda.',
+        description: 'Links de vendedores inativos não devem ser usados para venda.',
         variant: 'destructive',
       });
       return;
@@ -473,7 +473,7 @@ const AffiliatesTab = () => {
     setCopyingLinkSellerId(seller.id);
     try {
       if (!navigator.clipboard?.writeText) {
-        throw new Error('Area de transferencia indisponivel neste navegador.');
+        throw new Error('Área de transferência indisponível neste navegador.');
       }
 
       const url = buildAffiliateLinkUrl(code);
@@ -505,7 +505,7 @@ const AffiliatesTab = () => {
 
     if (!payload.name || !payload.contact || !payload.pixKey) {
       toast({
-        title: 'Campos obrigatorios',
+        title: 'Campos obrigatórios',
         description: 'Preencha nome, contato e chave Pix para salvar.',
         variant: 'destructive',
       });
@@ -565,7 +565,7 @@ const AffiliatesTab = () => {
         item.id === result.commission.id ? result.commission : item
       )));
       toast({
-        title: result.alreadyPaid ? 'Comissao ja estava paga' : 'Comissao marcada como paga',
+        title: result.alreadyPaid ? 'Comissão já estava paga' : 'Comissão marcada como paga',
         description: result.alreadyPaid
           ? 'O registro original foi preservado.'
           : 'Pagamento manual registrado para controle administrativo.',
@@ -574,7 +574,7 @@ const AffiliatesTab = () => {
       fetchClients();
     } catch (error) {
       toast({
-        title: 'Erro ao marcar comissao',
+        title: 'Erro ao marcar comissão',
         description: error.message,
         variant: 'destructive',
       });
@@ -587,8 +587,8 @@ const AffiliatesTab = () => {
     const pendingCount = Number(seller.summary?.pendingCommissionCount || 0);
     if (!pendingCount) {
       toast({
-        title: 'Sem pendencias',
-        description: `${seller.name} nao possui comissoes pendentes nesta competencia.`,
+        title: 'Sem pendências',
+        description: `${seller.name} não possui comissões pendentes nesta competência.`,
       });
       return;
     }
@@ -602,15 +602,15 @@ const AffiliatesTab = () => {
       });
 
       toast({
-        title: 'Competencia marcada como paga',
-        description: `${result.updatedCount} comissao${result.updatedCount === 1 ? '' : 'es'} atualizada${result.updatedCount === 1 ? '' : 's'}.`,
+        title: 'Competência marcada como paga',
+        description: `${result.updatedCount} ${result.updatedCount === 1 ? 'comissão' : 'comissões'} atualizada${result.updatedCount === 1 ? '' : 's'}.`,
       });
       fetchSellers(page, { quiet: true });
       fetchCommissions();
       fetchClients();
     } catch (error) {
       toast({
-        title: 'Erro ao marcar competencia',
+        title: 'Erro ao marcar competência',
         description: error.message,
         variant: 'destructive',
       });
@@ -621,7 +621,7 @@ const AffiliatesTab = () => {
 
   const renderSellerLink = (seller) => {
     if (seller.status === 'inactive') {
-      return <span className="text-gray-500">Vendedor inativo</span>;
+      return <span className="text-muted-foreground">Vendedor inativo</span>;
     }
 
     const affiliateLink = seller.affiliateLink;
@@ -650,8 +650,8 @@ const AffiliatesTab = () => {
     const isCopying = copyingLinkSellerId === seller.id;
 
     return (
-      <div className="flex min-w-64 items-center gap-2">
-        <span className="max-w-56 truncate font-mono text-xs text-gray-700">
+      <div className="flex w-72 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
           {`/?ref=${affiliateLink.code}#planos`}
         </span>
         <Button
@@ -676,9 +676,9 @@ const AffiliatesTab = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Afiliados</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Cadastre vendedores, acompanhe clientes indicados e feche comissoes mensais.
+          <h2 className="text-2xl font-bold text-foreground">Afiliados</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Cadastre vendedores, acompanhe clientes indicados e feche comissões mensais.
           </p>
         </div>
 
@@ -708,36 +708,33 @@ const AffiliatesTab = () => {
       <div className="grid gap-3 md:grid-cols-4">
         <SummaryTile
           icon={CreditCard}
-          label="Mes atual"
+          label="Mês atual"
           value={formatMonth(selectedCompetenceForApi)}
-          helper="Valores persistidos no backend"
         />
         <SummaryTile
           icon={WalletCards}
           label="Pendente"
           value={formatCurrency(visibleSellerSummary.pendingCommissionCents)}
-          helper={`${visibleSellerSummary.pendingCommissionCount} comissoes nesta pagina`}
+          helper={`${visibleSellerSummary.pendingCommissionCount} comissões nesta página`}
         />
         <SummaryTile
           icon={CheckCircle2}
           label="Pago"
           value={formatCurrency(visibleSellerSummary.paidCommissionCents)}
-          helper="Marcado manualmente pelo superadmin"
         />
         <SummaryTile
           icon={Users}
           label="Clientes indicados"
           value={visibleSellerSummary.attributedClientsCount}
-          helper="Resumo dos vendedores carregados"
         />
       </div>
 
-      <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20 sm:flex-row sm:items-end">
         <form onSubmit={handleSearchSubmit} className="flex flex-1 flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-2">
             <Label htmlFor="affiliate-search">Buscar vendedor</Label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 id="affiliate-search"
                 value={searchDraft}
@@ -770,7 +767,7 @@ const AffiliatesTab = () => {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+        className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
       >
         {loading ? (
           <div className="flex justify-center py-10">
@@ -778,18 +775,18 @@ const AffiliatesTab = () => {
           </div>
         ) : sellers.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+            <table className="min-w-[1160px] w-full text-left text-sm">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-5 py-3">Vendedor</th>
-                  <th className="px-5 py-3">Contato</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Link</th>
-                  <th className="px-5 py-3">Clientes</th>
-                  <th className="px-5 py-3">Pendente</th>
-                  <th className="px-5 py-3">Pago</th>
-                  <th className="px-5 py-3">Atualizado</th>
-                  <th className="px-5 py-3 text-right">Acoes</th>
+                  <th className="whitespace-nowrap px-5 py-3">Vendedor</th>
+                  <th className="whitespace-nowrap px-5 py-3">Contato</th>
+                  <th className="whitespace-nowrap px-5 py-3">Status</th>
+                  <th className="whitespace-nowrap px-5 py-3">Link</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-center">Clientes</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-right">Pendente</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-right">Pago</th>
+                  <th className="whitespace-nowrap px-5 py-3">Atualizado</th>
+                  <th className="whitespace-nowrap px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -798,38 +795,37 @@ const AffiliatesTab = () => {
                   const isMarkingSeller = markingSellerId === seller.id;
 
                   return (
-                    <tr key={seller.id} className="border-t bg-white align-top">
-                      <td className="px-5 py-4">
+                    <tr key={seller.id} className="border-t border-border bg-card align-middle">
+                      <td className="min-w-44 px-5 py-4">
                         <div>
-                          <p className="font-semibold text-gray-900">{seller.name}</p>
-                          <p className="font-mono text-xs text-gray-500">{seller.id}</p>
+                          <p className="whitespace-nowrap font-semibold text-foreground">{seller.name}</p>
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-gray-700">{seller.contact}</td>
-                      <td className="px-5 py-4">
+                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.contact}</td>
+                      <td className="whitespace-nowrap px-5 py-4">
                         <StatusBadge status={seller.status} />
                       </td>
                       <td className="px-5 py-4">{renderSellerLink(seller)}</td>
-                      <td className="px-5 py-4 text-gray-700">
+                      <td className="px-5 py-4 text-center font-semibold text-foreground">
                         {summary.attributedClientsCount || 0}
                       </td>
-                      <td className="px-5 py-4">
-                        <p className="font-semibold text-amber-700">
+                      <td className="min-w-32 px-5 py-4 text-right">
+                        <p className="whitespace-nowrap font-semibold text-amber-700 dark:text-amber-300">
                           {formatCurrency(summary.pendingCommissionCents)}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="whitespace-nowrap text-xs text-muted-foreground">
                           {summary.pendingCommissionCount || 0} pendente{summary.pendingCommissionCount === 1 ? '' : 's'}
                         </p>
                       </td>
-                      <td className="px-5 py-4">
-                        <p className="font-semibold text-emerald-700">
+                      <td className="min-w-32 px-5 py-4 text-right">
+                        <p className="whitespace-nowrap font-semibold text-emerald-700 dark:text-emerald-300">
                           {formatCurrency(summary.paidCommissionCents)}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="whitespace-nowrap text-xs text-muted-foreground">
                           {summary.paidCommissionCount || 0} paga{summary.paidCommissionCount === 1 ? '' : 's'}
                         </p>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-gray-700">
+                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">
                         {formatDate(seller.updatedAt || seller.createdAt)}
                       </td>
                       <td className="px-5 py-4">
@@ -856,7 +852,7 @@ const AffiliatesTab = () => {
                             ) : (
                               <WalletCards className="h-4 w-4" />
                             )}
-                            Marcar competencia
+                            Marcar competência
                           </Button>
                         </div>
                       </td>
@@ -868,15 +864,15 @@ const AffiliatesTab = () => {
           </div>
         ) : (
           <div className="py-10 text-center">
-            <p className="font-semibold text-gray-900">Nenhum vendedor cadastrado.</p>
-            <p className="mt-1 text-sm text-gray-600">
-              Crie o primeiro vendedor para iniciar a gestao de afiliados.
+            <p className="font-semibold text-foreground">Nenhum vendedor cadastrado.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Crie o primeiro vendedor para iniciar a gestão de afiliados.
             </p>
           </div>
         )}
       </motion.div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <span>
           {total} vendedor{total === 1 ? '' : 'es'} encontrado{total === 1 ? '' : 's'}
         </span>
@@ -891,7 +887,7 @@ const AffiliatesTab = () => {
             Anterior
           </Button>
           <span className="min-w-20 text-center">
-            Pagina {page} de {totalPages}
+            Página {page} de {totalPages}
           </span>
           <Button
             type="button"
@@ -900,15 +896,15 @@ const AffiliatesTab = () => {
             disabled={page >= totalPages || loading}
             onClick={() => setPage((current) => current + 1)}
           >
-            Proxima
+            Próxima
           </Button>
         </div>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <div className="rounded-2xl border border-border bg-card p-4 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
-            <Label htmlFor="affiliate-competence">Competencia</Label>
+            <Label htmlFor="affiliate-competence">Competência</Label>
             <Input
               id="affiliate-competence"
               type="month"
@@ -936,7 +932,7 @@ const AffiliatesTab = () => {
           </div>
 
           <div className="space-y-2 sm:w-48">
-            <Label htmlFor="affiliate-commission-status-filter">Status da comissao</Label>
+            <Label htmlFor="affiliate-commission-status-filter">Status da comissão</Label>
             <Select value={commissionStatusFilter || 'all'} onValueChange={handleCommissionStatusChange}>
               <SelectTrigger id="affiliate-commission-status-filter">
                 <SelectValue placeholder="Todos" />
@@ -951,7 +947,7 @@ const AffiliatesTab = () => {
           </div>
 
           <div className="min-w-64 flex-1 space-y-2">
-            <Label htmlFor="affiliate-payment-note">Observacao do pagamento</Label>
+            <Label htmlFor="affiliate-payment-note">Observação do pagamento</Label>
             <Input
               id="affiliate-payment-note"
               value={paymentNote}
@@ -962,15 +958,15 @@ const AffiliatesTab = () => {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
               <WalletCards className="h-5 w-5 text-primary" />
-              Comissoes
+              Comissões
             </h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Visao em tempo real dos registros persistidos para {formatMonth(selectedCompetenceForApi)}.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Visão em tempo real dos registros persistidos para {formatMonth(selectedCompetenceForApi)}.
             </p>
           </div>
         </div>
@@ -982,16 +978,16 @@ const AffiliatesTab = () => {
         ) : commissions.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3">Vendedor / Cliente</th>
-                  <th className="px-5 py-3">Competencia</th>
+                  <th className="px-5 py-3">Competência</th>
                   <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Valor elegivel</th>
-                  <th className="px-5 py-3">Comissao</th>
+                  <th className="px-5 py-3">Valor elegível</th>
+                  <th className="px-5 py-3">Comissão</th>
                   <th className="px-5 py-3">Pagamento cliente</th>
                   <th className="px-5 py-3">Pagamento vendedor</th>
-                  <th className="px-5 py-3 text-right">Acoes</th>
+                  <th className="px-5 py-3 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -1001,46 +997,46 @@ const AffiliatesTab = () => {
                   const isMarking = markingCommissionId === commission.id;
 
                   return (
-                    <tr key={commission.id} className="border-t align-top">
+                    <tr key={commission.id} className="border-t border-border align-top">
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">{sellerName}</p>
-                        <p className="text-sm text-gray-700">{projectName}</p>
-                        <p className="font-mono text-xs text-gray-500">{commission.subscriptionId}</p>
+                        <p className="font-semibold text-foreground">{sellerName}</p>
+                        <p className="text-sm text-muted-foreground">{projectName}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{commission.subscriptionId}</p>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-gray-700">
+                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">
                         {formatMonth(commission.competenceMonth)}
                       </td>
                       <td className="px-5 py-4">
                         <CommissionStatusBadge status={commission.status} />
                       </td>
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">
+                        <p className="font-semibold text-foreground">
                           {formatCurrency(commission.eligibleAmountCents, commission.currency)}
                         </p>
-                        <p className="text-xs text-gray-500">Base da assinatura paga</p>
+                        <p className="text-xs text-muted-foreground">Base da assinatura paga</p>
                       </td>
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">
+                        <p className="font-semibold text-foreground">
                           {formatCurrency(commission.commissionCents, commission.currency)}
                         </p>
-                        <p className="text-xs text-gray-500">{formatRateBps(commission.rateBps)}</p>
+                        <p className="text-xs text-muted-foreground">{formatRateBps(commission.rateBps)}</p>
                       </td>
                       <td className="px-5 py-4">
-                        <p className="text-gray-700">{formatDateTime(commission.paidAt)}</p>
-                        <p className="font-mono text-xs text-gray-500">{commission.providerPaymentId || '-'}</p>
+                        <p className="text-muted-foreground">{formatDateTime(commission.paidAt)}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{commission.providerPaymentId || '-'}</p>
                       </td>
                       <td className="px-5 py-4">
                         {commission.status === 'paid' ? (
                           <div>
-                            <p className="font-semibold text-emerald-700">
+                            <p className="font-semibold text-emerald-700 dark:text-emerald-300">
                               {formatDateTime(commission.markedPaidAt || commission.payout?.paidAt)}
                             </p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-xs text-muted-foreground">
                               {commission.paymentNote || commission.payout?.note || 'Pagamento manual registrado'}
                             </p>
                           </div>
                         ) : (
-                          <span className="text-gray-500">Aguardando fechamento</span>
+                          <span className="text-muted-foreground">Aguardando fechamento</span>
                         )}
                       </td>
                       <td className="px-5 py-4 text-right">
@@ -1068,16 +1064,16 @@ const AffiliatesTab = () => {
           </div>
         ) : (
           <div className="py-10 text-center">
-            <p className="font-semibold text-gray-900">Nenhuma comissao encontrada.</p>
-            <p className="mt-1 text-sm text-gray-600">
-              Ajuste filtros ou aguarde pagamentos confirmados do Asaas para esta competencia.
+            <p className="font-semibold text-foreground">Nenhuma comissão encontrada.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ajuste filtros ou aguarde pagamentos confirmados do Asaas para esta competência.
             </p>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-sm text-gray-600">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm text-muted-foreground">
           <span>
-            {commissionTotal} comissao{commissionTotal === 1 ? '' : 'es'} encontrada{commissionTotal === 1 ? '' : 's'}
+            {commissionTotal} {commissionTotal === 1 ? 'comissão' : 'comissões'} encontrada{commissionTotal === 1 ? '' : 's'}
           </span>
           <div className="flex items-center gap-2">
             <Button
@@ -1090,7 +1086,7 @@ const AffiliatesTab = () => {
               Anterior
             </Button>
             <span className="min-w-20 text-center">
-              Pagina {commissionPage} de {commissionTotalPages}
+              Página {commissionPage} de {commissionTotalPages}
             </span>
             <Button
               type="button"
@@ -1099,21 +1095,21 @@ const AffiliatesTab = () => {
               disabled={commissionPage >= commissionTotalPages || commissionsLoading}
               onClick={() => setCommissionPage((current) => current + 1)}
             >
-              Proxima
+              Próxima
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-        <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
           <div>
-            <h3 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
               <FileSearch className="h-5 w-5 text-primary" />
               Clientes indicados
             </h3>
-            <p className="mt-1 text-sm text-gray-600">
-              Dados resumidos para conferencia e investigacao de divergencias.
+            <p className="mt-1 text-sm text-muted-foreground">
+              Dados resumidos para conferência e investigação de divergências.
             </p>
           </div>
         </div>
@@ -1125,13 +1121,13 @@ const AffiliatesTab = () => {
         ) : clients.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3">Vendedor</th>
                   <th className="px-5 py-3">Cliente / Projeto</th>
                   <th className="px-5 py-3">Assinatura</th>
-                  <th className="px-5 py-3">Investigacao</th>
-                  <th className="px-5 py-3">Comissoes</th>
+                  <th className="px-5 py-3">Investigação</th>
+                  <th className="px-5 py-3">Comissões</th>
                 </tr>
               </thead>
               <tbody>
@@ -1141,43 +1137,43 @@ const AffiliatesTab = () => {
                   const generatedCommission = client.commissions?.[0];
 
                   return (
-                    <tr key={client.id} className="border-t align-top">
+                    <tr key={client.id} className="border-t border-border align-top">
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">{client.seller?.name || 'Vendedor'}</p>
-                        <p className="font-mono text-xs text-gray-500">
+                        <p className="font-semibold text-foreground">{client.seller?.name || 'Vendedor'}</p>
+                        <p className="font-mono text-xs text-muted-foreground">
                           {client.link?.code ? `ref=${client.link.code}` : client.sourceCode || '-'}
                         </p>
                       </td>
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">{projectName}</p>
-                        <p className="font-mono text-xs text-gray-500">{client.projectId}</p>
+                        <p className="font-semibold text-foreground">{projectName}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{client.projectId}</p>
                       </td>
                       <td className="px-5 py-4">
                         <SubscriptionStatusBadge status={client.subscription?.status} />
-                        <p className="mt-2 text-xs text-gray-500">
+                        <p className="mt-2 text-xs text-muted-foreground">
                           Plano: {client.subscription?.plan_id || client.planId || '-'}
                         </p>
                       </td>
                       <td className="px-5 py-4">
-                        <p className="font-semibold text-gray-900">{getClientInvestigationStatus(client)}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Atribuido em {formatDate(client.attributedAt || client.createdAt)}
+                        <p className="font-semibold text-foreground">{getClientInvestigationStatus(client)}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Atribuído em {formatDate(client.attributedAt || client.createdAt)}
                         </p>
                       </td>
                       <td className="px-5 py-4">
                         {commissionsCount > 0 ? (
                           <div>
-                            <p className="font-semibold text-gray-900">
+                            <p className="font-semibold text-foreground">
                               {commissionsCount} registro{commissionsCount === 1 ? '' : 's'}
                             </p>
-                            <p className="text-xs text-gray-500">
-                              Ultima: {generatedCommission
+                            <p className="text-xs text-muted-foreground">
+                              Última: {generatedCommission
                                 ? `${getCommissionStatusLabel(generatedCommission.status)} - ${formatCurrency(generatedCommission.commissionCents, generatedCommission.currency)}`
                                 : '-'}
                             </p>
                           </div>
                         ) : (
-                          <span className="text-gray-500">Sem pagamento confirmado</span>
+                          <span className="text-muted-foreground">Sem pagamento confirmado</span>
                         )}
                       </td>
                     </tr>
@@ -1188,14 +1184,14 @@ const AffiliatesTab = () => {
           </div>
         ) : (
           <div className="py-10 text-center">
-            <p className="font-semibold text-gray-900">Nenhum cliente indicado encontrado.</p>
-            <p className="mt-1 text-sm text-gray-600">
-              Clientes aparecem aqui depois que uma atribuicao de afiliado e criada.
+            <p className="font-semibold text-foreground">Nenhum cliente indicado encontrado.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Clientes aparecem aqui depois que uma atribuição de afiliado é criada.
             </p>
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-sm text-gray-600">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm text-muted-foreground">
           <span>
             {clientTotal} cliente{clientTotal === 1 ? '' : 's'} indicado{clientTotal === 1 ? '' : 's'}
           </span>
@@ -1210,7 +1206,7 @@ const AffiliatesTab = () => {
               Anterior
             </Button>
             <span className="min-w-20 text-center">
-              Pagina {clientPage} de {clientTotalPages}
+              Página {clientPage} de {clientTotalPages}
             </span>
             <Button
               type="button"
@@ -1219,7 +1215,7 @@ const AffiliatesTab = () => {
               disabled={clientPage >= clientTotalPages || clientsLoading}
               onClick={() => setClientPage((current) => current + 1)}
             >
-              Proxima
+              Próxima
             </Button>
           </div>
         </div>
