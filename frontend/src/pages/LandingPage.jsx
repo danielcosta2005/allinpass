@@ -25,6 +25,7 @@ import {
   ArrowRight,
   ChevronDown,
   Apple,
+  BadgePercent,
   Users,
   LogIn,
   LayoutDashboard,
@@ -35,6 +36,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   buildSignupPath,
   fetchSubscriptionPlans,
+  formatAffiliateDiscountPercent,
   normalizeAffiliateRef,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
@@ -652,6 +654,9 @@ const HowItWorks = () => {
 
 const Pricing = ({ plans, affiliateOffer = null }) => {
   const affiliateRef = affiliateOffer?.valid ? affiliateOffer.code : '';
+  const affiliateDiscountPercent = affiliateOffer?.valid
+    ? formatAffiliateDiscountPercent(affiliateOffer)
+    : '';
 
   return (
     <section id="planos" className="scroll-mt-20 py-24 sm:py-32">
@@ -674,9 +679,15 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
             Comece pequeno, escale quando quiser. Sem fidelidade, sem multas, sem surpresas.
           </motion.p>
           {affiliateOffer?.valid ? (
-            <motion.p variants={fadeUp} className="mt-4 text-sm font-semibold text-emerald-700">
-              10% de desconto no primeiro mes para novos assinantes indicados.
-            </motion.p>
+            <motion.div
+              variants={fadeUp}
+              className="mt-5 inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200"
+            >
+              <BadgePercent className="h-4 w-4" />
+              <span>
+                Condição especial aplicada: {affiliateDiscountPercent}% de desconto no primeiro mês pelo link de vendedor.
+              </span>
+            </motion.div>
           ) : null}
         </motion.div>
 

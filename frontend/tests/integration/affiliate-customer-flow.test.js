@@ -68,10 +68,13 @@ describe("affiliate referred customer flow", () => {
     expect(plansSource).toContain("ref");
     expect(landingSource).toContain("resolveAffiliateRef");
     expect(landingSource).toContain("affiliateRef");
-    expect(landingSource).toContain("10% de desconto no primeiro mes");
+    expect(landingSource).toContain("Condição especial aplicada");
+    expect(landingSource).toContain("formatAffiliateDiscountPercent");
     expect(landingSource).toContain("buildSignupPath(p.key, { ref: affiliateRef })");
     expect(planCardSource).toContain("affiliateOffer");
-    expect(planCardSource).toContain("10% de desconto no primeiro mes");
+    expect(planCardSource).toContain("calculateAffiliateFirstMonthPrice");
+    expect(planCardSource).toContain("line-through");
+    expect(planCardSource).toContain("no primeiro mês");
   });
 
   test("signup preserves affiliateRef without sending trusted financial values", () => {
@@ -83,6 +86,8 @@ describe("affiliate referred customer flow", () => {
     expect(signupPageSource).toContain("searchParams.get('ref')");
     expect(signupPageSource).toContain("params.set('ref', affiliateRef)");
     expect(signupPageSource).toContain("affiliate_ref");
+    expect(signupPageSource).toContain("resolveAffiliateRef");
+    expect(signupPageSource).toContain("affiliateOffer");
     expect(signupPageSource).toContain("startPaidSignupCheckout({");
     expect(signupHelperSource).toContain("affiliateRef");
     expect(signupHelperSource).toContain("affiliateRef,");

@@ -80,6 +80,33 @@ export const formatCurrencyBRL = (amount) =>
     maximumFractionDigits: 2,
   });
 
+export const getAffiliateDiscountBps = (affiliateOffer = null) => {
+  if (!affiliateOffer?.valid) return 0;
+
+  const discountBps = Math.trunc(toNumber(affiliateOffer.discountBps, AFFILIATE_DISCOUNT_BPS));
+  return Math.min(10000, Math.max(0, discountBps));
+};
+
+export const calculateAffiliateFirstMonthPrice = (price, affiliateOffer = null) => {
+  const normalizedPrice = Math.max(0, toNumber(price, 0));
+  const discountBps = getAffiliateDiscountBps(affiliateOffer);
+
+  if (discountBps <= 0) return normalizedPrice;
+
+  return Math.max(0, normalizedPrice * (1 - discountBps / 10000));
+};
+
+export const formatAffiliateDiscountPercent = (affiliateOffer = null) => {
+  const discountBps = getAffiliateDiscountBps(affiliateOffer);
+  const discountPercent = discountBps / 100;
+  const hasDecimal = !Number.isInteger(discountPercent);
+
+  return discountPercent.toLocaleString('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: hasDecimal ? 2 : 0,
+  });
+};
+
 const formatIntegerBR = (value) =>
   Math.max(0, Number(value || 0)).toLocaleString('pt-BR', {
     maximumFractionDigits: 0,

@@ -30,6 +30,7 @@ import {
   getTurnstileSiteKey,
   shouldUseSignupCaptcha,
 } from '@/lib/turnstileConfig';
+import { resolveAffiliateRef } from '@/lib/affiliates';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -83,6 +84,7 @@ function SignupPage() {
       authSession?.user?.user_metadata?.affiliate_ref,
     ],
   );
+  const [affiliateOffer, setAffiliateOffer] = useState({ valid: false, code: '', discountBps: 0 });
   const selectedPlanKey = useMemo(() => {
     const explicitPlanKey = String(searchParams.get('plano') || '').trim();
     if (explicitPlanKey) return explicitPlanKey;
@@ -741,6 +743,31 @@ function SignupPage() {
   useEffect(() => {
     let mounted = true;
 
+    if (!currentAffiliateRef) {
+      setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
+
+    const loadAffiliateOffer = async () => {
+      const result = await resolveAffiliateRef(currentAffiliateRef);
+      if (!mounted) return;
+      setAffiliateOffer(result?.valid ? result : { valid: false, code: '', discountBps: 0 });
+    };
+
+    loadAffiliateOffer();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAffiliateRef]);
+
+  useEffect(() => {
+    let mounted = true;
+
     const loadPlans = async () => {
       const remotePlans = await fetchSubscriptionPlans();
       if (mounted && Array.isArray(remotePlans) && remotePlans.length > 0) {
@@ -1058,6 +1085,7 @@ function SignupPage() {
 
                 {!finishedFlow && step === 3 && paidPlan && (
                   <PaymentStep
+                    affiliateOffer={affiliateOffer}
                     checkoutError={checkoutError}
                     checkoutLoading={checkoutLoading}
                     onContinue={handlePaymentContinue}
@@ -1132,7 +1160,12 @@ function SignupPage() {
             </section>
 
             <aside className="xl:sticky xl:top-24 h-fit">
-              <PlanCard plan={selectedPlan} ctaTo={undefined} showCta={false} />
+              <PlanCard
+                plan={selectedPlan}
+                ctaTo={undefined}
+                showCta={false}
+                affiliateOffer={paidPlan ? affiliateOffer : null}
+              />
             </aside>
           </div>
         </main>
