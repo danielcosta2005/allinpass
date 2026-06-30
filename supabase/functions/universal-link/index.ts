@@ -167,10 +167,51 @@ function redirect302(to: string, extraHeaders: Record<string, string> = {}) {
   });
 }
 
-function addDays(date: Date, days: number) {
-  const d = new Date(date.getTime());
-  d.setDate(d.getDate() + days);
-  return d;
+const DEFAULT_EXPIRATION_MONTHS = 1;
+const MIN_EXPIRATION_MONTHS = 1;
+const MAX_EXPIRATION_MONTHS = 60;
+
+function isObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeExpirationMonths(value: unknown, fallback: unknown = DEFAULT_EXPIRATION_MONTHS) {
+  const parsed = typeof value === "number"
+    ? value
+    : Number.parseInt(String(value ?? ""), 10);
+  const fallbackParsed = typeof fallback === "number"
+    ? fallback
+    : Number.parseInt(String(fallback ?? DEFAULT_EXPIRATION_MONTHS), 10);
+  const base = Number.isFinite(parsed)
+    ? Math.trunc(parsed)
+    : Number.isFinite(fallbackParsed)
+      ? Math.trunc(fallbackParsed)
+      : DEFAULT_EXPIRATION_MONTHS;
+
+  return Math.min(MAX_EXPIRATION_MONTHS, Math.max(MIN_EXPIRATION_MONTHS, base));
+}
+
+function daysInUtcMonth(year: number, month: number) {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+function addMonthsClamped(date: Date, months: number) {
+  const monthOffset = normalizeExpirationMonths(months);
+  const sourceYear = date.getUTCFullYear();
+  const targetMonthStart = new Date(Date.UTC(sourceYear, date.getUTCMonth() + monthOffset, 1));
+  const targetYear = targetMonthStart.getUTCFullYear();
+  const targetMonth = targetMonthStart.getUTCMonth();
+  const targetDay = Math.min(date.getUTCDate(), daysInUtcMonth(targetYear, targetMonth));
+
+  return new Date(Date.UTC(
+    targetYear,
+    targetMonth,
+    targetDay,
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds(),
+  ));
 }
 
 type AuthUserInfo = {
@@ -399,6 +440,7 @@ Deno.serve(async (req) => {
     const ua = req.headers.get("user-agent") ?? "";
     const preferApple = isIOS(ua);
     const authUser = await getUserFromAuthHeader(sbAdmin, req);
+    const passFields = isObject(pass.fields) ? pass.fields : {};
 
     const cookieDevice = getCookie(req, "device_key");
     const legacyDevice = getCookie(req, "pass_token");
@@ -469,7 +511,10 @@ Deno.serve(async (req) => {
       }
     } else {
       issuedAt = new Date();
-      expiresAt = addDays(issuedAt, 30);
+      expiresAt = addMonthsClamped(
+        issuedAt,
+        normalizeExpirationMonths(passFields.expiration_months),
+      );
 
       const { error: upInsErr } = await sbAdmin.from("user_passes").insert({
         pass_id: pass.id,
@@ -498,7 +543,7 @@ Deno.serve(async (req) => {
 
     const colors = pass.design?.colors ?? {};
     const images = pass.design?.images ?? {};
-    const fields = pass.fields ?? {};
+    const fields = passFields;
 
     const pass_data = {
       type: pass.type ?? "loyalty",

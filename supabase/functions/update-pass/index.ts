@@ -55,6 +55,26 @@ function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+const DEFAULT_EXPIRATION_MONTHS = 1;
+const MIN_EXPIRATION_MONTHS = 1;
+const MAX_EXPIRATION_MONTHS = 60;
+
+function normalizeExpirationMonths(value: unknown, fallback: unknown = DEFAULT_EXPIRATION_MONTHS) {
+  const parsed = typeof value === "number"
+    ? value
+    : Number.parseInt(String(value ?? ""), 10);
+  const fallbackParsed = typeof fallback === "number"
+    ? fallback
+    : Number.parseInt(String(fallback ?? DEFAULT_EXPIRATION_MONTHS), 10);
+  const base = Number.isFinite(parsed)
+    ? Math.trunc(parsed)
+    : Number.isFinite(fallbackParsed)
+      ? Math.trunc(fallbackParsed)
+      : DEFAULT_EXPIRATION_MONTHS;
+
+  return Math.min(MAX_EXPIRATION_MONTHS, Math.max(MIN_EXPIRATION_MONTHS, base));
+}
+
 function errorPayload(
   error: string,
   message: string,
@@ -506,6 +526,18 @@ serve(async (req: Request) => {
       cleanString(body?.exp_date);
     if (expDate) {
       mergedFields.exp_date = expDate;
+    }
+
+    const hasExpirationMonthsPayload =
+      Object.prototype.hasOwnProperty.call(incomingFields, "expiration_months") ||
+      passData?.expiration_months !== undefined ||
+      body?.expiration_months !== undefined;
+
+    if (hasExpirationMonthsPayload) {
+      mergedFields.expiration_months = normalizeExpirationMonths(
+        incomingFields.expiration_months ?? passData?.expiration_months ?? body?.expiration_months,
+        existingFields.expiration_months ?? DEFAULT_EXPIRATION_MONTHS,
+      );
     }
 
     updatePayload.fields = mergedFields;

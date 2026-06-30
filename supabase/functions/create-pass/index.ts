@@ -50,6 +50,39 @@ function isObj(v: any) {
   return v && typeof v === "object" && !Array.isArray(v);
 }
 
+const DEFAULT_EXPIRATION_MONTHS = 1;
+const MIN_EXPIRATION_MONTHS = 1;
+const MAX_EXPIRATION_MONTHS = 60;
+
+function normalizeExpirationMonths(value: unknown, fallback: unknown = DEFAULT_EXPIRATION_MONTHS) {
+  const parsed = typeof value === "number"
+    ? value
+    : Number.parseInt(String(value ?? ""), 10);
+  const fallbackParsed = typeof fallback === "number"
+    ? fallback
+    : Number.parseInt(String(fallback ?? DEFAULT_EXPIRATION_MONTHS), 10);
+  const base = Number.isFinite(parsed)
+    ? Math.trunc(parsed)
+    : Number.isFinite(fallbackParsed)
+      ? Math.trunc(fallbackParsed)
+      : DEFAULT_EXPIRATION_MONTHS;
+
+  return Math.min(MAX_EXPIRATION_MONTHS, Math.max(MIN_EXPIRATION_MONTHS, base));
+}
+
+function normalizePassFields(fields: any, fallbackFields: any = {}, fallbackExpirationMonths: unknown = DEFAULT_EXPIRATION_MONTHS) {
+  const source = isObj(fields) ? fields : {};
+  const fallbackSource = isObj(fallbackFields) ? fallbackFields : {};
+
+  return {
+    ...source,
+    expiration_months: normalizeExpirationMonths(
+      source.expiration_months,
+      fallbackSource.expiration_months ?? fallbackExpirationMonths,
+    ),
+  };
+}
+
 function errorPayload(
   error: string,
   message: string,
@@ -283,7 +316,13 @@ serve(async (req) => {
       toCleanText(templateDefaults.description) ||
       "Ganhe premios acumulando pontos!";
 
-    const fields = body.fields ?? templateDefaults.fields ?? {};
+    const templateFields = isObj(templateDefaults.fields) ? templateDefaults.fields : {};
+    const bodyFields = isObj(body.fields) ? body.fields : null;
+    const fields = normalizePassFields(
+      bodyFields ?? templateFields,
+      templateFields,
+      templateDefaults.expiration_months ?? templateFields.expiration_months,
+    );
     const design = {
       colors: { ...(templateDefaults.colors ?? {}), ...(body.colors ?? {}) },
       images: { ...(templateDefaults.images ?? {}), ...(body.images ?? {}) },

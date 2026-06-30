@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
@@ -25,15 +25,20 @@ import {
   Apple,
   Smartphone,
   Upload,
+  Check,
   Link as LinkIcon,
-  Save,
   Settings,
   Download,
   Info,
   MapPin,
+  Minus,
+  Plus,
   PlusCircle,
   Edit3,
   Trash2,
+  Palette,
+  Image as ImageIcon,
+  X,
 } from 'lucide-react';
 import { QRCode } from 'react-qrcode-logo';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
@@ -43,38 +48,54 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const IMAGE_UPLOAD_RULES = {
   icon: {
-    label: 'Icone Apple',
-    helpTitle: 'Icone Apple',
-    helpLines: ['Logo que aparece na notificação do seu cartão', 'Obrigatorio: PNG', 'Proporcao recomendada: 1:1'],
+    label: 'Ícone Apple',
+    helpTitle: 'Ícone Apple',
+    assetSpec: 'PNG · 87×87px',
+    helpLines: ['Logo que aparece na notificação do seu cartão', 'Obrigatório: PNG', 'Proporção recomendada: 1:1'],
     recommendedRatio: 1,
     recommendedRatioLabel: '1:1',
   },
   appleLogo: {
     label: 'Logo Apple',
     helpTitle: 'Logo Apple',
-    helpLines: ['Obrigatório: PNG'],
+    assetSpec: 'PNG · 160×50px',
+    helpLines: ['Obrigatório: PNG', 'Tamanho recomendado: 160×50px'],
   },
   googleLogo: {
     label: 'Logo Google',
     helpTitle: 'Logo Google',
-    helpLines: ['Obrigatório: PNG', 'Proporção recomendada: 1:1'],
+    assetSpec: 'PNG · 660×660px',
+    helpLines: ['Obrigatório: PNG', 'Tamanho recomendado: 660×660px'],
     recommendedRatio: 1,
     recommendedRatioLabel: '1:1',
   },
   appleStrip: {
     label: 'Apple Strip',
     helpTitle: 'Apple Strip',
-    helpLines: ['Obrigatório: PNG', 'Altura máxima: 432px', 'Proporção recomendada: 375:144'],
+    assetSpec: 'PNG · 1125×432px',
+    helpLines: ['Obrigatório: PNG', 'Tamanho recomendado: 1125×432px', 'Altura máxima: 432px'],
     recommendedRatio: 375 / 144,
     recommendedRatioLabel: '375:144',
   },
   googleHero: {
-    label: 'Google Hero',
-    helpTitle: 'Google Hero',
-    helpLines: ['Obrigatório: PNG', 'Proporção recomendada: 3:1'],
+    label: 'Hero Google',
+    helpTitle: 'Hero Google',
+    assetSpec: 'PNG · 1032×336px',
+    helpLines: ['Obrigatório: PNG', 'Tamanho recomendado: 1032×336px'],
     recommendedRatio: 3,
     recommendedRatioLabel: '3:1',
   },
+};
+const DEFAULT_EXPIRATION_MONTHS = 1;
+const MIN_EXPIRATION_MONTHS = 1;
+const MAX_EXPIRATION_MONTHS = 60;
+const INTERNAL_PASS_FIELD_KEYS = new Set(['exp_date', 'expiration_months']);
+const EDITOR_CARD_STYLE = {
+  border: '0.5px solid var(--color-border-tertiary, hsl(var(--border)))',
+  borderRadius: 'var(--border-radius-md, calc(var(--radius) - 2px))',
+};
+const ACTION_BUTTON_STYLE = {
+  borderRadius: 'var(--border-radius-md, calc(var(--radius) - 2px))',
 };
 
 const INITIAL_FORM_STATE = {
@@ -82,6 +103,7 @@ const INITIAL_FORM_STATE = {
   title: '',
   description: '',
   exp_date: '',
+  expiration_months: DEFAULT_EXPIRATION_MONTHS,
   colors: { background: '#6c5ce7', label: '#ffffff', text: '#ffffff' },
   images: {
     logo: '',
@@ -297,8 +319,54 @@ function applyProjectWalletDefaults(defaults = {}, projectName = '') {
   };
 }
 
+function omitInternalPassFields(values = {}) {
+  const source = toObject(values);
+  const cleaned = {};
+  Object.keys(source).forEach((key) => {
+    if (!INTERNAL_PASS_FIELD_KEYS.has(key)) cleaned[key] = source[key];
+  });
+  return cleaned;
+}
+
+function normalizeDataFields(fields = []) {
+  if (!Array.isArray(fields)) return [];
+  return fields.filter((field) => !INTERNAL_PASS_FIELD_KEYS.has(String(field?.key ?? '')));
+}
+
+function normalizeExpirationMonths(value, fallback = DEFAULT_EXPIRATION_MONTHS) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  const fallbackParsed = Number.parseInt(String(fallback ?? DEFAULT_EXPIRATION_MONTHS), 10);
+  const base = Number.isFinite(parsed)
+    ? parsed
+    : Number.isFinite(fallbackParsed)
+      ? fallbackParsed
+      : DEFAULT_EXPIRATION_MONTHS;
+
+  return Math.min(MAX_EXPIRATION_MONTHS, Math.max(MIN_EXPIRATION_MONTHS, base));
+}
+
+function addMonthsClamped(date, months) {
+  const source = new Date(date);
+  if (Number.isNaN(source.getTime())) return new Date();
+
+  const monthOffset = normalizeExpirationMonths(months);
+  const year = source.getFullYear();
+  const month = source.getMonth() + monthOffset;
+  const day = source.getDate();
+  const daysInTargetMonth = new Date(year, month + 1, 0).getDate();
+  const next = new Date(source.getTime());
+
+  next.setFullYear(year, month, Math.min(day, daysInTargetMonth));
+  return next;
+}
+
+function getEstimatedExpirationDate(expirationMonths) {
+  return addMonthsClamped(new Date(), expirationMonths);
+}
+
 function mergeWithInitial(defaults = {}) {
   const normalized = normalizeWalletDefaults(defaults);
+  const normalizedFields = toObject(normalized.fields);
   return {
     ...INITIAL_FORM_STATE,
     ...normalized,
@@ -310,9 +378,13 @@ function mergeWithInitial(defaults = {}) {
       ...INITIAL_FORM_STATE.images,
       ...toObject(normalized.images),
     },
-    dataFields: Array.isArray(normalized.dataFields) ? normalized.dataFields : [],
-    sampleValues: toObject(normalized.sampleValues),
+    dataFields: normalizeDataFields(normalized.dataFields),
+    sampleValues: omitInternalPassFields(normalized.sampleValues),
     qr_url: normalized.qr_url ?? '',
+    expiration_months: normalizeExpirationMonths(
+      normalized.expiration_months ?? normalizedFields.expiration_months,
+      INITIAL_FORM_STATE.expiration_months,
+    ),
   };
 }
 
@@ -417,10 +489,30 @@ function formatPassCreatedAt(value) {
   });
 }
 
+function formatLocationCoordinate(value) {
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate.toFixed(6) : null;
+}
+
+function formatLocationCoordinates(location) {
+  const lat = formatLocationCoordinate(location?.lat);
+  const lng = formatLocationCoordinate(location?.lng ?? location?.long);
+  return lat && lng ? `${lat}, ${lng}` : 'Coordenadas não definidas';
+}
+
+function getLocationDisplayName(location, fallback) {
+  const label = String(location?.label ?? '').trim();
+  if (label) return label;
+
+  const address = String(location?.address ?? '').trim();
+  return address || fallback;
+}
+
 function buildFieldsPayload(formState) {
-  const sampleValues = toObject(formState.sampleValues);
+  const sampleValues = omitInternalPassFields(formState.sampleValues);
   const fields = { ...sampleValues };
   if (formState.exp_date) fields.exp_date = formState.exp_date;
+  fields.expiration_months = normalizeExpirationMonths(formState.expiration_months);
   return fields;
 }
 
@@ -428,7 +520,7 @@ function buildDesignPayload(formState) {
   return {
     colors: toObject(formState.colors),
     images: normalizeWalletDefaults({ images: formState.images }).images,
-    dataFields: Array.isArray(formState.dataFields) ? formState.dataFields : [],
+    dataFields: normalizeDataFields(formState.dataFields),
   };
 }
 
@@ -437,15 +529,16 @@ function passToFormState(pass, templateDefaults) {
   const design = toObject(pass?.design);
   const fields = toObject(pass?.fields);
 
-  const dataFields = Array.isArray(design.dataFields) && design.dataFields.length > 0
-    ? design.dataFields
+  const designDataFields = normalizeDataFields(design.dataFields);
+  const dataFields = designDataFields.length > 0
+    ? designDataFields
     : Object.keys(fields)
-      .filter((key) => key !== 'exp_date')
+      .filter((key) => !INTERNAL_PASS_FIELD_KEYS.has(key))
       .map((key) => ({ key, label: key }));
 
   const sampleValues = {};
   Object.keys(fields).forEach((key) => {
-    if (key === 'exp_date') return;
+    if (INTERNAL_PASS_FIELD_KEYS.has(key)) return;
     sampleValues[key] = fields[key];
   });
 
@@ -455,6 +548,7 @@ function passToFormState(pass, templateDefaults) {
     title: pass?.title || defaults.title,
     description: pass?.description || defaults.description,
     exp_date: fields.exp_date || defaults.exp_date || '',
+    expiration_months: normalizeExpirationMonths(fields.expiration_months, defaults.expiration_months),
     colors: {
       ...defaults.colors,
       ...toObject(design.colors),
@@ -469,60 +563,126 @@ function passToFormState(pass, templateDefaults) {
   };
 }
 
-const ColorInput = ({ label, ...props }) => (
-  <div className="flex flex-col space-y-2">
-    <Label className="text-sm font-medium">{label}</Label>
-    <div className="relative">
-      <Input
-        type="color"
-        {...props}
-        className="p-0 h-10 w-full appearance-none border-none bg-transparent cursor-pointer"
-      />
-      <div
-        className="absolute inset-0 rounded-md border pointer-events-none flex items-center justify-end px-2"
-        style={{ backgroundColor: props.value }}
-      >
-        <span className="font-mono text-xs mix-blend-difference text-white">{props.value}</span>
-      </div>
-    </div>
-  </div>
+const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
+
+function isValidHexColor(value) {
+  return HEX_COLOR_PATTERN.test(String(value ?? '').trim());
+}
+
+function getPreviewColor(value, fallback) {
+  const normalized = String(value ?? '').trim();
+  return isValidHexColor(normalized) ? normalized : fallback;
+}
+
+function validateEditorForm(values = {}) {
+  const errors = {};
+  const expirationRaw = String(values.expiration_months ?? '').trim();
+  const expirationValue = Number.parseInt(expirationRaw, 10);
+
+  if (!String(values.type ?? '').trim()) {
+    errors.type = 'Selecione um tipo.';
+  }
+
+  if (!String(values.title ?? '').trim()) {
+    errors.title = 'Informe o título do passe.';
+  }
+
+  if (!expirationRaw || !Number.isFinite(expirationValue)) {
+    errors.expiration_months = 'Informe a validade.';
+  } else if (expirationValue < MIN_EXPIRATION_MONTHS || expirationValue > MAX_EXPIRATION_MONTHS) {
+    errors.expiration_months = `Use um valor entre ${MIN_EXPIRATION_MONTHS} e ${MAX_EXPIRATION_MONTHS}.`;
+  }
+
+  return errors;
+}
+
+const EditorSection = ({ icon: Icon, title, optional = false, children, onActivate, className = '', bodyClassName = '' }) => (
+  <section
+    className={`overflow-hidden bg-white shadow-sm ${className}`.trim()}
+    style={EDITOR_CARD_STYLE}
+    onFocusCapture={onActivate}
+    onClickCapture={onActivate}
+  >
+    <header className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/80 px-3 py-2">
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[#534AB7]/10 text-[#534AB7]">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <h2 className="text-sm font-medium text-slate-900">{title}</h2>
+      {optional && (
+        <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">opcional</span>
+      )}
+    </header>
+    <div className={`p-3 ${bodyClassName}`.trim()}>{children}</div>
+  </section>
 );
 
-const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
-  const rule = IMAGE_UPLOAD_RULES[uploadKey];
+const ColorInput = ({ label, value, onChange, disabled }) => {
+  const currentValue = value ?? '';
+  const hasInvalidValue = Boolean(String(currentValue).trim()) && !isValidHexColor(currentValue);
+  const swatchColor = getPreviewColor(currentValue, '#f8fafc');
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-      <Button
-        type="button"
-        variant="outline"
-        className="w-full justify-start whitespace-nowrap px-3"
-        onClick={() => onUpload(uploadKey)}
+    <div className="flex flex-col gap-1">
+      <Label className="text-[12px] font-medium text-slate-700">{label}</Label>
+      <div
+        className={`flex h-8 items-center gap-2 rounded-md border bg-white px-2 transition ${hasInvalidValue ? 'border-red-300' : 'border-slate-200 focus-within:border-[#534AB7] focus-within:ring-1 focus-within:ring-[#534AB7]/30'}`}
       >
-        <Upload className="mr-2 h-4 w-4 shrink-0" />
-        <span className="truncate">{rule.label}</span>
-      </Button>
-
-      <div className="relative group flex items-center">
-        <button
-          type="button"
-          className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
-          aria-label={`Informacoes sobre ${rule.label}`}
-        >
-          <Info className="h-4 w-4" />
-        </button>
-        <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
-          <p className="mb-2 text-sm font-semibold text-slate-900">{rule.helpTitle}</p>
-          <div className="space-y-1 text-xs text-slate-600">
-            {rule.helpLines.map((line, index) => (
-              <p key={`${uploadKey}-${index}`}>{line}</p>
-            ))}
-          </div>
-        </div>
+        <div
+          className="h-4 w-4 shrink-0 rounded border border-slate-200 shadow-inner"
+          style={{ backgroundColor: swatchColor }}
+          aria-hidden="true"
+        />
+        <Input
+          type="text"
+          value={currentValue}
+          onChange={onChange}
+          disabled={disabled}
+          spellCheck={false}
+          aria-invalid={hasInvalidValue}
+          placeholder="#534AB7"
+          className="h-7 border-0 bg-transparent px-0 font-mono text-[12px] uppercase text-slate-900 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        />
       </div>
     </div>
   );
 };
+
+const UploadButtonWithInfo = ({ uploadKey, value, onUpload, disabled = false, className = '' }) => {
+  const rule = IMAGE_UPLOAD_RULES[uploadKey];
+  const hasValue = Boolean(String(value ?? '').trim());
+  const Icon = hasValue ? Check : Upload;
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      disabled={disabled}
+      style={ACTION_BUTTON_STYLE}
+      className={`h-auto min-h-[78px] w-full flex-col items-center justify-center gap-1.5 whitespace-normal px-[14px] py-[6px] text-center transition ${hasValue ? 'border border-[#534AB7] bg-[#534AB7]/5 text-[#534AB7] hover:bg-[#534AB7]/10' : 'border border-dashed border-slate-300 bg-white text-slate-700 hover:border-[#534AB7] hover:bg-purple-50/70'} ${className}`.trim()}
+      onClick={() => onUpload(uploadKey)}
+    >
+      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md ${hasValue ? 'bg-[#534AB7] text-white' : 'bg-slate-100 text-slate-500'}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="space-y-0.5">
+        <span className="block text-[12px] font-semibold leading-tight">{rule.label}</span>
+        <span className="block text-[10px] font-normal leading-tight text-slate-500">{rule.assetSpec}</span>
+      </span>
+    </Button>
+  );
+};
+
+const UploadPlatformGroup = ({ icon: Icon, title, children }) => (
+  <div className="space-y-2 bg-slate-50/60 p-2.5" style={EDITOR_CARD_STYLE}>
+    <div className="flex items-center gap-2 text-slate-800">
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-[#534AB7]/10 text-[#534AB7]">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <h3 className="text-[12px] font-medium">{title}</h3>
+    </div>
+    <div className="grid grid-cols-2 gap-2">{children}</div>
+  </div>
+);
 
 const PassPreview = ({
   formState,
@@ -534,68 +694,115 @@ const PassPreview = ({
   showPlatformControls = true,
 }) => {
   const [platform, setPlatform] = useState('apple');
-  const { title = 'Título do Cartão', colors = {}, images = {}, dataFields = [], sampleValues = {}, exp_date } = formState;
+  const {
+    title = 'Título do Cartão',
+    colors = {},
+    images = {},
+    dataFields = [],
+    sampleValues = {},
+    exp_date,
+    expiration_months,
+  } = formState;
   const { background = '#6c5ce7', text = '#ffffff', label = '#ffffff' } = colors;
+  const backgroundColor = getPreviewColor(background, INITIAL_FORM_STATE.colors.background);
+  const textColor = getPreviewColor(text, INITIAL_FORM_STATE.colors.text);
+  const labelColor = getPreviewColor(label, INITIAL_FORM_STATE.colors.label);
+  const displayTitle = String(title || '').trim() || 'Título do Cartão';
   const { logo: legacyLogo, appleLogo, googleLogo, googleHero, appleStrip } = images;
 
   const logoUrl = platform === 'apple' ? (appleLogo || legacyLogo) : (googleLogo || legacyLogo);
   const pointsFieldKey = dataFields.find((f) => String(f?.key || '').toLowerCase().includes('points'))?.key;
   const pointsValue = pointsFieldKey ? (sampleValues[pointsFieldKey] || '123') : '123';
-  const expText = `EXPIRA EM ${formatExpPreview(exp_date)}`;
-  const qrValue = qrPreviewUrl || formState.qr_url || 'https://example.com';
+  const displayExpDate = exp_date || getEstimatedExpirationDate(expiration_months);
+  const expText = `EXPIRA EM ${formatExpPreview(displayExpDate)}`;
+  const uniqueLink = qrPreviewUrl || formState.qr_url || '';
+  const qrValue = uniqueLink || 'https://example.com';
+
+  const platformButtonClass = (targetPlatform) => (
+    `h-auto gap-1.5 px-[14px] py-[6px] text-[12px] font-medium ${platform === targetPlatform ? 'bg-[#534AB7] text-white hover:bg-[#463e9f]' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`
+  );
 
   return (
-    <div className={`${sticky ? 'sticky top-24' : ''} ${className}`.trim()}>
-      <div className="relative group w-full max-w-sm mx-auto">
-        <div style={{ backgroundColor: background }} className={`w-full rounded-2xl flex flex-col text-white shadow-2xl overflow-hidden ${cardClassName}`.trim()}>
-          <div className="p-4 flex flex-col flex-1 min-h-[420px]">
-            <header className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-3">
+    <div className={`${sticky ? 'sticky top-0' : ''} ${className}`.trim()}>
+      <div className="mx-auto mb-3 flex w-full max-w-[330px] items-center justify-between gap-2">
+        <p className="text-[10px] font-semibold uppercase text-slate-400">Pré-visualização</p>
+        {showPlatformControls && (
+          <div className="inline-flex items-center rounded-md bg-slate-100 p-1">
+            <Button
+              type="button"
+              variant="ghost"
+              style={ACTION_BUTTON_STYLE}
+              className={platformButtonClass('apple')}
+              onClick={() => setPlatform('apple')}
+              aria-pressed={platform === 'apple'}
+            >
+              <Apple className="h-3.5 w-3.5" />
+              Apple
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              style={ACTION_BUTTON_STYLE}
+              className={platformButtonClass('google')}
+              onClick={() => setPlatform('google')}
+              aria-pressed={platform === 'google'}
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              Google
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="relative group mx-auto w-full max-w-[330px]">
+        <div style={{ backgroundColor }} className={`w-full rounded-2xl flex flex-col text-white shadow-2xl overflow-hidden ${cardClassName}`.trim()}>
+          <div className="flex min-h-[420px] flex-1 flex-col p-4">
+            <header className="mb-4 flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-3">
                 {logoUrl ? (
                   <img
                     src={logoUrl}
                     alt="logo"
-                    className={platform === 'apple' ? 'max-h-10 max-w-10 object-contain' : 'w-10 h-10 rounded-full object-cover'}
+                    className={platform === 'apple' ? 'max-h-10 max-w-10 shrink-0 object-contain' : 'h-10 w-10 shrink-0 rounded-full object-cover'}
                   />
-                ) : <div className="w-10 h-10 rounded-full bg-white/20" />}
-                <h3 style={{ color: text }} className="font-bold text-lg">{title}</h3>
+                ) : <div className="h-10 w-10 shrink-0 rounded-full bg-white/20" />}
+                <h3 style={{ color: textColor }} className="min-w-0 truncate text-lg font-bold">{displayTitle}</h3>
               </div>
-              <p style={{ color: label }} className="text-xs uppercase font-semibold">{expText}</p>
+              <p style={{ color: labelColor }} className="shrink-0 text-right text-[10px] font-semibold uppercase leading-tight">{expText}</p>
             </header>
 
             {platform === 'apple' && (
               appleStrip
-                ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="w-full aspect-[375/144] object-cover" /></div>
-                : <div className="-mx-4 mb-4"><div className="w-full aspect-[375/144] bg-white/15" /></div>
+                ? <div className="-mx-4 mb-4"><img src={appleStrip} alt="Apple Strip" className="aspect-[375/144] w-full object-cover" /></div>
+                : <div className="-mx-4 mb-4"><div className="aspect-[375/144] w-full bg-white/15" /></div>
             )}
 
-            <main className="flex-grow flex flex-col items-start justify-center text-left">
-              <p style={{ color: label }} className="text-sm uppercase tracking-wider">Pontos</p>
-              <p style={{ color: text }} className="text-4xl leading-none">{pointsValue}</p>
+            <main className="flex flex-grow flex-col items-start justify-center text-left">
+              <p style={{ color: labelColor }} className="text-[12px] uppercase tracking-wide">Pontos</p>
+              <p style={{ color: textColor }} className="text-4xl leading-none">{pointsValue}</p>
             </main>
 
             <footer className="mt-6 flex items-center justify-center">
-              <div className={platform === 'google' ? 'bg-white p-5 rounded-2xl' : 'bg-white p-2 rounded-md'}>
-                <QRCode value={qrValue} size={platform === 'google' ? 150 : 96} quietZone={0} bgColor="transparent" />
+              <div className={platform === 'google' ? 'rounded-2xl bg-white p-4' : 'rounded-md bg-white p-2'}>
+                <QRCode value={qrValue} size={platform === 'google' ? 136 : 96} quietZone={0} bgColor="transparent" />
               </div>
             </footer>
           </div>
 
           {platform === 'google' && (
-            googleHero ? <img src={googleHero} alt="Google Hero" className="w-full aspect-[3/1] object-cover" /> : <div className="w-full aspect-[3/1] bg-white/15" />
+            googleHero ? <img src={googleHero} alt="Google Hero" className="aspect-[3/1] w-full object-cover" /> : <div className="aspect-[3/1] w-full bg-white/15" />
           )}
         </div>
         {cardOverlay}
       </div>
 
-      {showPlatformControls && (
-        <div className="mt-4 flex items-center justify-center gap-2">
-          <Button size="sm" variant={platform === 'apple' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('apple')}>
-            <Apple className="w-4 h-4" /> Apple
-          </Button>
-          <Button size="sm" variant={platform === 'google' ? 'default' : 'secondary'} className="rounded-full gap-2" onClick={() => setPlatform('google')}>
-            <Smartphone className="w-4 h-4" /> Google
-          </Button>
+      {uniqueLink && (
+        <div
+          className="mx-auto mt-3 max-w-[330px] px-3 py-2"
+          style={{ ...EDITOR_CARD_STYLE, backgroundColor: 'var(--background-secondary, hsl(var(--secondary)))' }}
+        >
+          <p className="text-[10px] font-medium uppercase text-slate-500">Link único</p>
+          <p className="truncate text-[12px] font-medium text-slate-800" title={uniqueLink}>{uniqueLink}</p>
         </div>
       )}
     </div>
@@ -653,7 +860,7 @@ const PassInventory = ({
 
   return (
     <section className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold">Meus cartões</h1>
         </div>
@@ -688,7 +895,7 @@ const PassInventory = ({
       )}
 
       {!loading && activePass && (
-        <div className="space-y-5">
+        <div className="space-y-3">
           <div className="flex flex-col items-center text-center">
             <div className="flex flex-wrap items-center justify-center gap-2">
               <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Cartão sem titulo'}</p>
@@ -696,7 +903,7 @@ const PassInventory = ({
                 {translatePassStatus(activePass.status)}
               </span>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500">
               Criado em {formatPassCreatedAt(activePass.created_at)}
             </p>
           </div>
@@ -844,106 +1051,254 @@ const PassInventory = ({
 };
 
 const PassEditorPanel = ({
-  isEditingPass,
   readOnly = false,
   formState,
-  activeLocationIds,
+  activeLocationIds = [],
+  locationsById = {},
   isProcessing,
   fileInputRef,
+  validationErrors = {},
+  setValidationErrors,
   onFormChange,
   onUploadClick,
   onFileChange,
   onOpenLocations,
-  onSave,
-  onGenerateLink,
-}) => (
-  <div className="space-y-8">
-    <div className="space-y-4 p-4 border rounded-lg">
-      <h2 className="font-semibold text-lg flex items-center gap-2">
-        <Settings className="w-5 h-5 text-purple-500" />
-        {isEditingPass ? 'Editar cartão' : 'Novo cartão'}
-      </h2>
+  onLocationIdsChange,
+  onStepChange,
+}) => {
+  const expirationMonthsValue = formState.expiration_months ?? '';
+  const currentExpirationMonths = normalizeExpirationMonths(formState.expiration_months);
+  const expirationControlDisabled = readOnly || isProcessing;
+  const canDecreaseExpiration = currentExpirationMonths > MIN_EXPIRATION_MONTHS;
+  const canIncreaseExpiration = currentExpirationMonths < MAX_EXPIRATION_MONTHS;
+  const hasLocations = activeLocationIds.length > 0;
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <div>
-            <Label>Tipo</Label>
-            <Select value={formState.type} onValueChange={(v) => onFormChange('type', v)} disabled={readOnly || isProcessing}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="loyalty">Loyalty</SelectItem>
-                <SelectItem value="offer">Offer</SelectItem>
-                <SelectItem value="event">Event</SelectItem>
-                <SelectItem value="generic">Generic</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+  const activateStep = (step) => {
+    onStepChange?.(step);
+  };
 
-          <div>
-            <Label>Titulo</Label>
-            <Input value={formState.title} maxLength={16} onChange={(e) => onFormChange('title', e.target.value)} placeholder="Ex: Cartao" disabled={readOnly || isProcessing} />
-            {String(formState.title || '').length >= 16 && (
-              <p className="mt-1 text-xs text-amber-600">Limite de caracteres atingido.</p>
-            )}
-          </div>
+  const clearValidationError = (field) => {
+    setValidationErrors?.((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
 
-          <div>
-            <Label>Descricao</Label>
-            <Textarea value={formState.description} onChange={(e) => onFormChange('description', e.target.value)} placeholder="Ex: Complete 10 visitas e ganhe um cafe." disabled={readOnly || isProcessing} />
-          </div>
-        </div>
+  const handleFieldChange = (path, value) => {
+    onFormChange(path, value);
+    if (path === 'type' || path === 'title' || path === 'expiration_months') {
+      clearValidationError(path);
+    }
+  };
 
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2">
-            <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => onFormChange('colors.background', e.target.value)} disabled={readOnly || isProcessing} />
-            <ColorInput label="Rotulo" value={formState.colors.label} onChange={(e) => onFormChange('colors.label', e.target.value)} disabled={readOnly || isProcessing} />
-            <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => onFormChange('colors.text', e.target.value)} disabled={readOnly || isProcessing} />
-          </div>
+  const handleExpirationStep = (delta) => {
+    if (expirationControlDisabled) return;
+    handleFieldChange('expiration_months', normalizeExpirationMonths(currentExpirationMonths + delta));
+  };
 
-          {!readOnly && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <UploadButtonWithInfo uploadKey="appleLogo" onUpload={onUploadClick} />
-                <UploadButtonWithInfo uploadKey="googleLogo" onUpload={onUploadClick} />
-                <UploadButtonWithInfo uploadKey="appleStrip" onUpload={onUploadClick} />
-                <UploadButtonWithInfo uploadKey="googleHero" onUpload={onUploadClick} />
-              </div>
-              <div className="md:max-w-[calc(50%-0.375rem)]">
-                <UploadButtonWithInfo uploadKey="icon" onUpload={onUploadClick} />
-              </div>
+  const handleRemoveLocation = (locationId) => {
+    if (readOnly || isProcessing) return;
+    onLocationIdsChange?.(activeLocationIds.filter((id) => id !== locationId));
+  };
+
+  return (
+    <div className="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
+      <div className="flex h-full flex-col gap-3">
+        <EditorSection icon={Settings} title="Informações básicas" onActivate={() => activateStep('info')} className="min-h-[320px]" bodyClassName="min-h-[270px]">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label className="text-[12px] font-medium text-slate-700">
+                Tipo <span className="text-[#534AB7]">*</span>
+              </Label>
+              <Select value={formState.type} onValueChange={(v) => handleFieldChange('type', v)} disabled={readOnly || isProcessing}>
+                <SelectTrigger className={validationErrors.type ? 'h-10 border-red-300 text-sm focus:ring-red-300' : 'h-10 text-sm'}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="loyalty">Loyalty</SelectItem>
+                  <SelectItem value="offer">Offer</SelectItem>
+                  <SelectItem value="event">Event</SelectItem>
+                  <SelectItem value="generic">Generic</SelectItem>
+                </SelectContent>
+              </Select>
+              {validationErrors.type && <p className="text-[10px] text-red-600">{validationErrors.type}</p>}
             </div>
-          )}
 
-          {!readOnly && (
-            <Button type="button" variant="outline" className="w-full justify-start" onClick={onOpenLocations}>
-              <MapPin className="mr-2 h-4 w-4" />
-              Adicionar localizacao ({activeLocationIds.length} {activeLocationIds.length === 1 ? 'selecionada' : 'selecionadas'})
+            <div className="space-y-1.5">
+              <Label className="text-[12px] font-medium text-slate-700">
+                Título <span className="text-[#534AB7]">*</span>
+              </Label>
+              <Input
+                value={formState.title}
+                maxLength={16}
+                onChange={(e) => handleFieldChange('title', e.target.value)}
+                placeholder="Ex: Cartão"
+                disabled={readOnly || isProcessing}
+                className={validationErrors.title ? 'h-10 border-red-300 text-sm focus-visible:ring-red-300' : 'h-10 text-sm'}
+              />
+              {validationErrors.title && <p className="text-[10px] text-red-600">{validationErrors.title}</p>}
+              {String(formState.title || '').length >= 16 && (
+                <p className="text-[10px] text-amber-600">Limite de caracteres atingido.</p>
+              )}
+            </div>
+
+            <div className="space-y-1 md:col-span-1">
+              <div className="flex items-center gap-2">
+                <Label className="text-[12px] font-medium text-slate-700">Descrição</Label>
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">opcional</span>
+              </div>
+              <Textarea
+                value={formState.description}
+                onChange={(e) => handleFieldChange('description', e.target.value)}
+                placeholder="Ex: Complete 10 visitas e ganhe um café."
+                disabled={readOnly || isProcessing}
+                className="min-h-[96px] text-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label className="block text-[12px] font-medium text-slate-700" htmlFor="wallet-expiration-months">
+                Validade <span className="text-[#534AB7]">*</span>
+              </Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className={`inline-grid min-h-[30px] grid-cols-[30px_minmax(42px,54px)_30px] items-center overflow-hidden rounded-full border bg-white shadow-sm ${validationErrors.expiration_months ? 'border-red-300' : 'border-slate-200'}`}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-[30px] min-h-[30px] w-[30px] rounded-none bg-purple-100/80 p-0 text-purple-600 hover:bg-purple-200 hover:text-purple-700 focus-visible:ring-purple-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => handleExpirationStep(-1)}
+                    disabled={expirationControlDisabled || !canDecreaseExpiration}
+                    aria-label="Diminuir validade do passe"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                  <Input
+                    id="wallet-expiration-months"
+                    type="number"
+                    min={MIN_EXPIRATION_MONTHS}
+                    max={MAX_EXPIRATION_MONTHS}
+                    step={1}
+                    inputMode="numeric"
+                    value={expirationMonthsValue}
+                    onChange={(e) => handleFieldChange('expiration_months', e.target.value)}
+                    onBlur={() => handleFieldChange('expiration_months', normalizeExpirationMonths(formState.expiration_months))}
+                    disabled={expirationControlDisabled}
+                    aria-label="Validade do passe em meses"
+                    className="h-[30px] border-0 bg-white px-0 text-center text-[12px] font-semibold text-slate-900 shadow-none [appearance:textfield] focus-visible:ring-0 focus-visible:ring-offset-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-[30px] min-h-[30px] w-[30px] rounded-none bg-purple-100/80 p-0 text-purple-600 hover:bg-purple-200 hover:text-purple-700 focus-visible:ring-purple-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={() => handleExpirationStep(1)}
+                    disabled={expirationControlDisabled || !canIncreaseExpiration}
+                    aria-label="Aumentar validade do passe"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <span className="text-[11px] font-medium text-slate-500">mês · máx. 60</span>
+              </div>
+              {validationErrors.expiration_months && <p className="text-[10px] text-red-600">{validationErrors.expiration_months}</p>}
+            </div>
+          </div>
+        </EditorSection>
+
+        <EditorSection icon={MapPin} title="Localização" optional onActivate={() => activateStep('location')} className="flex-1">
+          <div className="flex h-full flex-col gap-3">
+            <div className="flex gap-2 rounded-md border border-purple-100 bg-purple-50/70 p-3 text-sm leading-snug text-slate-600">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#534AB7]" />
+              <p>Adicione localizações para enviar notificações quando o portador estiver próximo ao estabelecimento.</p>
+            </div>
+
+            <div className="space-y-2">
+              {hasLocations ? (
+                [...activeLocationIds].reverse().map((locationId, index) => {
+                  const location = locationsById[locationId];
+                  const fallbackName = `Localização ${activeLocationIds.length - index}`;
+                  const displayName = getLocationDisplayName(location, fallbackName);
+                  const coordinates = formatLocationCoordinates(location);
+
+                  return (
+                    <div key={locationId} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-700">
+                        <MapPin className="h-4 w-4 shrink-0 text-[#534AB7]" />
+                        <div className="flex min-w-0 flex-1 items-end justify-between gap-3">
+                          <p className="min-w-0 truncate leading-tight font-semibold text-slate-800">{displayName}</p>
+                          <p className="shrink-0 truncate text-right font-mono text-[10px] leading-tight text-slate-400">{coordinates}</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 p-0 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        onClick={() => handleRemoveLocation(locationId)}
+                        disabled={readOnly || isProcessing}
+                        aria-label={`Remover ${displayName}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="rounded-md border border-dashed border-slate-200 px-3 py-2 text-sm text-slate-500">Nenhuma localização adicionada.</p>
+              )}
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              style={ACTION_BUTTON_STYLE}
+              className="mt-auto h-10 w-full justify-center gap-2 border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:border-[#534AB7] hover:bg-purple-50/70"
+              onClick={onOpenLocations}
+              disabled={readOnly || isProcessing}
+            >
+              <Plus className="h-4 w-4" />
+              Adicionar localização
             </Button>
-          )}
+          </div>
+        </EditorSection>
+      </div>
 
-          <input type="file" ref={fileInputRef} onChange={onFileChange} className="hidden" accept=".png,image/png" />
+      <EditorSection icon={Palette} title="Aparência" onActivate={() => activateStep('appearance')} className="h-full">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <ColorInput label="Fundo" value={formState.colors.background} onChange={(e) => handleFieldChange('colors.background', e.target.value)} disabled={readOnly || isProcessing} />
+            <ColorInput label="Rótulo" value={formState.colors.label} onChange={(e) => handleFieldChange('colors.label', e.target.value)} disabled={readOnly || isProcessing} />
+            <ColorInput label="Texto" value={formState.colors.text} onChange={(e) => handleFieldChange('colors.text', e.target.value)} disabled={readOnly || isProcessing} />
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-slate-400" />
+              <Label className="text-[12px] font-medium text-slate-700">Imagens</Label>
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">opcional</span>
+            </div>
+
+            <UploadPlatformGroup icon={Apple} title="Apple Wallet">
+              <UploadButtonWithInfo uploadKey="appleLogo" value={formState.images.appleLogo} onUpload={onUploadClick} disabled={readOnly || isProcessing} />
+              <UploadButtonWithInfo uploadKey="appleStrip" value={formState.images.appleStrip} onUpload={onUploadClick} disabled={readOnly || isProcessing} />
+              <UploadButtonWithInfo uploadKey="icon" value={formState.images.icon} onUpload={onUploadClick} disabled={readOnly || isProcessing} className="col-span-full" />
+            </UploadPlatformGroup>
+
+            <UploadPlatformGroup icon={Smartphone} title="Google Wallet">
+              <UploadButtonWithInfo uploadKey="googleLogo" value={formState.images.googleLogo} onUpload={onUploadClick} disabled={readOnly || isProcessing} />
+              <UploadButtonWithInfo uploadKey="googleHero" value={formState.images.googleHero} onUpload={onUploadClick} disabled={readOnly || isProcessing} />
+            </UploadPlatformGroup>
+          </div>
         </div>
-      </div>
+      </EditorSection>
+
+      <input type="file" ref={fileInputRef} onChange={onFileChange} className="hidden" accept=".png,image/png" />
     </div>
-
-    {!readOnly && (
-      <div className="flex flex-wrap justify-center items-center gap-4 py-6">
-        <Button size="lg" onClick={onSave} disabled={isProcessing} variant="outline">
-          {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          {isProcessing ? 'Salvando...' : 'Salvar alteracoes'}
-        </Button>
-
-        {!isEditingPass && (
-          <Button size="lg" onClick={onGenerateLink} disabled={isProcessing}>
-            {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LinkIcon className="mr-2 h-4 w-4" />}
-            {isProcessing ? 'Gerando...' : 'Gerar Link Unico'}
-          </Button>
-        )}
-      </div>
-    )}
-  </div>
-);
-
+  );
+};
 const WalletConfigTab = ({ projectId, onBack }) => {
   const { toast } = useToast();
   const { user, role } = useAuth();
@@ -961,9 +1316,14 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const [selectedPassLocationIds, setSelectedPassLocationIds] = useState([]);
   const [draftLocationIds, setDraftLocationIds] = useState([]);
   const [passLocationsByPassId, setPassLocationsByPassId] = useState({});
+  const [locationsById, setLocationsById] = useState({});
   const [uploadingKey, setUploadingKey] = useState(null);
   const [projectMemberRole, setProjectMemberRole] = useState(null);
   const [passToDelete, setPassToDelete] = useState(null);
+  const [currentStep, setCurrentStep] = useState('info');
+  const [validationErrors, setValidationErrors] = useState({});
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
+  const [pendingAction, setPendingAction] = useState(null);
   const fileInputRef = useRef(null);
 
   const canManagePasses = role === 'superadmin' || role === 'admin' || projectMemberRole === 'owner';
@@ -973,6 +1333,11 @@ const WalletConfigTab = ({ projectId, onBack }) => {
   const isEditorOpen = isEditingPass || isCreatingPass;
   const activeLocationIds = isEditingPass ? selectedPassLocationIds : draftLocationIds;
   const canGoBackToProjects = typeof onBack === 'function';
+
+  const touchUpdatedAt = useCallback((value) => {
+    const nextDate = value ? new Date(value) : new Date();
+    setUpdatedAt(Number.isNaN(nextDate.getTime()) ? new Date() : nextDate);
+  }, []);
 
   const showManagePermissionToast = () => {
     toast({
@@ -1024,7 +1389,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     try {
       const { data, error } = await supabase
         .from('passes')
-        .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design, deleted_at')
+        .select('id, project_id, type, title, description, status, qr_url, created_at, wallet_updated_at, fields, design, deleted_at')
         .eq('project_id', pId)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
@@ -1058,6 +1423,31 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     }
   }, [toast]);
 
+  const loadLocationDetails = useCallback(async (pId) => {
+    if (!pId) {
+      setLocationsById({});
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('locations')
+        .select('id, label, address, lat, lng')
+        .eq('project_id', pId)
+        .order('label');
+
+      if (error) throw error;
+
+      const nextMap = {};
+      (data || []).forEach((location) => {
+        if (location?.id) nextMap[location.id] = location;
+      });
+      setLocationsById(nextMap);
+    } catch (error) {
+      toast({ title: 'Erro ao carregar localizações', description: error.message, variant: 'destructive' });
+    }
+  }, [toast]);
+
   const loadWalletDefaults = useCallback(async (pId) => {
     setIsProcessing(true);
     try {
@@ -1066,23 +1456,25 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       setProjectSlug(projectData.slug || '');
       const projectDisplayName = String(projectData?.name ?? '').trim();
 
-      const fromProject = await supabase.from('wallet_templates').select('defaults').eq('project_id', pId).maybeSingle();
+      const fromProject = await supabase.from('wallet_templates').select('defaults, updated_at').eq('project_id', pId).maybeSingle();
       let defaults = fromProject.data?.defaults;
+      let defaultsUpdatedAt = fromProject.data?.updated_at;
       if (!defaults) {
-        const { data: globalData, error: globalError } = await supabase.from('wallet_templates').select('defaults').is('project_id', null).single();
+        const { data: globalData, error: globalError } = await supabase.from('wallet_templates').select('defaults, updated_at').is('project_id', null).single();
         if (globalError) throw globalError;
         defaults = globalData?.defaults ?? {};
+        defaultsUpdatedAt = globalData?.updated_at;
       }
 
       const merged = mergeWithInitial(applyProjectWalletDefaults(defaults, projectDisplayName));
       setTemplateDefaults(merged);
+      touchUpdatedAt(defaultsUpdatedAt);
     } catch (error) {
       toast({ title: 'Erro ao carregar template', description: error.message, variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
-  }, [toast]);
-
+  }, [toast, touchUpdatedAt]);
   useEffect(() => {
     if (!projectId) return;
     setSelectedPass(null);
@@ -1090,15 +1482,23 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setSelectedPassLocationIds([]);
     setDraftLocationIds([]);
     setGenerationResult(null);
+    setCurrentStep('info');
+    setValidationErrors({});
     loadWalletDefaults(projectId);
+    loadLocationDetails(projectId);
     fetchPasses(projectId);
-  }, [projectId, loadWalletDefaults, fetchPasses]);
+  }, [projectId, loadWalletDefaults, loadLocationDetails, fetchPasses]);
 
   useEffect(() => {
     if (!selectedPass) {
       setFormState(mergeWithInitial(templateDefaults));
     }
   }, [templateDefaults, selectedPass]);
+
+  useEffect(() => {
+    if (!projectId || isLocationsModalOpen) return;
+    loadLocationDetails(projectId);
+  }, [projectId, isLocationsModalOpen, loadLocationDetails]);
 
   const handleFormChange = (path, value) => {
     if (isReadOnly) return;
@@ -1159,6 +1559,8 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
       const { data } = supabase.storage.from('pass-assets').getPublicUrl(path);
       handleFormChange(`images.${uploadingKey}`, data.publicUrl);
+      setCurrentStep('appearance');
+      touchUpdatedAt();
       toast({ title: 'Upload com sucesso.' });
       if (validation.warning) toast({ title: 'Aviso de proporção', description: validation.warning });
     } catch (error) {
@@ -1195,7 +1597,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       try {
         const { data: passRow, error: passError } = await supabase
           .from('passes')
-          .select('id, project_id, type, title, description, status, qr_url, created_at, fields, design, deleted_at')
+          .select('id, project_id, type, title, description, status, qr_url, created_at, wallet_updated_at, fields, design, deleted_at')
           .eq('id', pass.id)
           .eq('project_id', projectId)
           .is('deleted_at', null)
@@ -1215,6 +1617,9 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setSelectedPass(resolvedPass);
     setFormState(passToFormState(resolvedPass, templateDefaults));
     setWalletView('edit');
+    setCurrentStep('info');
+    setValidationErrors({});
+    touchUpdatedAt(resolvedPass.wallet_updated_at || resolvedPass.updated_at || resolvedPass.created_at);
 
     const cached = passLocationsByPassId[resolvedPass.id];
     if (Array.isArray(cached)) {
@@ -1243,7 +1648,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setSelectedPassLocationIds([]);
     setDraftLocationIds([]);
     setGenerationResult(null);
+    setCurrentStep('info');
+    setValidationErrors({});
     setFormState(mergeWithInitial(templateDefaults));
+    touchUpdatedAt();
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1255,7 +1663,10 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setSelectedPassLocationIds([]);
     setDraftLocationIds([]);
     setGenerationResult(null);
+    setCurrentStep('info');
+    setValidationErrors({});
     setFormState(mergeWithInitial(templateDefaults));
+    touchUpdatedAt();
   };
 
   const handleGenerateLink = async () => {
@@ -1290,6 +1701,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
       setFormState((prev) => ({ ...prev, qr_url: result.qr_url || prev.qr_url }));
       setGenerationResult(result);
+      touchUpdatedAt();
       setIsModalOpen(true);
       await fetchPasses(projectId);
     } catch (error) {
@@ -1308,12 +1720,16 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     setIsProcessing(true);
     try {
       const normalizedDefaultsToSave = normalizeWalletDefaults({ ...formState, qr_url: '' });
-      const { error } = await supabase
+      const savedAt = new Date().toISOString();
+      const { data: savedTemplate, error } = await supabase
         .from('wallet_templates')
-        .upsert({ project_id: projectId, name: 'Template do Projeto', defaults: normalizedDefaultsToSave }, { onConflict: 'project_id' });
+        .upsert({ project_id: projectId, name: 'Template do Projeto', defaults: normalizedDefaultsToSave, updated_at: savedAt }, { onConflict: 'project_id' })
+        .select('updated_at')
+        .single();
 
       if (error) throw error;
       setTemplateDefaults(mergeWithInitial(normalizedDefaultsToSave));
+      touchUpdatedAt(savedTemplate?.updated_at || savedAt);
       toast({ title: 'Template do projeto salvo com sucesso.' });
     } catch (error) {
       toast({ title: 'Erro ao salvar template', description: error.message, variant: 'destructive' });
@@ -1369,6 +1785,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       await fetchPasses(projectId);
 
       const mergedPass = { ...selectedPass, ...(result?.pass || {}) };
+      touchUpdatedAt(mergedPass.wallet_updated_at || mergedPass.updated_at);
       setSelectedPass(mergedPass);
       setFormState(passToFormState(mergedPass, templateDefaults));
     } catch (error) {
@@ -1389,6 +1806,44 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       return;
     }
     await handleSaveTemplate();
+  };
+
+  const handleUnifiedBack = () => {
+    if (isEditorOpen) {
+      handleBackToPasses();
+      return;
+    }
+
+    if (canGoBackToProjects) onBack();
+  };
+
+  const handleEditorAction = async (action) => {
+    if (isReadOnly) {
+      showManagePermissionToast();
+      return;
+    }
+
+    if (action === 'generate' && isEditingPass) return;
+
+    const nextErrors = validateEditorForm(formState);
+    setValidationErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) {
+      setCurrentStep('info');
+      return;
+    }
+
+    setCurrentStep('publish');
+    setPendingAction(action);
+    try {
+      if (action === 'save') {
+        await handleSave();
+        return;
+      }
+
+      await handleGenerateLink();
+    } finally {
+      setPendingAction(null);
+    }
   };
 
   const handlePassesListAction = async (action, url) => {
@@ -1506,11 +1961,13 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         {canGoBackToProjects && (
           <div className="mb-6 flex justify-start">
             <Button
-              onClick={onBack}
-              className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
+              type="button"
+              variant="outline"
+              onClick={handleUnifiedBack}
+              style={ACTION_BUTTON_STYLE}
+              className="h-auto px-[14px] py-[6px] text-[12px] font-medium"
             >
-              <ChevronLeft className="mr-1 h-4 w-4" />
-              Voltar aos Projetos
+              ← Voltar
             </Button>
           </div>
         )}
@@ -1532,12 +1989,15 @@ const WalletConfigTab = ({ projectId, onBack }) => {
     );
   }
 
+  const previewLink = generationResult?.qr_url || generationResult?.claim_url || formState.qr_url;
+  const canGenerateLink = !isEditingPass && !isReadOnly;
+
   return (
-    <div className="p-4 md:p-6 lg:p-8">
-      <div className="mb-6 space-y-3">
+    <div className="p-2 pb-0 md:p-3 md:pb-0 lg:p-4 lg:pb-0">
+      <div className="mb-3 space-y-3">
         {isEditingPass && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
-            <p className="text-sm font-medium">
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+            <p className="text-[12px] font-medium">
               Editando cartão criado em {formatPassCreatedAt(selectedPass?.created_at)}.
             </p>
           </div>
@@ -1545,30 +2005,28 @@ const WalletConfigTab = ({ projectId, onBack }) => {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">{isEditingPass ? 'Editar cartão' : 'Novo cartão'}</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <h1 className="text-2xl font-bold">{isEditingPass ? 'Editar cartão' : 'Novo cartão'}</h1>
+            <p className="mt-0.5 text-[12px] text-slate-500">
               {isEditingPass ? 'Ajuste o cartão selecionado e salve as mudancas.' : 'Monte um novo cartão usando o template do projeto.'}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handleBackToPasses} disabled={isProcessing}>
-              <ChevronLeft className="mr-2 h-4 w-4" />
-              Voltar para meus cartões
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleUnifiedBack}
+              disabled={isProcessing}
+              style={ACTION_BUTTON_STYLE}
+              className="h-auto px-[14px] py-[6px] text-[12px] font-medium"
+            >
+              ← Voltar
             </Button>
-            {canGoBackToProjects && (
-              <Button
-                onClick={onBack}
-                className="bg-purple-600 text-white hover:bg-purple-700 focus-visible:ring-purple-500"
-              >
-                <ChevronLeft className="mr-1 h-4 w-4" />
-                Voltar aos Projetos
-              </Button>
-            )}
+
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,0.85fr)_330px] xl:grid-cols-[minmax(0,0.82fr)_minmax(0,0.82fr)_350px]">
         <motion.div
           key={`${walletView}-editor`}
           initial={{ opacity: 0, x: -64 }}
@@ -1577,18 +2035,23 @@ const WalletConfigTab = ({ projectId, onBack }) => {
           className="lg:col-span-2"
         >
           <PassEditorPanel
-            isEditingPass={isEditingPass}
             readOnly={isReadOnly}
             formState={formState}
             activeLocationIds={activeLocationIds}
+            locationsById={locationsById}
             isProcessing={isProcessing}
             fileInputRef={fileInputRef}
+            validationErrors={validationErrors}
+            setValidationErrors={setValidationErrors}
             onFormChange={handleFormChange}
             onUploadClick={handleUploadClick}
             onFileChange={handleFileChange}
-            onOpenLocations={() => setIsLocationsModalOpen(true)}
-            onSave={handleSave}
-            onGenerateLink={handleGenerateLink}
+            onOpenLocations={() => {
+              setCurrentStep('location');
+              setIsLocationsModalOpen(true);
+            }}
+            onLocationIdsChange={updateLocationSelection}
+            onStepChange={setCurrentStep}
           />
         </motion.div>
 
@@ -1599,8 +2062,50 @@ const WalletConfigTab = ({ projectId, onBack }) => {
           transition={{ duration: 0.42, ease: 'easeOut' }}
           className="lg:col-span-1"
         >
-          <PassPreview formState={formState} qrPreviewUrl={generationResult?.qr_url || formState.qr_url} />
+          <PassPreview formState={formState} qrPreviewUrl={previewLink} />
         </motion.div>
+      </div>
+
+      <div className="sticky bottom-0 z-30 -mx-2 mt-4 border-t border-border bg-background/95 px-2 py-3 backdrop-blur md:-mx-3 md:px-3 lg:-mx-4 lg:px-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleUnifiedBack}
+            disabled={isProcessing}
+            style={ACTION_BUTTON_STYLE}
+            className="h-auto justify-center px-[14px] py-[6px] text-[12px] font-medium sm:justify-start"
+          >
+            ← Voltar
+          </Button>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => handleEditorAction('save')}
+              disabled={isProcessing || isReadOnly}
+              style={ACTION_BUTTON_STYLE}
+              className="h-11 min-w-[150px] px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              {pendingAction === 'save' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Salvar rascunho
+            </Button>
+
+            <Button
+              type="button"
+              onClick={() => handleEditorAction('generate')}
+              disabled={isProcessing || !canGenerateLink}
+              title={isEditingPass ? 'Disponível ao criar um novo cartão.' : undefined}
+              style={ACTION_BUTTON_STYLE}
+              className="h-11 min-w-[190px] gap-2 bg-[#534AB7] px-5 py-2 text-sm font-semibold text-white hover:bg-[#463e9f] focus-visible:ring-[#534AB7]"
+            >
+              {pendingAction === 'generate' && <Loader2 className="h-4 w-4 animate-spin" />}
+              Gerar link único
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>
 
       <Dialog open={isLocationsModalOpen} onOpenChange={setIsLocationsModalOpen}>
