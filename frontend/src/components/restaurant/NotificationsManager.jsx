@@ -113,7 +113,7 @@ function statusBadgeClass(status) {
     return "border-sky-200 bg-sky-50 text-sky-700";
   }
   if (key === "canceled") {
-    return "border-slate-200 bg-slate-100 text-slate-700";
+    return "border-border bg-muted text-muted-foreground";
   }
   return "border-indigo-200 bg-indigo-50 text-indigo-700";
 }
@@ -134,7 +134,7 @@ function StatusBadge({ status }) {
 // Fallback Card (se você não tiver shadcn Card ainda)
 function Box({ className, children }) {
   return (
-    <div className={cn("rounded-xl border bg-white text-gray-900 shadow-lg", className)}>
+    <div className={cn("rounded-xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20", className)}>
       {children}
     </div>
   );

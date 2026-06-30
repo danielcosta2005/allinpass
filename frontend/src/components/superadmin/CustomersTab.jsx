@@ -193,7 +193,7 @@ const CustomersTab = ({ projectId }) => {
         </Button>
       </div>
 
-      <div className="bg-white rounded-2xl p-6 shadow-xl border border-purple-100">
+      <div className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-xl shadow-slate-950/5 dark:shadow-black/20">
         <h3 className="text-lg font-bold mb-4">Lista de Clientes do Projeto</h3>
 
         {loading ? (
@@ -203,7 +203,7 @@ const CustomersTab = ({ projectId }) => {
         ) : customers.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-4 py-3 w-10"></th>
                   <th scope="col" className="px-6 py-3">Google Sub</th>
@@ -223,7 +223,7 @@ const CustomersTab = ({ projectId }) => {
                   return (
                     <React.Fragment key={customer.id}>
                       <tr
-                        className={`bg-white border-b cursor-pointer hover:bg-gray-50 ${isExpanded ? "bg-gray-50" : ""}`}
+                        className={`border-b border-border bg-card cursor-pointer hover:bg-accent/60 ${isExpanded ? "bg-muted" : ""}`}
                         onClick={() => toggleExpand(customer)}
                         role="button"
                         tabIndex={0}
@@ -231,7 +231,7 @@ const CustomersTab = ({ projectId }) => {
                           if (e.key === "Enter" || e.key === " ") toggleExpand(customer);
                         }}
                       >
-                        <td className="px-4 py-4 text-gray-500">
+                        <td className="px-4 py-4 text-muted-foreground">
                           {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </td>
 
@@ -255,13 +255,13 @@ const CustomersTab = ({ projectId }) => {
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
                             exit={{ opacity: 0, height: 0 }}
-                            className="bg-gray-50"
+                            className="bg-muted/50"
                           >
                             <td colSpan={6} className="px-6 py-4">
-                              <div className="rounded-xl border bg-white shadow-md">
-                                <div className="flex items-center justify-between px-4 py-3 border-b">
+                              <div className="rounded-xl border border-border bg-card shadow-md">
+                                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                                   <div className="text-sm font-semibold">Passes do cliente</div>
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-muted-foreground">
                                     {passesLoading ? "Carregando..." : `${passes.length} passe(s)`}
                                   </div>
                                 </div>
@@ -273,7 +273,7 @@ const CustomersTab = ({ projectId }) => {
                                 ) : passes.length > 0 ? (
                                   <div className="overflow-x-auto">
                                     <table className="w-full text-xs text-left">
-                                      <thead className="text-[11px] text-gray-700 uppercase bg-gray-50">
+                                      <thead className="bg-muted text-[11px] uppercase text-muted-foreground">
                                         <tr>
                                           <th className="px-4 py-3">Pass type</th>
                                           <th className="px-4 py-3">Status</th>
@@ -295,10 +295,10 @@ const CustomersTab = ({ projectId }) => {
                                               ? "bg-green-50 text-green-700 border-green-200"
                                               : status === "removed"
                                               ? "bg-red-50 text-red-700 border-red-200"
-                                              : "bg-gray-50 text-gray-700 border-gray-200";
+                                              : "bg-muted text-muted-foreground border-border";
 
                                           return (
-                                            <tr key={p.id} className="border-t">
+                                            <tr key={p.id} className="border-t border-border">
                                               <td className="px-4 py-3 font-medium">{passType}</td>
 
                                               <td className="px-4 py-3">
@@ -322,7 +322,7 @@ const CustomersTab = ({ projectId }) => {
                                     </table>
                                   </div>
                                 ) : (
-                                  <div className="px-4 py-6 text-sm text-gray-500">
+                                  <div className="px-4 py-6 text-sm text-muted-foreground">
                                     Nenhum passe encontrado para este cliente.
                                   </div>
                                 )}
@@ -338,8 +338,8 @@ const CustomersTab = ({ projectId }) => {
             </table>
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-500">
-            <Users className="mx-auto h-12 w-12 text-gray-400" />
+          <div className="text-center py-8 text-muted-foreground">
+            <Users className="mx-auto h-12 w-12 text-muted-foreground/70" />
             <p className="mt-2">Nenhum cliente cadastrado neste projeto ainda.</p>
           </div>
         )}

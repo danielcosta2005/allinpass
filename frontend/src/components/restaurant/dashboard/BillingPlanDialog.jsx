@@ -88,12 +88,12 @@ function BillingPlanDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={`max-h-[92vh] overflow-y-auto p-0 ${pendingPlanChange ? 'sm:max-w-2xl' : 'sm:max-w-6xl'}`}>
-        <div className="bg-gradient-to-b from-white to-purple-50/40 px-5 py-8 sm:px-8">
+        <div className="bg-gradient-to-b from-card to-muted/40 px-5 py-8 sm:px-8">
           <DialogHeader className="mx-auto max-w-2xl text-center">
-            <span className="mx-auto inline-flex rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold uppercase text-purple-700">
+            <span className="mx-auto inline-flex rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary">
               {pendingPlanChange ? confirmationContent.eyebrow : 'Planos'}
             </span>
-            <DialogTitle className="mt-3 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <DialogTitle className="mt-3 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               {pendingPlanChange ? confirmationContent.title : 'Escolha seu plano'}
             </DialogTitle>
             <DialogDescription>{dialogDescription}</DialogDescription>
@@ -109,28 +109,28 @@ function BillingPlanDialog({
 
             {pendingPlanChange ? (
               <div className="mx-auto max-w-xl space-y-5">
-                <div className="rounded-lg border border-purple-100 bg-white p-5 shadow-sm">
-                  <div className="grid gap-3 text-sm text-gray-600 sm:grid-cols-2">
+                <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+                  <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase text-gray-400">Plano atual</p>
-                      <p className="mt-1 font-semibold text-gray-900">{billingPlanName}</p>
+                      <p className="text-xs font-semibold uppercase text-muted-foreground">Plano atual</p>
+                      <p className="mt-1 font-semibold text-foreground">{billingPlanName}</p>
                       {billingSubscription ? (
                         <p>{formatCurrencyBRL(billingSubscription.basePriceCents / 100)}/mes</p>
                       ) : null}
                     </div>
                     <div>
                       <p className="text-xs font-semibold uppercase text-purple-500">Novo plano</p>
-                      <p className="mt-1 font-semibold text-gray-900">{pendingPlanChange.name}</p>
+                      <p className="mt-1 font-semibold text-foreground">{pendingPlanChange.name}</p>
                       <p>{getPlanPriceLabel(pendingPlanChange)}/mes</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-lg border border-purple-100 bg-white p-5 shadow-sm">
-                  <p className="text-sm font-semibold text-gray-900">{confirmationContent.description}</p>
+                <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-foreground">{confirmationContent.description}</p>
                   <ul className="mt-4 space-y-3">
                     {confirmationContent.items.map((item) => (
-                      <li key={item} className="flex gap-3 text-sm text-gray-700">
+                      <li key={item} className="flex gap-3 text-sm text-muted-foreground">
                         <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-purple-600" />
                         <span>{item}.</span>
                       </li>
@@ -161,7 +161,7 @@ function BillingPlanDialog({
                 </DialogFooter>
               </div>
             ) : billingLoading ? (
-              <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-md border border-purple-100 bg-purple-50 p-4 text-sm text-purple-700">
+              <div className="mx-auto flex max-w-3xl items-center gap-2 rounded-md border border-primary/20 bg-primary/10 p-4 text-sm text-primary">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Carregando planos
               </div>
@@ -179,7 +179,7 @@ function BillingPlanDialog({
                 ))}
               </div>
             ) : (
-              <div className="mx-auto max-w-3xl rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+              <div className="mx-auto max-w-3xl rounded-md border border-border bg-muted p-4 text-sm text-muted-foreground">
                 Nao foi possivel carregar os planos disponiveis.
               </div>
             )}

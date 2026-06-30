@@ -33,13 +33,13 @@ function ProjectNames({ projects }) {
   const linkedProjects = getLinkedProjects(projects);
 
   if (linkedProjects.length === 0) {
-    return <span className="text-sm text-gray-500">Nenhum projeto vinculado</span>;
+    return <span className="text-sm text-muted-foreground">Nenhum projeto vinculado</span>;
   }
 
   return (
-    <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+    <div className="overflow-hidden rounded-md border border-border bg-card">
       <table className="w-full text-left text-sm">
-        <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+        <thead className="bg-muted text-xs uppercase text-muted-foreground">
           <tr>
             <th className="px-4 py-2.5">Projeto</th>
             <th className="px-4 py-2.5">Criado em</th>
@@ -48,10 +48,10 @@ function ProjectNames({ projects }) {
         <tbody>
           {linkedProjects.map((project) => (
             <tr key={project.id} className="border-b last:border-b-0">
-              <td className="px-4 py-2.5 font-semibold text-gray-900">
+              <td className="px-4 py-2.5 font-semibold text-foreground">
                 {project.name || 'Projeto sem nome'}
               </td>
-              <td className="whitespace-nowrap px-4 py-2.5 text-gray-700">
+              <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">
                 {formatDate(project.created_at)}
               </td>
             </tr>
@@ -176,8 +176,8 @@ const AdminTab = () => {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Admins</h2>
-          <p className="mt-1 text-sm text-gray-600">
+          <h2 className="text-2xl font-bold text-foreground">Admins</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
             Gerencie administradores e veja os projetos criados por cada um.
           </p>
         </div>
@@ -197,7 +197,7 @@ const AdminTab = () => {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-lg"
+        className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
       >
         {loading ? (
           <div className="flex justify-center py-10">
@@ -206,7 +206,7 @@ const AdminTab = () => {
         ) : admins.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-700">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="px-6 py-3">Admin</th>
                   <th className="px-6 py-3">Projetos vinculados</th>
@@ -223,7 +223,7 @@ const AdminTab = () => {
                   return (
                     <React.Fragment key={admin.id}>
                       <tr
-                        className={`border-t bg-white transition-colors ${canExpandProjects ? 'cursor-pointer hover:bg-indigo-50/40' : ''}`}
+                        className={`border-t border-border bg-card transition-colors ${canExpandProjects ? 'cursor-pointer hover:bg-accent/60' : ''}`}
                         onClick={canExpandProjects ? () => handleToggleProjects(admin.id) : undefined}
                         onKeyDown={(event) => {
                           if (!canExpandProjects) return;
@@ -237,17 +237,17 @@ const AdminTab = () => {
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+                            <div className="rounded-lg bg-primary/10 p-2 text-primary">
                               <ShieldCheck className="h-4 w-4" />
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-900">{admin.email || 'Email não informado'}</p>
-                              <p className="font-mono text-xs text-gray-500">{admin.id}</p>
+                              <p className="font-semibold text-foreground">{admin.email || 'Email não informado'}</p>
+                              <p className="font-mono text-xs text-muted-foreground">{admin.id}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="text-sm font-semibold text-gray-900">{linkedProjects.length}</span>
+                          <span className="text-sm font-semibold text-foreground">{linkedProjects.length}</span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">{formatDate(admin.created_at)}</td>
                         <td className="px-6 py-4 text-right">
@@ -264,10 +264,10 @@ const AdminTab = () => {
                         </td>
                       </tr>
                       {canExpandProjects && isExpanded && (
-                        <tr className="border-t bg-white">
+                        <tr className="border-t border-border bg-muted/50">
                           <td colSpan={4} className="px-6 py-4">
                             <div className="space-y-2">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-gray-600">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 Projetos vinculados
                               </p>
                               <ProjectNames projects={linkedProjects} />
@@ -282,7 +282,7 @@ const AdminTab = () => {
             </table>
           </div>
         ) : (
-          <div className="py-10 text-center text-gray-600">Nenhum admin cadastrado.</div>
+          <div className="py-10 text-center text-muted-foreground">Nenhum admin cadastrado.</div>
         )}
       </motion.div>
 

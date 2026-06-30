@@ -29,6 +29,13 @@ type SubscriptionRow = {
   metadata: Record<string, unknown> | null;
 };
 
+type PastDueSubscriptionRow = {
+  id: string;
+  project_id: string;
+  grace_ends_at: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
 type AsaasPayment = {
   id?: string;
   status?: string;
@@ -695,6 +702,70 @@ async function realignSubscriptionDueDates(
   return { picked: subscriptions.length, aligned, skipped, failed, results };
 }
 
+async function suspendPastDueSubscriptions(supabaseAdmin: SupabaseAdmin, limit: number) {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("billing_subscriptions")
+    .select("id, project_id, grace_ends_at, metadata")
+    .eq("status", "past_due")
+    .not("grace_ends_at", "is", null)
+    .lte("grace_ends_at", nowIso)
+    .order("grace_ends_at", { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+
+  const subscriptions = (Array.isArray(data) ? data : []) as PastDueSubscriptionRow[];
+  let suspended = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const subscription of subscriptions) {
+    try {
+      const metadata = getMetadata(subscription.metadata);
+      const { error: updateError } = await supabaseAdmin
+        .from("billing_subscriptions")
+        .update({
+          status: "suspended",
+          suspended_at: nowIso,
+          metadata: {
+            ...metadata,
+            last_billing_suspension: {
+              at: nowIso,
+              grace_ends_at: subscription.grace_ends_at,
+              source: "billing-close-cycles",
+            },
+          },
+        })
+        .eq("id", subscription.id)
+        .eq("status", "past_due");
+
+      if (updateError) throw updateError;
+
+      suspended += 1;
+      results.push({
+        subscription_id: subscription.id,
+        project_id: subscription.project_id,
+        ok: true,
+      });
+    } catch (error) {
+      failed += 1;
+      console.error("billing-close-cycles suspension failed", {
+        subscription_id: subscription.id,
+        error: truncate(error),
+      });
+      results.push({
+        subscription_id: subscription.id,
+        project_id: subscription.project_id,
+        ok: false,
+        error: truncate(error, 300),
+      });
+    }
+  }
+
+  return { picked: subscriptions.length, suspended, failed, results };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
@@ -725,12 +796,14 @@ Deno.serve(async (req) => {
     const closedCycles = await closeDueCycles(supabaseAdmin, limit);
     const collectedInvoices = await collectDraftOverageInvoices(supabaseAdmin, asaasApiKey, limit);
     const alignedDueDates = await realignSubscriptionDueDates(supabaseAdmin, asaasApiKey, limit);
+    const suspendedSubscriptions = await suspendPastDueSubscriptions(supabaseAdmin, limit);
 
     return jsonResponse({
       ok: true,
       closed_cycles: closedCycles,
       collected_invoices: collectedInvoices,
       aligned_due_dates: alignedDueDates,
+      suspended_subscriptions: suspendedSubscriptions,
     });
   } catch (error) {
     if (error instanceof HttpError) {

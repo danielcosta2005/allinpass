@@ -159,7 +159,7 @@ const MiniMap = ({
 
   if (!hasValidCoordinates) {
     return (
-      <div className={`rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500 ${className}`}>
+      <div className={`rounded-lg border border-border bg-muted h-64 flex items-center justify-center text-sm text-muted-foreground ${className}`}>
         Coordenadas invalidas para o MiniMapa.
       </div>
     );
@@ -167,19 +167,19 @@ const MiniMap = ({
 
   if (!isActive) {
     return (
-      <div className={`rounded-lg border bg-gray-50 h-64 flex items-center justify-center text-sm text-gray-500 ${className}`}>
+      <div className={`rounded-lg border border-border bg-muted h-64 flex items-center justify-center text-sm text-muted-foreground ${className}`}>
         Abra a confirmacao para carregar o mapa.
       </div>
     );
   }
 
   return (
-    <div className={`rounded-lg border overflow-hidden ${className}`}>
-      <div className="relative h-64 w-full bg-gray-50">
+    <div className={`rounded-lg border border-border overflow-hidden ${className}`}>
+      <div className="relative h-64 w-full bg-muted">
         <div ref={mapElementRef} className="h-full w-full" />
 
         {status === 'loading' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/75 text-sm text-gray-600">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/75 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               Carregando mapa...
@@ -188,13 +188,13 @@ const MiniMap = ({
         )}
 
         {status === 'error' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 px-4 text-center text-sm text-gray-600">
+          <div className="absolute inset-0 flex items-center justify-center bg-muted px-4 text-center text-sm text-muted-foreground">
             {errorMessage || 'Nao foi possivel carregar o mapa.'}
           </div>
         )}
       </div>
 
-      <div className="bg-gray-50 px-3 py-2 text-xs text-gray-600 flex items-center justify-between gap-2">
+      <div className="bg-muted px-3 py-2 text-xs text-muted-foreground flex items-center justify-between gap-2">
         <a
           href={`https://www.google.com/maps/search/?api=1&query=${numericLat},${numericLng}`}
           target="_blank"

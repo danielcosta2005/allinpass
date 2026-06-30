@@ -45,14 +45,14 @@ function isPaidPaymentEvent(event: string, paymentStatus: string) {
     paymentStatus === "PAID";
 }
 
-function isAffiliateCommissionPaidPaymentEvent(
-  event: string,
-  paymentStatus: string,
-) {
-  return isPaidPaymentEvent(event, paymentStatus) &&
-    !NON_COMMISSIONABLE_PAYMENT_EVENTS.has(event) &&
-    !NON_COMMISSIONABLE_PAYMENT_STATUSES.has(paymentStatus);
-}
+const DELINQUENCY_GRACE_DAYS = 10;
+const PAYMENT_DELINQUENCY_STATUSES = new Set([
+  "OVERDUE",
+  "REFUSED",
+  "CHARGEBACK_REQUESTED",
+  "CHARGEBACK_DISPUTE",
+  "AWAITING_CHARGEBACK_REVERSAL",
+]);
 
 const SUBSCRIPTION_EVENTS = new Set([
   "SUBSCRIPTION_CREATED",
@@ -89,6 +89,15 @@ const NON_COMMISSIONABLE_PAYMENT_STATUSES = new Set([
   "CHARGEBACK_DISPUTE",
   "AWAITING_CHARGEBACK_REVERSAL",
 ]);
+
+function isAffiliateCommissionPaidPaymentEvent(
+  event: string,
+  paymentStatus: string,
+) {
+  return isPaidPaymentEvent(event, paymentStatus) &&
+    !NON_COMMISSIONABLE_PAYMENT_EVENTS.has(event) &&
+    !NON_COMMISSIONABLE_PAYMENT_STATUSES.has(paymentStatus);
+}
 
 function getDate(value: unknown) {
   const text = String(value ?? "").trim();
@@ -202,14 +211,192 @@ type AffiliateAttributionWebhookMatch = {
 
 type InvoiceCollectionBatchWebhookMatch = {
   id: string;
+  subscription_id: string;
   status: string;
   metadata: Record<string, unknown> | null;
+};
+
+type BillingSubscriptionDelinquencyMatch = {
+  id: string;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  delinquent_since?: string | null;
+  grace_ends_at?: string | null;
+  delinquency_gateway_charge_id?: string | null;
 };
 
 function getMetadata(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
+}
+
+function addDaysIso(value: string, days: number) {
+  const date = new Date(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString();
+}
+
+function laterIsoDate(currentValue: string | null | undefined, policyValue: string) {
+  if (!currentValue) return policyValue;
+  const currentTime = new Date(currentValue).getTime();
+  const policyTime = new Date(policyValue).getTime();
+  if (Number.isNaN(currentTime)) return policyValue;
+  if (Number.isNaN(policyTime)) return currentValue;
+  return currentTime >= policyTime ? currentValue : policyValue;
+}
+
+function isPaymentDelinquencyEvent(event: string, paymentStatus: string) {
+  return event === "PAYMENT_OVERDUE" ||
+    event === "PAYMENT_FAILED" ||
+    PAYMENT_DELINQUENCY_STATUSES.has(paymentStatus);
+}
+
+async function findBillingSubscriptionForDelinquency(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    localSubscriptionId?: string | null;
+    providerSubscriptionId?: string | null;
+  },
+) {
+  const selectColumns = [
+    "id",
+    "status",
+    "metadata",
+    "delinquent_since",
+    "grace_ends_at",
+    "delinquency_gateway_charge_id",
+  ].join(", ");
+
+  if (options.localSubscriptionId) {
+    const { data, error } = await supabaseAdmin
+      .from("billing_subscriptions")
+      .select(selectColumns)
+      .eq("id", options.localSubscriptionId)
+      .in("status", ["active", "past_due", "paused", "suspended"])
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data as BillingSubscriptionDelinquencyMatch;
+  }
+
+  if (!options.providerSubscriptionId) return null;
+
+  const { data, error } = await supabaseAdmin
+    .from("billing_subscriptions")
+    .select(selectColumns)
+    .eq("gateway_provider", "asaas")
+    .eq("gateway_subscription_id", options.providerSubscriptionId)
+    .in("status", ["active", "past_due", "paused", "suspended"])
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as BillingSubscriptionDelinquencyMatch | null;
+}
+
+async function markSubscriptionPastDueForPayment(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    localSubscriptionId?: string | null;
+    providerSubscriptionId?: string | null;
+    providerPaymentId?: string | null;
+    reason: string;
+    payload: unknown;
+  },
+) {
+  if (!options.providerPaymentId) return false;
+
+  const subscription = await findBillingSubscriptionForDelinquency(supabaseAdmin, options);
+  if (!subscription) return false;
+
+  const nowIso = new Date().toISOString();
+  const delinquentSince = subscription.delinquent_since || nowIso;
+  const policyGraceEndsAt = addDaysIso(delinquentSince, DELINQUENCY_GRACE_DAYS);
+  const graceEndsAt = subscription.status === "suspended"
+    ? subscription.grace_ends_at || policyGraceEndsAt
+    : laterIsoDate(subscription.grace_ends_at, policyGraceEndsAt);
+  const delinquencyGatewayChargeId = subscription.delinquency_gateway_charge_id || options.providerPaymentId;
+  const metadata = getMetadata(subscription.metadata);
+  const nextStatus = subscription.status === "suspended" ? "suspended" : "past_due";
+
+  const { error } = await supabaseAdmin
+    .from("billing_subscriptions")
+    .update({
+      status: nextStatus,
+      delinquent_since: delinquentSince,
+      grace_ends_at: graceEndsAt,
+      last_payment_failure_at: nowIso,
+      delinquency_gateway_charge_id: delinquencyGatewayChargeId,
+      delinquency_reason: options.reason,
+      metadata: {
+        ...metadata,
+        last_asaas_delinquency_webhook: options.payload,
+        delinquency_grace_days: DELINQUENCY_GRACE_DAYS,
+      },
+    })
+    .eq("id", subscription.id);
+
+  if (error) throw error;
+  return true;
+}
+
+async function clearSubscriptionDelinquencyForPayment(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    localSubscriptionId?: string | null;
+    providerSubscriptionId?: string | null;
+    providerPaymentId?: string | null;
+    payload: unknown;
+  },
+) {
+  if (!options.providerPaymentId) return false;
+
+  const subscription = await findBillingSubscriptionForDelinquency(supabaseAdmin, options);
+  if (!subscription) return false;
+  if (subscription.delinquency_gateway_charge_id !== options.providerPaymentId) return false;
+
+  const metadata = getMetadata(subscription.metadata);
+  const { error } = await supabaseAdmin
+    .from("billing_subscriptions")
+    .update({
+      status: "active",
+      delinquent_since: null,
+      grace_ends_at: null,
+      suspended_at: null,
+      last_payment_failure_at: null,
+      delinquency_gateway_charge_id: null,
+      delinquency_reason: null,
+      metadata: {
+        ...metadata,
+        last_asaas_delinquency_recovery_webhook: options.payload,
+      },
+    })
+    .eq("id", subscription.id);
+
+  if (error) throw error;
+  return true;
+}
+
+async function reconcileSubscriptionDelinquencyFromPayment(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    event: string;
+    payload: unknown;
+    localSubscriptionId?: string | null;
+    providerSubscriptionId?: string | null;
+    providerPaymentId?: string | null;
+    paymentStatus: string;
+    isPaid: boolean;
+    reason: string;
+  },
+) {
+  if (options.isPaid) {
+    return await clearSubscriptionDelinquencyForPayment(supabaseAdmin, options);
+  }
+
+  if (!isPaymentDelinquencyEvent(options.event, options.paymentStatus)) return false;
+
+  return await markSubscriptionPastDueForPayment(supabaseAdmin, options);
 }
 
 function buildProviderPatch({
@@ -671,7 +858,7 @@ async function handleSubscriptionWebhook(
         .eq("billing_account_id", account.id)
         .eq("project_id", account.project_id)
         .eq("gateway_provider", "asaas")
-        .in("status", ["trialing", "active", "past_due", "paused"])
+        .in("status", ["trialing", "active", "past_due", "paused", "suspended"])
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -818,6 +1005,7 @@ async function handleOverageInvoicePaymentWebhook(
   event: string,
   payload: unknown,
   providerPaymentId: string | null,
+  providerSubscriptionId: string | null,
   paymentStatus: string,
   isPaid: boolean,
   paidAt: string | null,
@@ -833,7 +1021,7 @@ async function handleOverageInvoicePaymentWebhook(
 
   const { data, error } = await supabaseAdmin
     .from("billing_invoice_collection_batches")
-    .select("id, status, metadata")
+    .select("id, subscription_id, status, metadata")
     .eq("gateway_provider", "asaas")
     .eq("gateway_charge_id", providerPaymentId)
     .maybeSingle();
@@ -873,6 +1061,17 @@ async function handleOverageInvoicePaymentWebhook(
     paidAt,
     payload,
   );
+
+  await reconcileSubscriptionDelinquencyFromPayment(supabaseAdmin, {
+    event,
+    payload,
+    localSubscriptionId: batch.subscription_id,
+    providerSubscriptionId,
+    providerPaymentId,
+    paymentStatus,
+    isPaid,
+    reason: nextStatus === "failed" ? "overage_payment_failed" : "overage_payment_overdue",
+  });
 
   return true;
 }
@@ -1122,6 +1321,7 @@ async function handlePaymentWebhook(
       event,
       payload,
       providerPaymentId,
+      providerSubscriptionId,
       paymentStatus,
       isPaid,
       paidAt,
@@ -1139,6 +1339,22 @@ async function handlePaymentWebhook(
     providerPaymentId,
     providerSubscriptionId,
   };
+
+  if (
+    await reconcileSubscriptionDelinquencyFromPayment(supabaseAdmin, {
+      event,
+      payload,
+      providerSubscriptionId,
+      providerPaymentId,
+      paymentStatus,
+      isPaid,
+      reason: isPaymentDelinquencyEvent(event, paymentStatus)
+        ? "subscription_payment_overdue"
+        : "subscription_payment_recovered",
+    })
+  ) {
+    handled = true;
+  }
 
   const signupSession = await findSessionByProviderData(
     supabaseAdmin,

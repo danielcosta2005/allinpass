@@ -103,6 +103,13 @@ function isPageVisible() {
   return typeof document === 'undefined' || document.visibilityState === 'visible';
 }
 
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: 'hsl(var(--popover))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '0.5rem',
+  color: 'hsl(var(--popover-foreground))',
+};
+
 function getEntranceMotionProps(shouldAnimate, delay = 0.2) {
   if (!shouldAnimate) {
     return {
@@ -181,7 +188,7 @@ function hasPositiveValue(data, dataKey) {
 
 function ChartEmptyState() {
   return (
-    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-500">
+    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border bg-muted text-sm text-muted-foreground">
       Sem dados no período
     </div>
   );
@@ -191,7 +198,7 @@ function ChartShell({ title, hasData, height = 300, shouldAnimate = true, animat
   return (
     <motion.div
       {...getEntranceMotionProps(shouldAnimate, animationDelay)}
-      className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+      className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
     >
       <h3 className="text-lg font-bold mb-4">{title}</h3>
       <div style={{ width: '100%', height }}>
@@ -213,7 +220,7 @@ function BarChartCard({ title, data, dataKey, name, fill = '#8884d8', shouldAnim
           <YAxis allowDecimals={false} />
           <Tooltip
             formatter={(value) => [formatInteger(value), name]}
-            contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '0.5rem' }}
+            contentStyle={CHART_TOOLTIP_STYLE}
           />
           <Legend />
           <Bar dataKey={dataKey} name={name} fill={fill} />
@@ -235,7 +242,7 @@ function HorizontalBarChartCard({ title, data, dataKey, name, fill = '#7c3aed', 
           <YAxis type="category" dataKey="name" width={yAxisWidth} />
           <Tooltip
             formatter={(value) => [formatInteger(value), name]}
-            contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '0.5rem' }}
+            contentStyle={CHART_TOOLTIP_STYLE}
           />
           <Bar dataKey={dataKey} name={name} fill={fill} radius={[0, 6, 6, 0]}>
             <LabelList dataKey={dataKey} position="right" formatter={formatInteger} />
@@ -266,7 +273,7 @@ function LineChartCard({ title, data, dataKey, name, stroke = '#2563eb', height 
           <Tooltip
             labelFormatter={(_, payload) => formatDateLabel(payload?.[0]?.payload?.date)}
             formatter={(value) => [formatInteger(value), name]}
-            contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '0.5rem' }}
+            contentStyle={CHART_TOOLTIP_STYLE}
           />
           <Legend />
           <Line
@@ -304,7 +311,7 @@ function WalletLifecycleChartCard({ title, data, shouldAnimate = true }) {
           <Tooltip
             labelFormatter={(_, payload) => formatDateLabel(payload?.[0]?.payload?.date)}
             formatter={(value, name) => [formatInteger(value), name]}
-            contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '0.5rem' }}
+            contentStyle={CHART_TOOLTIP_STYLE}
           />
           <Legend />
           <Line
@@ -337,18 +344,18 @@ function MetricCard({ card, index, shouldAnimate = true }) {
   return (
     <motion.div
       {...getEntranceMotionProps(shouldAnimate, index * 0.06)}
-      className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+      className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
     >
       <div className="flex items-start justify-between mb-4">
         <div className={`bg-gradient-to-br ${card.color} p-3 rounded-xl`}>
           <Icon className="w-6 h-6 text-white" />
         </div>
       </div>
-      <h3 className="text-sm font-medium text-gray-600 mb-1">{card.title}</h3>
+      <h3 className="text-sm font-medium text-muted-foreground mb-1">{card.title}</h3>
       <p className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
         {card.value}
       </p>
-      {card.helper ? <p className="text-xs text-gray-500 mt-2">{card.helper}</p> : null}
+      {card.helper ? <p className="text-xs text-muted-foreground mt-2">{card.helper}</p> : null}
     </motion.div>
   );
 }

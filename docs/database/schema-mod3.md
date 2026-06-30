@@ -106,8 +106,16 @@ Colunas principais:
 - comercial snapshot: `base_price_cents`, `included_pass_installs`, `included_notification_sends`
 - preco de excedente snapshot: `overage_pass_install_cents`, `overage_notification_sent_cents`
 - gateway: `gateway_provider`, `gateway_subscription_id`
+- inadimplência paga: `delinquent_since`, `grace_ends_at`, `suspended_at`, `last_payment_failure_at`, `delinquency_gateway_charge_id`, `delinquency_reason`
 
 Para Asaas, `gateway_subscription_id` deve conter somente o ID real da assinatura (`sub_...`). IDs UUID de checkout pertencem a `signup_checkout_sessions.provider_checkout_id` ou `billing_plan_change_sessions.provider_checkout_id` e nao devem ser usados em `/subscriptions/{id}`.
+
+Semantica de status:
+- `active`, `trialing`, `past_due` e `paused` preservam acesso operacional.
+- `past_due` indica cobrança paga vencida/falha dentro do grace period.
+- `suspended` bloqueia acesso operacional depois que `grace_ends_at` vence.
+- `expired` continua reservado para free trial encerrado.
+- `canceled` continua reservado para cancelamento/inativacao da assinatura no gateway.
 
 ### `public.billing_subscription_changes`
 Historico de troca de plano e base para franquia efetiva do ciclo.
@@ -456,6 +464,7 @@ Responsabilidades:
 10. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
 11. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
 12. Excedente e cobrado junto com uma cobranca mensal Asaas editavel; se nao houver cobranca pendente/vencida, a invoice permanece `draft` para carry-forward.
+13. Inadimplência paga usa `past_due` durante 10 dias de grace e `suspended` como primeiro estado que bloqueia acesso; `billing_cycles.period_end` não expira acesso.
 
 ## Fluxo de negocio (fim a fim)
 
@@ -484,6 +493,8 @@ Responsabilidades:
 5. Aplica downgrades `next_cycle` pagos somente depois do fechamento do ciclo antigo.
 6. A Edge Function busca uma cobranca mensal Asaas `PENDING`/`OVERDUE` da assinatura e atualiza apenas essa cobranca com mensalidade + excedente.
 7. O webhook `PAYMENT_*` marca o batch e as invoices como `paid`, `past_due`, `failed`, `canceled` ou `refunded`.
+8. Se o pagamento ficar vencido/falhar, o webhook coloca a assinatura em `past_due`; se a cobrança for confirmada/recebida, limpa a inadimplência da assinatura.
+9. O runner `billing-close-cycles` suspende assinaturas `past_due` quando `grace_ends_at <= now()`, sem cancelamento automático.
 
 ## Cenario D - Troca de plano no meio do ciclo
 

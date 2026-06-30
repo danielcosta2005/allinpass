@@ -11,15 +11,15 @@ const KpiCard = ({ title, value, icon: Icon, color, delay }) => (
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ delay }}
-    className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+    className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
   >
     <div className="flex items-center justify-between">
       <div className={`p-3 rounded-xl ${color}`}>
         <Icon className="w-6 h-6 text-white" />
       </div>
-      <span className="text-3xl font-bold text-gray-800">{value}</span>
+      <span className="text-3xl font-bold text-foreground">{value}</span>
     </div>
-    <p className="mt-4 text-md font-medium text-gray-600">{title}</p>
+    <p className="mt-4 text-md font-medium text-muted-foreground">{title}</p>
   </motion.div>
 );
 
@@ -68,8 +68,8 @@ const DashboardTab = () => {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900">Dashboard Global</h2>
-          <p className="mt-1 text-lg text-gray-600">Uma visão geral de todo o sistema.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-foreground">Dashboard Global</h2>
+          <p className="mt-1 text-lg text-muted-foreground">Uma visão geral de todo o sistema.</p>
         </div>
         <Button onClick={fetchData} variant="outline" size="sm" disabled={loading}>
           <RefreshCw className={`w-4 h-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
@@ -92,7 +92,7 @@ const DashboardTab = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
-        className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+        className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
       >
         <h3 className="text-lg font-bold mb-4">Atividade Global nos Últimos 6 Meses</h3>
         <div style={{ width: '100%', height: 300 }}>
@@ -101,7 +101,7 @@ const DashboardTab = () => {
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="month" />
               <YAxis />
-              <Tooltip contentStyle={{ backgroundColor: 'white', border: '1px solid #ddd', borderRadius: '0.5rem' }} />
+              <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--popover))', border: '1px solid hsl(var(--border))', borderRadius: '0.5rem', color: 'hsl(var(--popover-foreground))' }} />
               <Legend />
               <Bar dataKey="visits" name="Visitas" fill="#8884d8" />
               <Bar dataKey="rewards" name="Recompensas" fill="#82ca9d" />

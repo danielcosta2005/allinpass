@@ -164,14 +164,14 @@ const MembersTab = ({ projectId }) => {
         </Button>
       </div>
       
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
         <h3 className="text-lg font-bold mb-4">Membros do Projeto</h3>
         {loading ? (
           <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : members.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-6 py-3">Email</th>
                   <th scope="col" className="px-6 py-3">Papel</th>
@@ -182,7 +182,7 @@ const MembersTab = ({ projectId }) => {
               <tbody>
                 {members.map(member => (
                     
-                    <tr key={member.user_id} className="bg-white border-b">
+                    <tr key={member.user_id} className="border-b border-border bg-card">
                     <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
                     <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
                     <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
@@ -196,7 +196,7 @@ const MembersTab = ({ projectId }) => {
             </table>
           </div>
         ) : (
-          <p className="text-gray-600 text-center mt-4">Nenhum membro neste projeto.</p>
+          <p className="text-muted-foreground text-center mt-4">Nenhum membro neste projeto.</p>
         )}
       </motion.div>
 
