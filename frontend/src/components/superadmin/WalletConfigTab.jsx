@@ -506,14 +506,14 @@ const UploadButtonWithInfo = ({ uploadKey, onUpload }) => {
       <div className="relative group flex items-center">
         <button
           type="button"
-          className="inline-flex items-center justify-center p-1 text-slate-400 transition hover:text-slate-600"
+          className="inline-flex items-center justify-center p-1 text-muted-foreground transition hover:text-foreground"
           aria-label={`Informacoes sobre ${rule.label}`}
         >
           <Info className="h-4 w-4" />
         </button>
-        <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
-          <p className="mb-2 text-sm font-semibold text-slate-900">{rule.helpTitle}</p>
-          <div className="space-y-1 text-xs text-slate-600">
+        <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-border bg-popover p-3 text-left shadow-xl opacity-0 transition duration-75 group-hover:pointer-events-auto group-hover:opacity-100">
+          <p className="mb-2 text-sm font-semibold text-popover-foreground">{rule.helpTitle}</p>
+          <div className="space-y-1 text-xs text-muted-foreground">
             {rule.helpLines.map((line, index) => (
               <p key={`${uploadKey}-${index}`}>{line}</p>
             ))}
@@ -667,13 +667,13 @@ const PassInventory = ({
 
       {loading && (
         <div className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed">
-          <Loader2 className="h-7 w-7 animate-spin text-gray-400" />
+          <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
         </div>
       )}
 
       {!loading && passes.length === 0 && (
         <div className="flex min-h-[420px] flex-col items-center justify-center rounded-lg border border-dashed px-6 text-center">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             {canManagePasses
               ? 'Crie o primeiro cartão para ele aparecer neste inventário.'
               : 'Nenhum cartão ativo foi criado para este projeto.'}
@@ -691,12 +691,12 @@ const PassInventory = ({
         <div className="space-y-5">
           <div className="flex flex-col items-center text-center">
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <p className="text-lg font-semibold text-slate-900">{activePass.title || 'Cartão sem titulo'}</p>
+              <p className="text-lg font-semibold text-foreground">{activePass.title || 'Cartão sem titulo'}</p>
               <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">
                 {translatePassStatus(activePass.status)}
               </span>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               Criado em {formatPassCreatedAt(activePass.created_at)}
             </p>
           </div>
@@ -1546,7 +1546,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold">{isEditingPass ? 'Editar cartão' : 'Novo cartão'}</h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               {isEditingPass ? 'Ajuste o cartão selecionado e salve as mudancas.' : 'Monte um novo cartão usando o template do projeto.'}
             </p>
           </div>

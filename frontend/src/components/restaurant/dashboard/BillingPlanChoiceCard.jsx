@@ -12,46 +12,46 @@ const formatCurrencyBRL = (value) =>
 const getPlanCardTone = (plan) => {
   if (plan?.isCurrent) {
     return {
-      wrapper: 'border-purple-300 bg-gradient-to-br from-purple-50 via-white to-indigo-50 shadow-lg shadow-purple-100/70',
-      title: 'text-purple-950',
-      description: 'text-purple-800/80',
-      price: 'text-purple-950',
-      muted: 'text-purple-700',
-      checkBg: 'bg-purple-100',
-      check: 'text-purple-700',
-      button: 'border-purple-200 bg-white text-purple-700',
+      wrapper: 'border-purple-300 bg-gradient-to-br from-purple-50 via-white to-indigo-50 shadow-lg shadow-purple-100/70 dark:from-primary/20 dark:via-card dark:to-indigo-950/40 dark:shadow-black/20',
+      title: 'text-purple-950 dark:text-purple-100',
+      description: 'text-purple-800/80 dark:text-purple-200/80',
+      price: 'text-purple-950 dark:text-purple-100',
+      muted: 'text-purple-700 dark:text-purple-200',
+      checkBg: 'bg-purple-100 dark:bg-primary/20',
+      check: 'text-purple-700 dark:text-primary',
+      button: 'border-purple-200 bg-white text-purple-700 dark:border-primary/30 dark:bg-primary/10 dark:text-purple-100',
       badge: 'bg-purple-600 text-white',
-      feature: 'text-gray-700',
+      feature: 'text-gray-700 dark:text-muted-foreground',
     };
   }
 
   if (plan?.isPendingPlanChange) {
     return {
-      wrapper: 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 shadow-lg shadow-amber-100/70',
-      title: 'text-amber-950',
-      description: 'text-amber-800/80',
-      price: 'text-amber-950',
-      muted: 'text-amber-700',
-      checkBg: 'bg-amber-100',
-      check: 'text-amber-700',
-      button: 'border-amber-200 bg-white text-amber-700',
+      wrapper: 'border-amber-200 bg-gradient-to-br from-amber-50 via-white to-yellow-50 shadow-lg shadow-amber-100/70 dark:from-amber-500/15 dark:via-card dark:to-yellow-950/30 dark:shadow-black/20',
+      title: 'text-amber-950 dark:text-amber-100',
+      description: 'text-amber-800/80 dark:text-amber-200/80',
+      price: 'text-amber-950 dark:text-amber-100',
+      muted: 'text-amber-700 dark:text-amber-200',
+      checkBg: 'bg-amber-100 dark:bg-amber-500/20',
+      check: 'text-amber-700 dark:text-amber-300',
+      button: 'border-amber-200 bg-white text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100',
       badge: 'bg-amber-500 text-white',
-      feature: 'text-gray-700',
+      feature: 'text-gray-700 dark:text-muted-foreground',
     };
   }
 
   if (plan?.type === 'trial') {
     return {
-      wrapper: 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-lg shadow-emerald-100/70',
-      title: 'text-emerald-950',
-      description: 'text-emerald-800/80',
-      price: 'text-emerald-950',
-      muted: 'text-emerald-700',
-      checkBg: 'bg-emerald-100',
-      check: 'text-emerald-700',
+      wrapper: 'border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-lg shadow-emerald-100/70 dark:from-emerald-500/15 dark:via-card dark:to-teal-950/30 dark:shadow-black/20',
+      title: 'text-emerald-950 dark:text-emerald-100',
+      description: 'text-emerald-800/80 dark:text-emerald-200/80',
+      price: 'text-emerald-950 dark:text-emerald-100',
+      muted: 'text-emerald-700 dark:text-emerald-200',
+      checkBg: 'bg-emerald-100 dark:bg-emerald-500/20',
+      check: 'text-emerald-700 dark:text-emerald-300',
       button: 'bg-emerald-600 text-white hover:bg-emerald-700',
       badge: 'bg-emerald-500 text-white',
-      feature: 'text-gray-700',
+      feature: 'text-gray-700 dark:text-muted-foreground',
     };
   }
 
@@ -71,16 +71,16 @@ const getPlanCardTone = (plan) => {
   }
 
   return {
-    wrapper: 'border-gray-200 bg-white shadow-sm hover:border-purple-200 hover:shadow-xl hover:shadow-purple-500/5',
-    title: 'text-gray-900',
-    description: 'text-gray-500',
-    price: 'text-gray-900',
-    muted: 'text-gray-500',
-    checkBg: 'bg-purple-100',
-    check: 'text-purple-600',
+    wrapper: 'border-border bg-card shadow-sm hover:border-primary/40 hover:shadow-xl hover:shadow-purple-500/5',
+    title: 'text-foreground',
+    description: 'text-muted-foreground',
+    price: 'text-foreground',
+    muted: 'text-muted-foreground',
+    checkBg: 'bg-primary/10',
+    check: 'text-primary',
     button: 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700',
     badge: 'bg-gradient-to-r from-yellow-400 to-orange-400 text-yellow-950',
-    feature: 'text-gray-700',
+    feature: 'text-muted-foreground',
   };
 };
 

@@ -12,14 +12,14 @@ function TrialExpiredBillingState({
   const hasPlans = Array.isArray(planChangeOptions) && planChangeOptions.length > 0;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col items-center rounded-xl border border-amber-200 bg-white px-6 py-10 text-center shadow-sm">
+    <div className="mx-auto flex max-w-3xl flex-col items-center rounded-xl border border-amber-500/30 bg-card px-6 py-10 text-center shadow-sm">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
         <LockKeyhole className="h-7 w-7" />
       </div>
 
       <p className="mt-5 text-xs font-bold uppercase tracking-wide text-amber-700">Trial encerrado</p>
-      <h2 className="mt-2 text-3xl font-bold text-slate-950">Assine um plano para continuar</h2>
-      <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
+      <h2 className="mt-2 text-3xl font-bold text-foreground">Assine um plano para continuar</h2>
+      <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
         Seu Free Trial chegou ao fim. Os dados do projeto foram preservados, mas as ações operacionais ficam
         bloqueadas até que um plano pago seja ativado.
       </p>
@@ -43,7 +43,7 @@ function TrialExpiredBillingState({
             Escolher plano
           </Button>
         ) : (
-          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+          <div className="rounded-md border border-border bg-muted px-4 py-3 text-sm font-medium text-muted-foreground">
             Fale com o gestor para ativar um plano pago.
           </div>
         )}

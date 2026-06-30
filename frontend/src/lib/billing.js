@@ -1,8 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
 import { fetchSubscriptionPlans } from '@/lib/subscriptionPlans';
 
-const ACTIVE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused'];
+const VISIBLE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused', 'suspended'];
 const EXPIRED_SUBSCRIPTION_STATUS = 'expired';
+const SUSPENDED_SUBSCRIPTION_STATUS = 'suspended';
+const PAST_DUE_SUBSCRIPTION_STATUS = 'past_due';
 const FREE_PLAN_CODE = 'free_trial';
 
 async function readFunctionError(error) {
@@ -59,6 +61,12 @@ function normalizeSubscription(row) {
     status: row.status,
     currentPeriodStart: row.current_period_start || null,
     currentPeriodEnd: row.current_period_end || null,
+    delinquentSince: row.delinquent_since || null,
+    graceEndsAt: row.grace_ends_at || null,
+    suspendedAt: row.suspended_at || null,
+    lastPaymentFailureAt: row.last_payment_failure_at || null,
+    delinquencyGatewayChargeId: row.delinquency_gateway_charge_id || null,
+    delinquencyReason: row.delinquency_reason || null,
     gatewayProvider: row.gateway_provider || null,
     gatewaySubscriptionId: row.gateway_subscription_id || null,
     basePriceCents: Number(row.base_price_cents || 0),
@@ -67,6 +75,8 @@ function normalizeSubscription(row) {
     overagePassInstallCents: Number(row.overage_pass_install_cents || 0),
     overageNotificationSentCents: Number(row.overage_notification_sent_cents || 0),
     plan: normalizePlan(joinedPlan),
+    isPastDue: row.status === PAST_DUE_SUBSCRIPTION_STATUS,
+    isSuspended: row.status === SUSPENDED_SUBSCRIPTION_STATUS,
     isTrialExpired: row.status === EXPIRED_SUBSCRIPTION_STATUS
       && normalizePlanCode(joinedPlan?.code) === FREE_PLAN_CODE,
   };
@@ -116,6 +126,12 @@ export async function getCurrentBillingSubscription(projectId) {
       'status',
       'current_period_start',
       'current_period_end',
+      'delinquent_since',
+      'grace_ends_at',
+      'suspended_at',
+      'last_payment_failure_at',
+      'delinquency_gateway_charge_id',
+      'delinquency_reason',
       'gateway_provider',
       'gateway_subscription_id',
       'base_price_cents',
@@ -126,7 +142,7 @@ export async function getCurrentBillingSubscription(projectId) {
       'billing_plans(code, name, base_price_cents, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents)',
     ].join(', '))
     .eq('project_id', normalizedProjectId)
-    .in('status', ACTIVE_SUBSCRIPTION_STATUSES)
+    .in('status', VISIBLE_SUBSCRIPTION_STATUSES)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -176,6 +192,14 @@ export function isTrialExpired(subscription) {
   return Boolean(subscription?.isTrialExpired);
 }
 
+export function isBillingPastDue(subscription) {
+  return Boolean(subscription?.isPastDue);
+}
+
+export function isBillingSuspended(subscription) {
+  return Boolean(subscription?.isSuspended);
+}
+
 export async function getPendingBillingPlanChange(projectId) {
   const normalizedProjectId = String(projectId || '').trim();
   if (!normalizedProjectId) return null;
@@ -221,6 +245,7 @@ export function getPlanChangeActionLabel(changeKind) {
 
 export async function getPlanChangeOptions(currentSubscription, planList, pendingPlanChange = null) {
   if (!currentSubscription) return [];
+  if (isBillingSuspended(currentSubscription)) return [];
 
   const plans = Array.isArray(planList) ? planList : await fetchSubscriptionPlans();
   const pendingPlanCode = normalizePlanCode(pendingPlanChange?.newPlanCode);

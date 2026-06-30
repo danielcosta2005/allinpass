@@ -312,7 +312,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100"
+        className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
       >
         <h2 className="text-2xl font-bold mb-6">Scanner de QR Code</h2>
 
@@ -382,13 +382,13 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
           {/* ✅ Modal de confirmação (overlay) */}
           {confirmOpen && (
             <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
-              <div className="w-full max-w-sm bg-white text-gray-900 rounded-2xl p-5 shadow-2xl border border-purple-100">
+              <div className="w-full max-w-sm rounded-2xl border border-border bg-popover p-5 text-popover-foreground shadow-2xl">
                 <div className="flex items-center gap-3 mb-3">
                   <AlertTriangle className="w-6 h-6 text-yellow-500" />
                   <h3 className="text-lg font-semibold">Passe escaneado recentemente</h3>
                 </div>
 
-                <p className="text-sm text-gray-700 leading-relaxed">
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   Esse passe foi escaneado há{" "}
                   <b>{Math.max(0, Number(confirmPayload?.seconds_since_last_scan || 0))}s</b>.
                   <br />
@@ -398,7 +398,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
                 <div className="mt-4 flex gap-3">
                   <Button
                     onClick={() => handleConfirm(false)}
-                    className="flex-1 bg-gray-200 text-gray-900 hover:bg-gray-300"
+                    className="flex-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
                     disabled={isProcessing}
                   >
                     Não
@@ -412,7 +412,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
                   </Button>
                 </div>
 
-                <p className="mt-3 text-[11px] text-gray-500 break-all">
+                <p className="mt-3 text-[11px] text-muted-foreground break-all">
                   Token: {String(confirmPayload?.passToken || "").slice(0, 10)}…
                 </p>
               </div>
