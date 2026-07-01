@@ -6,6 +6,7 @@ const EXPIRED_SUBSCRIPTION_STATUS = 'expired';
 const SUSPENDED_SUBSCRIPTION_STATUS = 'suspended';
 const PAST_DUE_SUBSCRIPTION_STATUS = 'past_due';
 const FREE_PLAN_CODE = 'free_trial';
+const ACTIVE_PENDING_PLAN_CHANGE_STATUSES = ['pending', 'created', 'paid'];
 
 async function readFunctionError(error) {
   const context = error?.context;
@@ -23,11 +24,11 @@ async function readFunctionError(error) {
     return { error: error.message, code: null };
   }
 
-  return { error: 'Nao foi possivel concluir a operacao.', code: null };
+  return { error: 'Não foi possível concluir a operação.', code: null };
 }
 
 function buildBillingError(message, code = null) {
-  const error = new Error(message || 'Nao foi possivel concluir a operacao.');
+  const error = new Error(message || 'Não foi possível concluir a operação.');
   if (code) error.code = code;
   return error;
 }
@@ -240,7 +241,7 @@ export function getPlanChangeActionLabel(changeKind) {
   if (changeKind === 'upgrade') return 'Fazer upgrade';
   if (changeKind === 'downgrade') return 'Fazer downgrade';
   if (changeKind === 'plan_change') return 'Trocar plano';
-  return 'Indisponivel';
+  return 'Indisponível';
 }
 
 export async function getPlanChangeOptions(currentSubscription, planList, pendingPlanChange = null) {
@@ -256,15 +257,18 @@ export async function getPlanChangeOptions(currentSubscription, planList, pendin
       const changeKind = getPlanChangeKind(currentSubscription, plan);
       const isCurrent = changeKind === 'current';
       const expiredTrialConversion = isTrialExpired(currentSubscription) && changeKind === 'trial_conversion';
-      const isPendingPlanChange = Boolean(
-        pendingPlanChange
-          && pendingPlanChange.effectiveMode === 'next_cycle'
-          && ['pending', 'created', 'paid'].includes(pendingPlanChange.status)
-          && (
-            (pendingPlanChange.newPlanId && pendingPlanChange.newPlanId === plan.id)
-              || (pendingPlanCode && pendingPlanCode === normalizePlanCode(plan.code))
-          ),
-      );
+      const isPendingPlanChange = (() => {
+        if (pendingPlanChange?.changeType === 'cancellation') return false;
+        return Boolean(
+          pendingPlanChange
+            && pendingPlanChange.effectiveMode === 'next_cycle'
+            && ACTIVE_PENDING_PLAN_CHANGE_STATUSES.includes(pendingPlanChange.status)
+            && (
+              (pendingPlanChange.newPlanId && pendingPlanChange.newPlanId === plan.id)
+                || (pendingPlanCode && pendingPlanCode === normalizePlanCode(plan.code))
+            ),
+        );
+      })();
 
       return {
         ...plan,
@@ -275,7 +279,7 @@ export async function getPlanChangeOptions(currentSubscription, planList, pendin
         isSelectable: !isPendingPlanChange
           && (expiredTrialConversion || (!isCurrent && changeKind !== 'unavailable')),
         actionLabel: isPendingPlanChange
-          ? 'Downgrade ja agendado'
+          ? 'Downgrade já agendado'
           : getPlanChangeActionLabel(changeKind),
       };
     })
@@ -326,4 +330,32 @@ export async function finalizeBillingPlanChange({ planChangeSessionId }) {
   }
 
   return data;
+}
+
+async function manageBillingPlanCancellation({ projectId, action }) {
+  const { data, error } = await supabase.functions.invoke('billing-manage-plan-cancellation', {
+    body: {
+      projectId,
+      action,
+    },
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildBillingError(parsedError.error, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildBillingError(data.error, data.code || null);
+  }
+
+  return data;
+}
+
+export async function scheduleBillingPlanCancellation({ projectId }) {
+  return manageBillingPlanCancellation({ projectId, action: 'schedule' });
+}
+
+export async function undoBillingPlanCancellation({ projectId }) {
+  return manageBillingPlanCancellation({ projectId, action: 'undo' });
 }

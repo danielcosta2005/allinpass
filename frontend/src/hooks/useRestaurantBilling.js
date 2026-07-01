@@ -8,7 +8,9 @@ import {
   isBillingPastDue,
   isBillingSuspended,
   isTrialExpired as isTrialExpiredSubscription,
+  scheduleBillingPlanCancellation,
   startBillingPlanChange,
+  undoBillingPlanCancellation,
 } from '@/lib/billing';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -58,8 +60,8 @@ const getPlanChangeSuccessToast = ({ plan, result }) => {
     return {
       title: 'Downgrade agendado',
       description: plan?.name
-        ? `Seu plano atual continua ativo ate o fim do ciclo. O plano ${plan.name} sera aplicado automaticamente no proximo ciclo.`
-        : 'Seu plano atual continua ativo ate o fim do ciclo. O novo plano sera aplicado automaticamente no proximo ciclo.',
+        ? `Seu plano atual continua ativo até o fim do ciclo. O plano ${plan.name} será aplicado automaticamente no próximo ciclo.`
+        : 'Seu plano atual continua ativo até o fim do ciclo. O novo plano será aplicado automaticamente no próximo ciclo.',
     };
   }
 
@@ -67,7 +69,7 @@ const getPlanChangeSuccessToast = ({ plan, result }) => {
     title: 'Plano atualizado',
     description: plan?.name
       ? `Seu projeto agora usa o plano ${plan.name}.`
-      : 'A mudanca de plano foi aplicada ao projeto.',
+      : 'A mudança de plano foi aplicada ao projeto.',
   };
 };
 
@@ -79,6 +81,8 @@ export function useRestaurantBilling({ projectId, toast, user }) {
   const [billingError, setBillingError] = useState('');
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
+  const [planCancellationAction, setPlanCancellationAction] = useState('');
+  const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
   const billingAccessState = getBillingAccessState(billingSubscription);
   const isTrialExpired = billingAccessState === 'trial_expired';
@@ -94,6 +98,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError('');
       setBillingLoading(false);
       return null;
@@ -107,12 +112,14 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(data.subscription);
       setPlanChangeOptions(data.planChangeOptions);
       setMemberRole(data.memberRole);
+      setPendingPlanChange(data.pendingPlanChange);
       return data.subscription;
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel carregar o plano atual.';
+      const message = error?.message || 'Não foi possível carregar o plano atual.';
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError(message);
       return null;
     } finally {
@@ -125,6 +132,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError('');
       setBillingLoading(false);
       return undefined;
@@ -140,13 +148,15 @@ export function useRestaurantBilling({ projectId, toast, user }) {
         setBillingSubscription(data.subscription);
         setPlanChangeOptions(data.planChangeOptions);
         setMemberRole(data.memberRole);
+        setPendingPlanChange(data.pendingPlanChange);
       })
       .catch((error) => {
         if (cancelled) return;
         setBillingSubscription(null);
         setPlanChangeOptions([]);
         setMemberRole(null);
-        setBillingError(error?.message || 'Nao foi possivel carregar o plano atual.');
+        setPendingPlanChange(null);
+        setBillingError(error?.message || 'Não foi possível carregar o plano atual.');
       })
       .finally(() => {
         if (!cancelled) setBillingLoading(false);
@@ -178,8 +188,8 @@ export function useRestaurantBilling({ projectId, toast, user }) {
 
     if (planChangeStatus !== 'success') {
       toast({
-        title: planChangeStatus === 'expired' ? 'Checkout expirado' : 'Mudanca nao concluida',
-        description: 'Voce pode abrir a selecao de planos e tentar novamente.',
+        title: planChangeStatus === 'expired' ? 'Checkout expirado' : 'Mudança não concluída',
+        description: 'Você pode abrir a seleção de planos e tentar novamente.',
         variant: planChangeStatus === 'expired' ? 'destructive' : undefined,
       });
       clearPlanChangeParams();
@@ -197,10 +207,10 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       })
       .catch((error) => {
         if (cancelled) return;
-        setBillingError(error?.message || 'Nao foi possivel finalizar a mudanca de plano.');
+        setBillingError(error?.message || 'Não foi possível finalizar a mudança de plano.');
         toast({
-          title: 'Mudanca pendente',
-          description: error?.message || 'Aguarde a confirmacao do pagamento e atualize o painel.',
+          title: 'Mudança pendente',
+          description: error?.message || 'Aguarde a confirmação do pagamento e atualize o painel.',
           variant: 'destructive',
         });
       })
@@ -235,7 +245,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setPlanChangeOpen(false);
       toast(getPlanChangeSuccessToast({ plan, result }));
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar a mudanca de plano.';
+      const message = error?.message || 'Não foi possível iniciar a mudança de plano.';
       setBillingError(message);
       toast({
         title: 'Erro ao alterar plano',
@@ -247,9 +257,62 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     }
   }, [billingActionPlanCode, projectId, refreshBillingState, toast]);
 
+  const handleSchedulePlanCancellation = useCallback(async () => {
+    if (!projectId || !canManageBilling || planCancellationAction) return;
+
+    setPlanCancellationAction('schedule');
+    setBillingError('');
+
+    try {
+      const result = await scheduleBillingPlanCancellation({ projectId });
+      await refreshBillingState();
+      toast({
+        title: result?.already_scheduled ? 'Cancelamento já agendado' : 'Cancelamento agendado',
+        description: 'Seu plano continua ativo até o fim do período de cobrança.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível agendar o cancelamento do plano.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao cancelar plano',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPlanCancellationAction('');
+    }
+  }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
+
+  const handleUndoPlanCancellation = useCallback(async () => {
+    if (!projectId || !canManageBilling || planCancellationAction) return;
+
+    setPlanCancellationAction('undo');
+    setBillingError('');
+
+    try {
+      await undoBillingPlanCancellation({ projectId });
+      await refreshBillingState();
+      toast({
+        title: 'Assinatura mantida',
+        description: 'O cancelamento agendado foi desfeito.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível desfazer o cancelamento do plano.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao manter assinatura',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPlanCancellationAction('');
+    }
+  }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
+
   return {
     billingSubscription,
     planChangeOptions,
+    pendingPlanChange,
     isTrialExpired,
     isBillingSuspended: isBillingSuspendedState,
     isBillingPastDue: isBillingPastDueState,
@@ -261,7 +324,10 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     planChangeOpen,
     setPlanChangeOpen,
     billingActionPlanCode,
+    planCancellationAction,
     billingPlanName,
     handleStartPlanChange,
+    handleSchedulePlanCancellation,
+    handleUndoPlanCancellation,
   };
 }

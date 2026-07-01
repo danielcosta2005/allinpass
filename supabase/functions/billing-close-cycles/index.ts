@@ -36,6 +36,27 @@ type PastDueSubscriptionRow = {
   metadata: Record<string, unknown> | null;
 };
 
+type PlanCancellationSubscriptionRow = {
+  id: string;
+  project_id: string;
+  billing_account_id: string | null;
+  gateway_provider: string | null;
+  gateway_subscription_id: string | null;
+  current_period_end: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+type PlanCancellationSessionRow = {
+  id: string;
+  project_id: string;
+  subscription_id: string;
+  requested_by: string | null;
+  provider_subscription_id: string | null;
+  provider_customer_id: string | null;
+  metadata: Record<string, unknown> | null;
+  billing_subscriptions?: PlanCancellationSubscriptionRow | PlanCancellationSubscriptionRow[] | null;
+};
+
 type AsaasPayment = {
   id?: string;
   status?: string;
@@ -175,6 +196,11 @@ function asCents(value: unknown) {
 
 function asArray(value: unknown) {
   return Array.isArray(value) ? value : [];
+}
+
+function readEmbeddedOne<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
 
 function normalizePaymentStatus(value: unknown) {
@@ -405,7 +431,7 @@ async function collectInvoiceGroup(
       supabaseAdmin,
       invoices,
       "editable_payment_not_found",
-      "Nenhuma cobranca mensal pendente ou vencida encontrada no Asaas.",
+      "Nenhuma cobrança mensal pendente ou vencida encontrada no Asaas.",
     );
     return { ok: false, skipped: true, reason: "editable_payment_not_found" };
   }
@@ -417,7 +443,7 @@ async function collectInvoiceGroup(
       supabaseAdmin,
       invoices,
       "payment_already_has_collection_batch",
-      `Cobranca Asaas ja vinculada ao batch ${existingBatch.id}.`,
+      `Cobrança Asaas já vinculada ao batch ${existingBatch.id}.`,
     );
     return {
       ok: false,
@@ -576,7 +602,7 @@ async function collectDraftOverageInvoices(
           supabaseAdmin,
           groupInvoices,
           "subscription_not_found",
-          "Assinatura local nao encontrada.",
+          "Assinatura local não encontrada.",
         );
         results.push({ subscription_id: subscriptionId, ok: false, skipped: true, reason: "subscription_not_found" });
         continue;
@@ -600,6 +626,144 @@ async function collectDraftOverageInvoices(
   }
 
   return { picked: invoices.length, collected, skipped, failed, results };
+}
+
+async function processDuePlanCancellations(
+  supabaseAdmin: SupabaseAdmin,
+  apiKey: string,
+  limit: number,
+) {
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from("billing_plan_change_sessions")
+    .select([
+      "id",
+      "project_id",
+      "subscription_id",
+      "requested_by",
+      "provider_subscription_id",
+      "provider_customer_id",
+      "metadata",
+      "billing_subscriptions!inner(id, project_id, billing_account_id, gateway_provider, gateway_subscription_id, current_period_end, metadata)",
+    ].join(", "))
+    .eq("change_type", "cancellation")
+    .eq("effective_mode", "next_cycle")
+    .eq("status", "paid")
+    .lte("billing_subscriptions.current_period_end", nowIso)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+
+  const sessions = (Array.isArray(data) ? data : []) as PlanCancellationSessionRow[];
+  let applied = 0;
+  let skipped = 0;
+  let failed = 0;
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const session of sessions) {
+    const subscription = readEmbeddedOne(session.billing_subscriptions);
+    if (!subscription) {
+      skipped += 1;
+      results.push({
+        plan_change_session_id: session.id,
+        ok: false,
+        skipped: true,
+        reason: "subscription_not_found",
+      });
+      continue;
+    }
+
+    const metadata = getMetadata(session.metadata);
+    const providerAlreadyConfirmed =
+      metadata.provider_cancellation_confirmed === true
+      || Boolean(metadata.provider_cancellation_confirmed_at)
+      || metadata.provider_cancellation_not_required === true;
+    const gatewaySubscriptionId = String(
+      session.provider_subscription_id
+        || subscription.gateway_subscription_id
+        || "",
+    ).trim();
+    const shouldCancelAsaas =
+      subscription.gateway_provider === "asaas"
+      && isAsaasSubscriptionId(gatewaySubscriptionId)
+      && !providerAlreadyConfirmed;
+
+    try {
+      let asaasBody: Record<string, unknown> | null = null;
+      let providerCancellationNotRequired = false;
+
+      if (shouldCancelAsaas) {
+        asaasBody = await asaasFetch(apiKey, `/subscriptions/${encodeURIComponent(gatewaySubscriptionId)}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            status: "INACTIVE",
+            updatePendingPayments: false,
+          }),
+        });
+      } else if (!isAsaasSubscriptionId(gatewaySubscriptionId)) {
+        providerCancellationNotRequired = true;
+      }
+
+      const confirmedAt = String(metadata.provider_cancellation_confirmed_at || nowIso);
+      const { error: updateError } = await supabaseAdmin
+        .from("billing_plan_change_sessions")
+        .update({
+          provider_subscription_id: gatewaySubscriptionId || session.provider_subscription_id,
+          metadata: {
+            ...metadata,
+            provider_cancellation_confirmed: true,
+            provider_cancellation_confirmed_at: confirmedAt,
+            provider_cancellation_not_required: providerCancellationNotRequired
+              || metadata.provider_cancellation_not_required === true,
+            last_plan_cancellation_runner: {
+              at: nowIso,
+              source: "billing-close-cycles",
+              skip_next_cycle: true,
+            },
+            ...(asaasBody ? { asaas_cancellation_response: asaasBody } : {}),
+          },
+        })
+        .eq("id", session.id)
+        .eq("status", "paid");
+
+      if (updateError) throw updateError;
+
+      const { data: applyResult, error: applyError } = await supabaseAdmin.rpc("apply_billing_plan_change", {
+        p_session_id: session.id,
+        p_actor_user_id: session.requested_by,
+        p_provider_subscription_id: gatewaySubscriptionId || session.provider_subscription_id,
+        p_provider_customer_id: session.provider_customer_id,
+        p_provider_payment_id: null,
+      });
+
+      if (applyError) throw applyError;
+
+      applied += 1;
+      results.push({
+        plan_change_session_id: session.id,
+        subscription_id: session.subscription_id,
+        gateway_subscription_id: gatewaySubscriptionId || null,
+        ok: true,
+        result: applyResult,
+      });
+    } catch (error) {
+      failed += 1;
+      console.error("billing-close-cycles plan cancellation failed", {
+        plan_change_session_id: session.id,
+        subscription_id: session.subscription_id,
+        error: truncate(error),
+      });
+      results.push({
+        plan_change_session_id: session.id,
+        subscription_id: session.subscription_id,
+        ok: false,
+        error: truncate(error, 300),
+      });
+    }
+  }
+
+  return { picked: sessions.length, applied, skipped, failed, results };
 }
 
 async function realignSubscriptionDueDates(
@@ -776,7 +940,7 @@ Deno.serve(async (req) => {
       throw new HttpError(405, {
         ok: false,
         code: "BILLING_CLOSE_CYCLES_METHOD_NOT_ALLOWED",
-        error: "Metodo nao permitido.",
+        error: "Método não permitido.",
       });
     }
 
@@ -795,6 +959,7 @@ Deno.serve(async (req) => {
 
     const closedCycles = await closeDueCycles(supabaseAdmin, limit);
     const collectedInvoices = await collectDraftOverageInvoices(supabaseAdmin, asaasApiKey, limit);
+    const planCancellations = await processDuePlanCancellations(supabaseAdmin, asaasApiKey, limit);
     const alignedDueDates = await realignSubscriptionDueDates(supabaseAdmin, asaasApiKey, limit);
     const suspendedSubscriptions = await suspendPastDueSubscriptions(supabaseAdmin, limit);
 
@@ -802,6 +967,7 @@ Deno.serve(async (req) => {
       ok: true,
       closed_cycles: closedCycles,
       collected_invoices: collectedInvoices,
+      plan_cancellations: planCancellations,
       aligned_due_dates: alignedDueDates,
       suspended_subscriptions: suspendedSubscriptions,
     });

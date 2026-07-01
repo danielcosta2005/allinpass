@@ -41,7 +41,7 @@ function requiredEnv(name: string) {
   if (!value) {
     throw new BillingPlanFinalizeError(
       "BILLING_PLAN_FINALIZE_MISSING_ENV",
-      `Variavel ${name} ausente.`,
+      `Variável ${name} ausente.`,
       500,
     );
   }
@@ -64,7 +64,7 @@ async function requireOwnerMembership(
   if (!data) {
     throw new BillingPlanFinalizeError(
       "BILLING_PLAN_FINALIZE_PROJECT_NOT_FOUND",
-      "Projeto nao encontrado para este usuario.",
+      "Projeto não encontrado para este usuário.",
       404,
     );
   }
@@ -72,7 +72,7 @@ async function requireOwnerMembership(
   if (data.role !== "owner") {
     throw new BillingPlanFinalizeError(
       "BILLING_PLAN_FINALIZE_OWNER_REQUIRED",
-      "Apenas o proprietario do projeto pode finalizar a mudanca de plano.",
+      "Apenas o proprietário do projeto pode finalizar a mudança de plano.",
       403,
     );
   }
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return errorResponse(
       origin,
-      new BillingPlanFinalizeError("BILLING_PLAN_FINALIZE_METHOD_NOT_ALLOWED", "Metodo nao permitido.", 405),
+      new BillingPlanFinalizeError("BILLING_PLAN_FINALIZE_METHOD_NOT_ALLOWED", "Método não permitido.", 405),
     );
   }
 
@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
     if (!authHeader.startsWith("Bearer ")) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_MISSING_AUTHORIZATION",
-        "Sessao obrigatoria para finalizar a mudanca de plano.",
+        "Sessão obrigatória para finalizar a mudança de plano.",
         401,
       );
     }
@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
     if (userError || !user) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_INVALID_SESSION",
-        "Sessao invalida ou expirada.",
+        "Sessão inválida ou expirada.",
         401,
       );
     }
@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     if (!planChangeSessionId) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_MISSING_SESSION",
-        "Informe a sessao de mudanca de plano.",
+        "Informe a sessão de mudança de plano.",
         400,
       );
     }
@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
     if (!session) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_SESSION_NOT_FOUND",
-        "Sessao de mudanca de plano nao encontrada.",
+        "Sessão de mudança de plano não encontrada.",
         404,
       );
     }
@@ -168,7 +168,7 @@ Deno.serve(async (req) => {
     if (session.status !== "paid") {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_PAYMENT_NOT_CONFIRMED",
-        "Pagamento da mudanca de plano ainda nao confirmado pelo Asaas.",
+        "Pagamento da mudança de plano ainda não confirmado pelo Asaas.",
         409,
       );
     }
@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
     if (!session.provider_subscription_id || !session.provider_customer_id) {
       throw new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_PAYMENT_NOT_CONFIRMED",
-        "Pagamento confirmado, aguardando vinculacao da assinatura no Asaas.",
+        "Pagamento confirmado, aguardando vinculação da assinatura no Asaas.",
         409,
       );
     }
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
       origin,
       new BillingPlanFinalizeError(
         "BILLING_PLAN_FINALIZE_INTERNAL_ERROR",
-        "Erro interno ao finalizar a mudanca de plano.",
+        "Erro interno ao finalizar a mudança de plano.",
         500,
       ),
     );

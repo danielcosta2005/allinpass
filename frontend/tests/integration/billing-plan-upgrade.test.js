@@ -50,7 +50,7 @@ describe("billing plan changes", () => {
     expect(functionSource).toContain("isAsaasSubscriptionId");
     expect(functionSource).toContain("downgrade");
     expect(functionSource).toContain("planCode === FREE_PLAN_CODE");
-    expect(functionSource).toContain("Free trial nao pode ser destino de mudanca de plano.");
+    expect(functionSource).toContain("Free trial não pode ser destino de mudança de plano.");
     expect(functionSource).not.toContain("BILLING_PLAN_CHANGE_NOT_AN_UPGRADE");
 
     expect(webhookSource).toContain("handlePlanChangeCheckoutWebhook");
@@ -90,8 +90,8 @@ describe("billing plan changes", () => {
     expect(dashboardSource).toContain("handleStartPlanChange");
     expect(billingCardSource).toContain("Plano atual");
     expect(billingCardSource).toContain("Fazer downgrade");
-    expect(billingCardSource).toContain("Agendado para proximo ciclo");
-    expect(billingCardSource).toContain("Downgrade ja agendado");
+    expect(billingCardSource).toContain("Agendado para próximo ciclo");
+    expect(billingCardSource).toContain("Downgrade já agendado");
     expect(billingDialogSource).toContain("flex flex-wrap justify-center gap-5");
     expect(dashboardSource).toContain("billingPlanName");
   });
@@ -115,7 +115,7 @@ describe("billing plan changes", () => {
     expect(billingClientSource).toContain("supabase.rpc('get_pending_billing_plan_change'");
     expect(billingClientSource).toContain("isPendingPlanChange");
     expect(billingClientSource).toContain("isSelectable: !isPendingPlanChange");
-    expect(billingClientSource).toContain("Downgrade ja agendado");
+    expect(billingClientSource).toContain("Downgrade já agendado");
 
     expect(billingCardSource).toContain("plan?.isPendingPlanChange");
     expect(billingCardSource).toContain("Clock3");
