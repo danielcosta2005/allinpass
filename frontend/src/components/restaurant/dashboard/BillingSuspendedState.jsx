@@ -1,10 +1,11 @@
 import React from 'react';
-import { AlertTriangle, LockKeyhole, MessageCircle, X } from 'lucide-react';
+import { AlertTriangle, LockKeyhole, Receipt, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 function BillingSuspendedState({
   billingError,
   onDismiss,
-  supportUrl,
+  onViewPendingInvoice,
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-8">
@@ -47,19 +48,18 @@ function BillingSuspendedState({
         ) : null}
 
         <div className="mt-7 rounded-md border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
-          Trocar de plano não regulariza a pendência. Pague a cobrança em aberto ou fale com o suporte.
+          Trocar de plano não regulariza a pendência. Abra a fatura pendente e regularize a cobrança em aberto.
         </div>
 
-        {supportUrl ? (
-          <a
-            href={supportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-5 inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:from-purple-700 hover:to-indigo-700"
+        {onViewPendingInvoice ? (
+          <Button
+            type="button"
+            className="mt-5 gap-2"
+            onClick={onViewPendingInvoice}
           >
-            <MessageCircle className="h-4 w-4" />
-            Falar com suporte
-          </a>
+            <Receipt className="h-4 w-4" />
+            Ver pendência
+          </Button>
         ) : null}
       </section>
     </div>

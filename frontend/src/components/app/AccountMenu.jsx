@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CreditCard, Loader2, LogOut, Moon, Receipt, Sun } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { cn } from '@/lib/utils';
 
@@ -22,6 +23,7 @@ function AccountMenu({
   onOpenPlanChange,
   onSignOut,
   planChangeDisabled = false,
+  planChangeDisabledReason,
   profileLabel,
   profileMeta,
   projectName,
@@ -83,6 +85,20 @@ function AccountMenu({
   };
 
   const menuItemClassName = 'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:text-muted-foreground/50 disabled:hover:bg-transparent';
+  const showPlanChangeDisabledReason = planChangeDisabled && Boolean(planChangeDisabledReason);
+  const planChangeButton = (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={planChangeDisabled}
+      title={planChangeDisabledReason}
+      onClick={handlePlanChangeClick}
+      className={cn(menuItemClassName, showPlanChangeDisabledReason && 'pointer-events-none')}
+    >
+      <CreditCard className="h-4 w-4" />
+      <span>Mudar de plano</span>
+    </button>
+  );
 
   return (
     <div ref={menuRef} className="relative">
@@ -131,16 +147,20 @@ function AccountMenu({
               ) : null}
 
               {showPlanChangeOption ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={planChangeDisabled}
-                  onClick={handlePlanChangeClick}
-                  className={menuItemClassName}
-                >
-                  <CreditCard className="h-4 w-4" />
-                  <span>Mudar de plano</span>
-                </button>
+                showPlanChangeDisabledReason ? (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="block cursor-not-allowed" title={planChangeDisabledReason}>
+                          {planChangeButton}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="right" align="center" className="max-w-xs text-xs">
+                        {planChangeDisabledReason}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                ) : planChangeButton
               ) : null}
 
               {showBillingOption ? (

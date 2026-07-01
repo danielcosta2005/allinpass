@@ -137,14 +137,7 @@ const RestaurantDashboard = () => {
       });
       return;
     }
-    if (isBillingPastDue) {
-      toast({
-        title: 'Pagamento pendente',
-        description: 'Regularize a cobrança pendente antes de trocar de plano.',
-        variant: 'destructive',
-      });
-      return;
-    }
+    if (isBillingPastDue) return;
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
   };
@@ -162,6 +155,11 @@ const RestaurantDashboard = () => {
   const handleViewPendingInvoice = () => {
     setBillingDashboardFocus('pending_invoice');
     setBillingDashboardOpen(true);
+  };
+
+  const handleViewSuspendedPendingInvoice = () => {
+    setBillingSuspensionDismissed(true);
+    handleViewPendingInvoice();
   };
 
   useEffect(() => {
@@ -249,7 +247,10 @@ const RestaurantDashboard = () => {
     onOpenBilling: handleOpenBillingDashboard,
     onOpenPlanChange: handleOpenPlanChange,
     onSignOut: handleSignOut,
-    planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled,
+    planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled || isPastDue,
+    planChangeDisabledReason: isPastDue
+      ? 'Regularize a cobrança pendente antes de trocar de plano.'
+      : undefined,
     profileLabel: user?.email,
     profileMeta: planLabel,
     projectName: projectId
@@ -264,6 +265,7 @@ const RestaurantDashboard = () => {
     handleOpenBillingDashboard,
     handleOpenPlanChange,
     isCanceled,
+    isPastDue,
     isSuspended,
     planLabel,
     projectDisplayName,
@@ -431,7 +433,7 @@ const RestaurantDashboard = () => {
           <BillingSuspendedState
             billingError={billingError}
             onDismiss={() => setBillingSuspensionDismissed(true)}
-            supportUrl={SUPPORT_WHATSAPP_URL}
+            onViewPendingInvoice={handleViewSuspendedPendingInvoice}
           />
         ) : null}
 

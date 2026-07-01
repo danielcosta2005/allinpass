@@ -151,8 +151,10 @@ describe("billing plan changes", () => {
     expect(functionSource.indexOf("BILLING_PLAN_CHANGE_PAST_DUE_REQUIRES_PAYMENT"))
       .toBeLessThan(functionSource.indexOf("const reusableSession = await findReusableSession"));
     expect(billingClientSource).toContain("isBillingPastDue(currentSubscription)) return []");
-    expect(dashboardSource).toContain("if (isBillingPastDue) {");
-    expect(dashboardSource).toContain("title: 'Pagamento pendente'");
+    expect(dashboardSource).toContain("if (isBillingPastDue) return;");
+    expect(dashboardSource).toContain("planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled || isPastDue");
+    expect(dashboardSource).toContain("planChangeDisabledReason: isPastDue");
+    expect(dashboardSource).not.toContain("title: 'Pagamento pendente'");
     expect(dashboardSource).toContain("Regularize a cobrança pendente antes de trocar de plano.");
     expect(migrationSources).toContain("v_subscription.status = 'past_due'");
     expect(migrationSources).toContain("Regularize a cobrança pendente antes de alterar o plano.");

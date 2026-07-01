@@ -27,6 +27,9 @@ describe("account menu", () => {
     expect(accountMenuSource).toContain("Sun");
     expect(accountMenuSource).toContain("Sair");
     expect(accountMenuSource).toContain("showPlanChangeOption");
+    expect(accountMenuSource).toContain("planChangeDisabledReason");
+    expect(accountMenuSource).toContain("TooltipContent");
+    expect(accountMenuSource).toContain("title={planChangeDisabledReason}");
     expect(accountMenuSource).toContain("showBillingOption");
     expect(accountMenuSource).toContain("onOpenBilling");
     expect(accountMenuSource).toContain("projectName");
