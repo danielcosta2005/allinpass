@@ -12,6 +12,7 @@ import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import BillingDashboardDialog from '@/components/restaurant/dashboard/BillingDashboardDialog';
+import BillingCanceledState from '@/components/restaurant/dashboard/BillingCanceledState';
 import BillingPastDueNotice from '@/components/restaurant/dashboard/BillingPastDueNotice';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import BillingSuspendedState from '@/components/restaurant/dashboard/BillingSuspendedState';
@@ -36,6 +37,8 @@ const RestaurantDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const [billingSuspensionDismissed, setBillingSuspensionDismissed] = useState(false);
+  const [trialExpiredNoticeDismissed, setTrialExpiredNoticeDismissed] = useState(false);
+  const [billingCanceledNoticeDismissed, setBillingCanceledNoticeDismissed] = useState(false);
   const [billingDashboardOpen, setBillingDashboardOpen] = useState(false);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
@@ -44,6 +47,7 @@ const RestaurantDashboard = () => {
     planChangeOptions,
     pendingPlanChange,
     isTrialExpired,
+    isBillingCanceled,
     isBillingSuspended,
     isBillingPastDue,
     billingAccessState,
@@ -119,8 +123,10 @@ const RestaurantDashboard = () => {
   };
 
   const trialBillingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
+  const canceledBillingBlocked = isBillingCanceled && billingAccessState === 'canceled';
   const handleOpenPlanChange = () => {
     if (trialBillingBlocked && !canManageBilling) return;
+    if (canceledBillingBlocked) return;
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
   };
@@ -128,6 +134,11 @@ const RestaurantDashboard = () => {
   useEffect(() => {
     if (!isBillingSuspended) setBillingSuspensionDismissed(false);
   }, [isBillingSuspended]);
+
+  useEffect(() => {
+    setTrialExpiredNoticeDismissed(false);
+    setBillingCanceledNoticeDismissed(false);
+  }, [projectId, billingSubscription?.id, billingSubscription?.status]);
 
   useEffect(() => {
     if (!ALLOWED_TABS.has(activeTab)) {
@@ -140,11 +151,14 @@ const RestaurantDashboard = () => {
 
   const isPastDue = billingAccessState === 'past_due';
   const isSuspended = billingAccessState === 'suspended';
-  const planLabel = isSuspended
-    ? `${billingPlanName} - suspenso`
-    : isPastDue
-      ? `${billingPlanName} - pagamento pendente`
-      : billingPlanName;
+  const isCanceled = billingAccessState === 'canceled';
+  const planLabel = isCanceled
+    ? `${billingPlanName} - cancelado`
+    : isSuspended
+      ? `${billingPlanName} - suspenso`
+      : isPastDue
+        ? `${billingPlanName} - pagamento pendente`
+        : billingPlanName;
 
   const canSendNotifications = memberRole === 'owner';
   const notificationSubTabs = useMemo(() => {
@@ -202,7 +216,7 @@ const RestaurantDashboard = () => {
     onOpenBilling: () => setBillingDashboardOpen(true),
     onOpenPlanChange: handleOpenPlanChange,
     onSignOut: handleSignOut,
-    planChangeDisabled: !projectId || billingLoading || isSuspended,
+    planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled,
     profileLabel: user?.email,
     profileMeta: planLabel,
     projectName: projectId
@@ -215,6 +229,7 @@ const RestaurantDashboard = () => {
   }), [
     billingLoading,
     handleOpenPlanChange,
+    isCanceled,
     isSuspended,
     planLabel,
     projectDisplayName,
@@ -281,6 +296,7 @@ const RestaurantDashboard = () => {
 
         <BillingDashboardDialog
           canManageBilling={canManageBilling}
+          isBillingCanceled={isBillingCanceled}
           onSchedulePlanCancellation={handleSchedulePlanCancellation}
           onOpenChange={setBillingDashboardOpen}
           onUndoPlanCancellation={handleUndoPlanCancellation}
@@ -299,14 +315,6 @@ const RestaurantDashboard = () => {
             status={signupStatus}
             statusError={signupStatusError}
             statusLoading={signupStatusLoading}
-          />
-        ) : trialBillingBlocked ? (
-          <TrialExpiredBillingState
-            billingError={billingError}
-            billingLoading={billingLoading}
-            canManageBilling={canManageBilling}
-            onOpenPlanChange={handleOpenPlanChange}
-            planChangeOptions={planChangeOptions}
           />
         ) : (
           <motion.div
@@ -356,7 +364,26 @@ const RestaurantDashboard = () => {
           </motion.div>
         )}
 
-        {projectId && !trialBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
+        {projectId && trialBillingBlocked && !trialExpiredNoticeDismissed ? (
+          <TrialExpiredBillingState
+            billingError={billingError}
+            billingLoading={billingLoading}
+            canManageBilling={canManageBilling}
+            onDismiss={() => setTrialExpiredNoticeDismissed(true)}
+            onOpenPlanChange={handleOpenPlanChange}
+            planChangeOptions={planChangeOptions}
+          />
+        ) : null}
+
+        {projectId && canceledBillingBlocked && !billingCanceledNoticeDismissed ? (
+          <BillingCanceledState
+            billingError={billingError}
+            onDismiss={() => setBillingCanceledNoticeDismissed(true)}
+            supportUrl={SUPPORT_WHATSAPP_URL}
+          />
+        ) : null}
+
+        {projectId && !trialBillingBlocked && !canceledBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
           <BillingSuspendedState
             billingError={billingError}
             onDismiss={() => setBillingSuspensionDismissed(true)}

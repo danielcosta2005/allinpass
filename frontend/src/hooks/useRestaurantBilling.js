@@ -5,6 +5,7 @@ import {
   getPendingBillingPlanChange,
   getBillingSubscriptionForAccess,
   getPlanChangeOptions,
+  isBillingCanceled,
   isBillingPastDue,
   isBillingSuspended,
   isTrialExpired as isTrialExpiredSubscription,
@@ -16,6 +17,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 const getBillingAccessState = (subscription) => {
   if (isTrialExpiredSubscription(subscription)) return 'trial_expired';
+  if (isBillingCanceled(subscription)) return 'canceled';
   if (isBillingSuspended(subscription)) return 'suspended';
   if (isBillingPastDue(subscription)) return 'past_due';
   if (subscription) return 'active';
@@ -86,6 +88,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
 
   const billingAccessState = getBillingAccessState(billingSubscription);
   const isTrialExpired = billingAccessState === 'trial_expired';
+  const isBillingCanceledState = billingAccessState === 'canceled';
   const isBillingSuspendedState = billingAccessState === 'suspended';
   const isBillingPastDueState = billingAccessState === 'past_due';
   const canManageBilling = memberRole === 'owner';
@@ -314,6 +317,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     planChangeOptions,
     pendingPlanChange,
     isTrialExpired,
+    isBillingCanceled: isBillingCanceledState,
     isBillingSuspended: isBillingSuspendedState,
     isBillingPastDue: isBillingPastDueState,
     billingAccessState,

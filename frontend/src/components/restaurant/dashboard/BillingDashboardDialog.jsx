@@ -262,6 +262,7 @@ function HistoryItem({ cycle, isSelected, onSelect }) {
 function CancelPlanSection({
   action,
   canManageBilling,
+  isBillingCanceled,
   onSchedulePlanCancellation,
   onUndoPlanCancellation,
   pendingPlanChange,
@@ -288,12 +289,14 @@ function CancelPlanSection({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="max-w-2xl">
             <h3 className="text-base font-semibold text-foreground">
-              {isCancellationPending ? 'Cancelamento agendado' : 'Cancelar plano'}
+              {isBillingCanceled ? 'Assinatura cancelada' : isCancellationPending ? 'Cancelamento agendado' : 'Cancelar plano'}
             </h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {isCancellationPending
-                ? `Seu plano continua ativo até ${periodText}.`
-                : 'Se você cancelar, continuará com acesso total aos recursos do seu plano até o fim do período de cobrança.'}
+              {isBillingCanceled
+                ? 'Este plano já foi cancelado. Não há outro cancelamento para agendar.'
+                : isCancellationPending
+                  ? `Seu plano continua ativo até ${periodText}.`
+                  : 'Se você cancelar, continuará com acesso total aos recursos do seu plano até o fim do período de cobrança.'}
             </p>
             {hasOtherPendingChange ? (
               <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -307,7 +310,7 @@ function CancelPlanSection({
               type="button"
               variant="outline"
               className="min-w-[132px] border-emerald-500 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-              disabled={isBusy}
+              disabled={isBusy || isBillingCanceled}
               onClick={onUndoPlanCancellation}
             >
               {isUndoing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -318,7 +321,7 @@ function CancelPlanSection({
               type="button"
               variant="outline"
               className="min-w-[132px] border-rose-500 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-400 dark:text-rose-300 dark:hover:bg-rose-500/10"
-              disabled={isBusy}
+              disabled={isBusy || isBillingCanceled}
               onClick={() => setConfirmationOpen(true)}
             >
               {isScheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -339,7 +342,7 @@ function CancelPlanSection({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isBusy}>Voltar</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isBusy}
+              disabled={isBusy || isBillingCanceled}
               onClick={onSchedulePlanCancellation}
               className="bg-rose-600 text-white hover:bg-rose-700"
             >
@@ -355,6 +358,7 @@ function CancelPlanSection({
 
 function BillingDashboardDialog({
   canManageBilling = false,
+  isBillingCanceled = false,
   onOpenChange,
   onSchedulePlanCancellation,
   onUndoPlanCancellation,
@@ -512,6 +516,7 @@ function BillingDashboardDialog({
             <CancelPlanSection
               action={planCancellationAction}
               canManageBilling={canManageBilling}
+              isBillingCanceled={isBillingCanceled}
               onSchedulePlanCancellation={onSchedulePlanCancellation}
               onUndoPlanCancellation={onUndoPlanCancellation}
               pendingPlanChange={pendingPlanChange}

@@ -3,6 +3,7 @@ import { fetchSubscriptionPlans } from '@/lib/subscriptionPlans';
 
 const VISIBLE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused', 'suspended'];
 const EXPIRED_SUBSCRIPTION_STATUS = 'expired';
+const CANCELED_SUBSCRIPTION_STATUS = 'canceled';
 const SUSPENDED_SUBSCRIPTION_STATUS = 'suspended';
 const PAST_DUE_SUBSCRIPTION_STATUS = 'past_due';
 const FREE_PLAN_CODE = 'free_trial';
@@ -62,6 +63,8 @@ function normalizeSubscription(row) {
     status: row.status,
     currentPeriodStart: row.current_period_start || null,
     currentPeriodEnd: row.current_period_end || null,
+    endedAt: row.ended_at || null,
+    canceledAt: row.canceled_at || null,
     delinquentSince: row.delinquent_since || null,
     graceEndsAt: row.grace_ends_at || null,
     suspendedAt: row.suspended_at || null,
@@ -78,6 +81,7 @@ function normalizeSubscription(row) {
     plan: normalizePlan(joinedPlan),
     isPastDue: row.status === PAST_DUE_SUBSCRIPTION_STATUS,
     isSuspended: row.status === SUSPENDED_SUBSCRIPTION_STATUS,
+    isCanceled: row.status === CANCELED_SUBSCRIPTION_STATUS,
     isTrialExpired: row.status === EXPIRED_SUBSCRIPTION_STATUS
       && normalizePlanCode(joinedPlan?.code) === FREE_PLAN_CODE,
   };
@@ -127,6 +131,8 @@ export async function getCurrentBillingSubscription(projectId) {
       'status',
       'current_period_start',
       'current_period_end',
+      'ended_at',
+      'canceled_at',
       'delinquent_since',
       'grace_ends_at',
       'suspended_at',
@@ -168,6 +174,8 @@ export async function getBillingSubscriptionForAccess(projectId) {
       'status',
       'current_period_start',
       'current_period_end',
+      'ended_at',
+      'canceled_at',
       'gateway_provider',
       'gateway_subscription_id',
       'base_price_cents',
@@ -186,7 +194,45 @@ export async function getBillingSubscriptionForAccess(projectId) {
     .maybeSingle();
 
   if (error) throw error;
-  return normalizeSubscription(data);
+  const expiredTrialSubscription = normalizeSubscription(data);
+  if (expiredTrialSubscription) return expiredTrialSubscription;
+
+  const { data: canceledData, error: canceledError } = await supabase
+    .from('billing_subscriptions')
+    .select([
+      'id',
+      'project_id',
+      'plan_id',
+      'status',
+      'current_period_start',
+      'current_period_end',
+      'ended_at',
+      'canceled_at',
+      'delinquent_since',
+      'grace_ends_at',
+      'suspended_at',
+      'last_payment_failure_at',
+      'delinquency_gateway_charge_id',
+      'delinquency_reason',
+      'gateway_provider',
+      'gateway_subscription_id',
+      'base_price_cents',
+      'included_pass_installs',
+      'included_notification_sends',
+      'overage_pass_install_cents',
+      'overage_notification_sent_cents',
+      'billing_plans(code, name, base_price_cents, included_pass_installs, included_notification_sends, overage_pass_install_cents, overage_notification_sent_cents)',
+    ].join(', '))
+    .eq('project_id', normalizedProjectId)
+    .eq('status', CANCELED_SUBSCRIPTION_STATUS)
+    .order('ended_at', { ascending: false, nullsFirst: false })
+    .order('updated_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (canceledError) throw canceledError;
+  return normalizeSubscription(canceledData);
 }
 
 export function isTrialExpired(subscription) {
@@ -199,6 +245,10 @@ export function isBillingPastDue(subscription) {
 
 export function isBillingSuspended(subscription) {
   return Boolean(subscription?.isSuspended);
+}
+
+export function isBillingCanceled(subscription) {
+  return Boolean(subscription?.isCanceled);
 }
 
 export async function getPendingBillingPlanChange(projectId) {
@@ -247,6 +297,7 @@ export function getPlanChangeActionLabel(changeKind) {
 export async function getPlanChangeOptions(currentSubscription, planList, pendingPlanChange = null) {
   if (!currentSubscription) return [];
   if (isBillingSuspended(currentSubscription)) return [];
+  if (isBillingCanceled(currentSubscription)) return [];
 
   const plans = Array.isArray(planList) ? planList : await fetchSubscriptionPlans();
   const pendingPlanCode = normalizePlanCode(pendingPlanChange?.newPlanCode);
