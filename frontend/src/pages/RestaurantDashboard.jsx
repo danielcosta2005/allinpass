@@ -129,6 +129,7 @@ const RestaurantDashboard = () => {
   const canceledBillingBlocked = isBillingCanceled && billingAccessState === 'canceled';
   const handleOpenPlanChange = () => {
     if (trialBillingBlocked && !canManageBilling) return;
+    if (!canManageBilling) return;
     if (isBillingCanceled) {
       toast({
         title: 'Assinatura cancelada',
@@ -247,10 +248,12 @@ const RestaurantDashboard = () => {
     onOpenBilling: handleOpenBillingDashboard,
     onOpenPlanChange: handleOpenPlanChange,
     onSignOut: handleSignOut,
-    planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled || isPastDue,
-    planChangeDisabledReason: isPastDue
-      ? 'Regularize a cobrança pendente antes de trocar de plano.'
-      : undefined,
+    planChangeDisabled: !projectId || billingLoading || !canManageBilling || isSuspended || isCanceled || isPastDue,
+    planChangeDisabledReason: !canManageBilling
+      ? 'Apenas o proprietário do projeto pode alterar o plano.'
+      : isPastDue
+        ? 'Regularize a cobrança pendente antes de trocar de plano.'
+        : undefined,
     profileLabel: user?.email,
     profileMeta: planLabel,
     projectName: projectId
@@ -262,6 +265,7 @@ const RestaurantDashboard = () => {
     userEmail: user?.email,
   }), [
     billingLoading,
+    canManageBilling,
     handleOpenBillingDashboard,
     handleOpenPlanChange,
     isCanceled,
