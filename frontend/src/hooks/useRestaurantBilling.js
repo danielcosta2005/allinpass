@@ -5,10 +5,13 @@ import {
   getPendingBillingPlanChange,
   getBillingSubscriptionForAccess,
   getPlanChangeOptions,
+  isBillingCanceled,
   isBillingPastDue,
   isBillingSuspended,
   isTrialExpired as isTrialExpiredSubscription,
+  reactivateBillingSubscription,
   scheduleBillingPlanCancellation,
+  startBillingPaymentRecovery,
   startBillingPlanChange,
   undoBillingPlanCancellation,
 } from '@/lib/billing';
@@ -16,6 +19,7 @@ import { supabase } from '@/lib/supabaseClient';
 
 const getBillingAccessState = (subscription) => {
   if (isTrialExpiredSubscription(subscription)) return 'trial_expired';
+  if (isBillingCanceled(subscription)) return 'canceled';
   if (isBillingSuspended(subscription)) return 'suspended';
   if (isBillingPastDue(subscription)) return 'past_due';
   if (subscription) return 'active';
@@ -82,10 +86,13 @@ export function useRestaurantBilling({ projectId, toast, user }) {
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
   const [planCancellationAction, setPlanCancellationAction] = useState('');
+  const [billingReactivationAction, setBillingReactivationAction] = useState(false);
+  const [billingPaymentRecoveryAction, setBillingPaymentRecoveryAction] = useState(false);
   const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
   const billingAccessState = getBillingAccessState(billingSubscription);
   const isTrialExpired = billingAccessState === 'trial_expired';
+  const isBillingCanceledState = billingAccessState === 'canceled';
   const isBillingSuspendedState = billingAccessState === 'suspended';
   const isBillingPastDueState = billingAccessState === 'past_due';
   const canManageBilling = memberRole === 'owner';
@@ -309,11 +316,75 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     }
   }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
 
+  const handleReactivateBillingSubscription = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingReactivationAction) return;
+
+    setBillingReactivationAction(true);
+    setBillingError('');
+
+    try {
+      await reactivateBillingSubscription({ projectId });
+      await refreshBillingState();
+      toast({
+        title: 'Assinatura reativada',
+        description: 'Seu projeto voltou ao plano ativo e um novo ciclo de cobrança foi iniciado.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível reativar a assinatura.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao reativar assinatura',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingReactivationAction(false);
+    }
+  }, [billingReactivationAction, canManageBilling, projectId, refreshBillingState, toast]);
+
+  const handleStartBillingPaymentRecovery = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingPaymentRecoveryAction) return;
+
+    setBillingPaymentRecoveryAction(true);
+    setBillingError('');
+
+    try {
+      const result = await startBillingPaymentRecovery({ projectId });
+
+      if (result?.already_paid) {
+        await refreshBillingState();
+        toast({
+          title: 'Pagamento já identificado',
+          description: 'Aguarde a confirmação do pagamento pelo Asaas e atualize o painel.',
+        });
+        return;
+      }
+
+      if (result?.invoice_url) {
+        window.location.assign(result.invoice_url);
+        return;
+      }
+
+      throw new Error('Não foi possível abrir a fatura pendente.');
+    } catch (error) {
+      const message = error?.message || 'Não foi possível iniciar a regularização do pagamento.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao regularizar pagamento',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingPaymentRecoveryAction(false);
+    }
+  }, [billingPaymentRecoveryAction, canManageBilling, projectId, refreshBillingState, toast]);
+
   return {
     billingSubscription,
     planChangeOptions,
     pendingPlanChange,
     isTrialExpired,
+    isBillingCanceled: isBillingCanceledState,
     isBillingSuspended: isBillingSuspendedState,
     isBillingPastDue: isBillingPastDueState,
     billingAccessState,
@@ -325,9 +396,13 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     setPlanChangeOpen,
     billingActionPlanCode,
     planCancellationAction,
+    billingReactivationAction,
+    billingPaymentRecoveryAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
+    handleReactivateBillingSubscription,
+    handleStartBillingPaymentRecovery,
   };
 }

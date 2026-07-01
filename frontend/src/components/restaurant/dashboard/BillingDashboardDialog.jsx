@@ -56,6 +56,8 @@ const INVOICE_STATUS_LABELS = {
   no_overage: 'Fatura sem excedente',
 };
 
+const PENDING_INVOICE_STATUSES = new Set(['past_due', 'failed', 'open', 'pending', 'draft']);
+
 const PERCENT_AXIS_TICKS = [25, 50, 75, 100];
 
 function formatCurrencyFromCents(value) {
@@ -63,6 +65,25 @@ function formatCurrencyFromCents(value) {
     style: 'currency',
     currency: 'BRL',
   }).format(Number(value || 0) / 100);
+}
+
+function getReactivationPlanSummary(subscription) {
+  const planName = subscription?.plan?.name
+    || subscription?.planName
+    || subscription?.plan_name
+    || 'Plano atual';
+  const rawPriceCents = subscription?.basePriceCents
+    ?? subscription?.base_price_cents
+    ?? subscription?.plan?.basePriceCents
+    ?? subscription?.plan?.base_price_cents;
+  const priceCents = Number(rawPriceCents);
+
+  return {
+    planName,
+    priceLabel: rawPriceCents !== undefined && rawPriceCents !== null && Number.isFinite(priceCents)
+      ? `${formatCurrencyFromCents(priceCents)}/mês`
+      : 'Valor não informado',
+  };
 }
 
 function formatInteger(value) {
@@ -100,6 +121,13 @@ function getStatusTone(status) {
 function getCycleDisplayTitle(cycle) {
   if (!cycle) return INVOICE_STATUS_LABELS.no_overage;
   return cycle.title || INVOICE_STATUS_LABELS[cycle.status] || INVOICE_STATUS_LABELS.pending;
+}
+
+function getPendingInvoiceCycle(cycles) {
+  return cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.status))
+    || cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.batch?.status))
+    || cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.invoice?.status))
+    || null;
 }
 
 function buildUsageChartData(cycle, resource) {
@@ -259,15 +287,64 @@ function HistoryItem({ cycle, isSelected, onSelect }) {
   );
 }
 
+function PaymentRecoverySection({
+  canManageBilling,
+  onStartPaymentRecovery,
+  paymentRecoveryAction,
+  subscription,
+}) {
+  const isRecoverable = subscription?.status === 'past_due' || subscription?.status === 'suspended';
+  if (!subscription || !isRecoverable) return null;
+
+  const isBusy = Boolean(paymentRecoveryAction);
+  const isSuspended = subscription.status === 'suspended';
+
+  return (
+    <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-950 shadow-sm dark:border-amber-400/30 dark:bg-amber-500/10 dark:text-amber-100">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="max-w-2xl">
+          <span className="inline-flex rounded-full border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-800 dark:border-amber-400/40 dark:bg-background dark:text-amber-200">
+            {isSuspended ? 'Assinatura suspensa' : 'Pagamento pendente'}
+          </span>
+          <h3 className="mt-3 text-base font-semibold text-foreground">Regularize a cobrança pendente</h3>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Abra a fatura hospedada no Asaas para concluir o pagamento. O acesso volta ao normal depois da
+            confirmação enviada pelo gateway.
+          </p>
+          {!canManageBilling ? (
+            <p className="mt-2 text-xs font-medium text-amber-800 dark:text-amber-200">
+              Apenas o proprietário do projeto pode regularizar cobranças.
+            </p>
+          ) : null}
+        </div>
+
+        <Button
+          type="button"
+          className="min-w-[190px] gap-2 self-start bg-amber-600 text-white hover:bg-amber-700"
+          disabled={!canManageBilling || isBusy}
+          onClick={onStartPaymentRecovery}
+        >
+          {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+          Regularizar pagamento
+        </Button>
+      </div>
+    </section>
+  );
+}
+
 function CancelPlanSection({
   action,
+  billingReactivationAction,
   canManageBilling,
+  isBillingCanceled,
+  onReactivateSubscription,
   onSchedulePlanCancellation,
   onUndoPlanCancellation,
   pendingPlanChange,
   subscription,
 }) {
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [reactivationConfirmationOpen, setReactivationConfirmationOpen] = useState(false);
   if (!canManageBilling || !subscription) return null;
 
   const isCancellationPending = pendingPlanChange?.changeType === 'cancellation';
@@ -280,7 +357,70 @@ function CancelPlanSection({
   const periodText = periodEndLabel || 'fim do período de cobrança';
   const isScheduling = action === 'schedule';
   const isUndoing = action === 'undo';
-  const isBusy = Boolean(action);
+  const isReactivating = Boolean(billingReactivationAction);
+  const isBusy = Boolean(action) || isReactivating;
+  const reactivationPlanSummary = getReactivationPlanSummary(subscription);
+
+  if (isBillingCanceled) {
+    return (
+      <>
+        <section className="border-t border-border pt-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <h3 className="text-base font-semibold text-foreground">Assinatura cancelada</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Reative a assinatura para voltar a operar com este plano e iniciar um novo ciclo de cobrança.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="min-w-[176px] border-emerald-500 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+              disabled={isBusy}
+              onClick={() => setReactivationConfirmationOpen(true)}
+            >
+              {isReactivating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              Reativar assinatura
+            </Button>
+          </div>
+        </section>
+
+        <AlertDialog open={reactivationConfirmationOpen} onOpenChange={setReactivationConfirmationOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar reativação</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block">
+                  A assinatura será reativada no Asaas, um novo ciclo de cobrança será iniciado e o acesso operacional do
+                  projeto será liberado novamente. A cobrança seguirá a forma de pagamento cadastrada.
+                </span>
+                <span className="mt-3 block rounded-md border border-border bg-muted/50 p-3 text-left">
+                  <span className="block font-medium text-foreground">
+                    Plano que será reativado: {reactivationPlanSummary.planName}
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Valor mensal: {reactivationPlanSummary.priceLabel}
+                  </span>
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isBusy}>Voltar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isBusy}
+                onClick={onReactivateSubscription}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                {isReactivating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirmar reativação
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
 
   return (
     <>
@@ -288,12 +428,14 @@ function CancelPlanSection({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="max-w-2xl">
             <h3 className="text-base font-semibold text-foreground">
-              {isCancellationPending ? 'Cancelamento agendado' : 'Cancelar plano'}
+              {isBillingCanceled ? 'Assinatura cancelada' : isCancellationPending ? 'Cancelamento agendado' : 'Cancelar plano'}
             </h3>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {isCancellationPending
-                ? `Seu plano continua ativo até ${periodText}.`
-                : 'Se você cancelar, continuará com acesso total aos recursos do seu plano até o fim do período de cobrança.'}
+              {isBillingCanceled
+                ? 'Este plano já foi cancelado. Não há outro cancelamento para agendar.'
+                : isCancellationPending
+                  ? `Seu plano continua ativo até ${periodText}.`
+                  : 'Se você cancelar, continuará com acesso total aos recursos do seu plano até o fim do período de cobrança.'}
             </p>
             {hasOtherPendingChange ? (
               <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
@@ -354,9 +496,15 @@ function CancelPlanSection({
 }
 
 function BillingDashboardDialog({
+  billingPaymentRecoveryAction = false,
+  billingReactivationAction = false,
   canManageBilling = false,
+  focusPendingInvoice = false,
+  isBillingCanceled = false,
   onOpenChange,
+  onReactivateSubscription,
   onSchedulePlanCancellation,
+  onStartPaymentRecovery,
   onUndoPlanCancellation,
   open,
   pendingPlanChange = null,
@@ -372,7 +520,11 @@ function BillingDashboardDialog({
     refreshBillingUsageDashboard,
   } = useBillingUsageDashboard({ projectId, open });
   const cycles = billingUsageData.cycles || [];
+  const preferredCycleId = focusPendingInvoice
+    ? getPendingInvoiceCycle(cycles)?.id
+    : null;
   const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId)
+    || cycles.find((cycle) => cycle.id === preferredCycleId)
     || cycles.find((cycle) => cycle.id === billingUsageData.currentCycleId)
     || cycles[0]
     || null;
@@ -382,8 +534,8 @@ function BillingDashboardDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSelectedCycleId(billingUsageData.currentCycleId || cycles[0]?.id || null);
-  }, [billingUsageData.currentCycleId, cycles, open]);
+    setSelectedCycleId(preferredCycleId || billingUsageData.currentCycleId || cycles[0]?.id || null);
+  }, [billingUsageData.currentCycleId, cycles, open, preferredCycleId]);
 
   const handleSelectCycle = (cycleId) => {
     setSelectedCycleId(cycleId);
@@ -430,8 +582,17 @@ function BillingDashboardDialog({
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Carregando faturamento
               </div>
-            ) : selectedCycle ? (
+            ) : (
               <>
+                <PaymentRecoverySection
+                  canManageBilling={canManageBilling}
+                  onStartPaymentRecovery={onStartPaymentRecovery}
+                  paymentRecoveryAction={billingPaymentRecoveryAction}
+                  subscription={billingUsageData.subscription}
+                />
+
+                {selectedCycle ? (
+                  <>
                 <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
@@ -502,16 +663,21 @@ function BillingDashboardDialog({
                     </div>
                   )}
                 </section>
+                  </>
+                ) : (
+                  <div className="rounded-md border border-dashed border-border bg-muted p-6 text-center text-sm text-muted-foreground">
+                    Nenhum ciclo de faturamento encontrado.
+                  </div>
+                )}
               </>
-            ) : (
-              <div className="rounded-md border border-dashed border-border bg-muted p-6 text-center text-sm text-muted-foreground">
-                Nenhum ciclo de faturamento encontrado.
-              </div>
             )}
 
             <CancelPlanSection
               action={planCancellationAction}
+              billingReactivationAction={billingReactivationAction}
               canManageBilling={canManageBilling}
+              isBillingCanceled={isBillingCanceled}
+              onReactivateSubscription={onReactivateSubscription}
               onSchedulePlanCancellation={onSchedulePlanCancellation}
               onUndoPlanCancellation={onUndoPlanCancellation}
               pendingPlanChange={pendingPlanChange}

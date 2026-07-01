@@ -67,6 +67,7 @@ describe("billing delinquency suspension", () => {
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
     const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
+    const dialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingDashboardDialog.jsx");
     const shellSource = readIfExists("frontend/src/components/dashboard/DashboardShell.jsx");
     const suspendedStateSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingSuspendedState.jsx");
     const pastDueNoticeSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingPastDueNotice.jsx");
@@ -78,6 +79,13 @@ describe("billing delinquency suspension", () => {
     expect(billingHookSource).toContain("return 'past_due'");
     expect(dashboardSource).toContain("BillingSuspendedState");
     expect(dashboardSource).toContain("BillingPastDueNotice");
+    expect(dashboardSource).toContain("handleViewPendingInvoice");
+    expect(dashboardSource).toContain("handleViewSuspendedPendingInvoice");
+    expect(dashboardSource).toContain("setBillingSuspensionDismissed(true)");
+    expect(dashboardSource).toContain("setBillingDashboardFocus('pending_invoice')");
+    expect(dashboardSource).toContain("focusPendingInvoice={billingDashboardFocus === 'pending_invoice'}");
+    expect(dashboardSource).toContain("onViewPendingInvoice={handleViewPendingInvoice}");
+    expect(dashboardSource).toContain("onViewPendingInvoice={handleViewSuspendedPendingInvoice}");
     expect(dashboardSource).toContain("billingSuspensionDismissed");
     expect(dashboardSource).toContain("onDismiss={() => setBillingSuspensionDismissed(true)}");
     expect(dashboardSource).toContain("statusNotice={isBillingSuspended && billingSuspensionDismissed");
@@ -90,8 +98,23 @@ describe("billing delinquency suspension", () => {
     expect(suspendedStateSource).toContain("backdrop-blur-sm");
     expect(suspendedStateSource).toContain("role=\"dialog\"");
     expect(suspendedStateSource).toContain("Trocar de plano não regulariza a pendência");
+    expect(suspendedStateSource).toContain("Ver pendência");
+    expect(suspendedStateSource).toContain("onViewPendingInvoice");
+    expect(suspendedStateSource).not.toContain("Falar com suporte");
     expect(pastDueNoticeSource).toContain("Pagamento pendente");
+    expect(pastDueNoticeSource).toContain("fixed top-20");
+    expect(pastDueNoticeSource).toContain("lg:left-[calc(var(--dashboard-sidebar-width)+2rem)]");
+    expect(pastDueNoticeSource).toContain("lg:top-6");
+    expect(pastDueNoticeSource).not.toContain("sticky");
+    expect(pastDueNoticeSource).not.toContain("bottom-20");
+    expect(shellSource).toContain("--dashboard-sidebar-width");
+    expect(pastDueNoticeSource).toContain("Ver pendência");
+    expect(pastDueNoticeSource).toContain("onViewPendingInvoice");
+    expect(pastDueNoticeSource).toContain("Trocar de plano fica disponível depois da confirmação do pagamento pendente");
     expect(pastDueNoticeSource).toContain("período de regularização");
+    expect(dialogSource).toContain("PENDING_INVOICE_STATUSES");
+    expect(dialogSource).toContain("focusPendingInvoice");
+    expect(dialogSource).toContain("getPendingInvoiceCycle(cycles)?.id");
   });
 
   test("documents paid delinquency semantics separately from trial expiration", () => {

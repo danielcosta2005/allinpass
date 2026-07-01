@@ -135,6 +135,35 @@ describe("billing plan changes", () => {
     expect(billingDialogSource).toContain("onClick={() => onStartPlanChange(pendingPlanChange)}");
   });
 
+  test("blocks self-service plan changes while the subscription is past_due", () => {
+    const functionSource = readIfExists("supabase/functions/billing-start-plan-change/index.ts");
+    const billingClientSource = readIfExists("frontend/src/lib/billing.js");
+    const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
+    const migrationsDir = path.join(repoRoot, "supabase/migrations");
+    const migrationSources = fs
+      .readdirSync(migrationsDir)
+      .filter((name) => name.endsWith(".sql"))
+      .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
+      .join("\n");
+
+    expect(functionSource).toContain("BILLING_PLAN_CHANGE_PAST_DUE_REQUIRES_PAYMENT");
+    expect(functionSource).toContain('subscription.status === "past_due"');
+    expect(functionSource).toContain("BILLING_PLAN_CHANGE_OWNER_REQUIRED");
+    expect(functionSource).toContain("Apenas o proprietário do projeto pode alterar o plano.");
+    expect(functionSource.indexOf("BILLING_PLAN_CHANGE_PAST_DUE_REQUIRES_PAYMENT"))
+      .toBeLessThan(functionSource.indexOf("const reusableSession = await findReusableSession"));
+    expect(billingClientSource).toContain("isBillingPastDue(currentSubscription)) return []");
+    expect(dashboardSource).toContain("if (!canManageBilling) return;");
+    expect(dashboardSource).toContain("if (isBillingPastDue) return;");
+    expect(dashboardSource).toContain("planChangeDisabled: !projectId || billingLoading || !canManageBilling || isSuspended || isCanceled || isPastDue");
+    expect(dashboardSource).toContain("planChangeDisabledReason: !canManageBilling");
+    expect(dashboardSource).toContain("Apenas o proprietário do projeto pode alterar o plano.");
+    expect(dashboardSource).not.toContain("title: 'Pagamento pendente'");
+    expect(dashboardSource).toContain("Regularize a cobrança pendente antes de trocar de plano.");
+    expect(migrationSources).toContain("v_subscription.status = 'past_due'");
+    expect(migrationSources).toContain("Regularize a cobrança pendente antes de alterar o plano.");
+  });
+
   test("keeps the restaurant dashboard modular after adding billing flows", () => {
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
 

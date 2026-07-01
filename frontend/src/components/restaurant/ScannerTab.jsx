@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
+import {
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from "@/lib/functionErrors";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -73,6 +77,14 @@ function formatRewardNames(rewards) {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
+function formatScannerVisitError(payload, fallback) {
+  if (payload?.error === "wrong_project") {
+    return `${payload.message}\n\nEsperado: ${payload.expected_project_id}\nRecebido: ${payload.received_project_id}`;
+  }
+
+  return getFunctionErrorMessage(payload, fallback?.message || "Nao foi possivel registrar a visita.");
+}
+
 const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
@@ -127,12 +139,15 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
 
-    const { data, error } = await supabase.functions.invoke("scanner-visit", {
+    const { data, error, response } = await supabase.functions.invoke("scanner-visit", {
       body: { projectId, qrData: passToken, confirm: !!confirm, challenge: challenge || null },
       headers: { Authorization: `Bearer ${session.access_token}` },
     });
 
-    if (error) throw error;
+    if (error) {
+      const payload = await readFunctionErrorPayload(error, response);
+      throw new Error(formatScannerVisitError(payload, error));
+    }
     if (!data) throw new Error("Resposta vazia da Edge Function.");
 
     if (data.error) {

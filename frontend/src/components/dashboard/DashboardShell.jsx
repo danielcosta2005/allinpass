@@ -357,7 +357,10 @@ function DashboardShell({
         </div>
       ) : null}
 
-      <div className={cn('transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72')}>
+      <div
+        className={cn('transition-[padding] duration-200', sidebarCollapsed ? 'lg:pl-16' : 'lg:pl-72')}
+        style={{ '--dashboard-sidebar-width': sidebarCollapsed ? '4rem' : '18rem' }}
+      >
         <header
           className={cn(
             hasContentHeader ? 'sticky top-0 z-30' : 'sticky top-0 z-30 lg:hidden',

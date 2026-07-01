@@ -12,6 +12,7 @@ import VisitsTab from '@/components/restaurant/VisitsTab';
 import NotificationsDashboard from '@/components/restaurant/NotificationsDashboard';
 import RewardsTab from '@/components/restaurant/RewardsTab';
 import BillingDashboardDialog from '@/components/restaurant/dashboard/BillingDashboardDialog';
+import BillingCanceledState from '@/components/restaurant/dashboard/BillingCanceledState';
 import BillingPastDueNotice from '@/components/restaurant/dashboard/BillingPastDueNotice';
 import BillingPlanDialog from '@/components/restaurant/dashboard/BillingPlanDialog';
 import BillingSuspendedState from '@/components/restaurant/dashboard/BillingSuspendedState';
@@ -36,7 +37,10 @@ const RestaurantDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const [billingSuspensionDismissed, setBillingSuspensionDismissed] = useState(false);
+  const [trialExpiredNoticeDismissed, setTrialExpiredNoticeDismissed] = useState(false);
+  const [billingCanceledNoticeDismissed, setBillingCanceledNoticeDismissed] = useState(false);
   const [billingDashboardOpen, setBillingDashboardOpen] = useState(false);
+  const [billingDashboardFocus, setBillingDashboardFocus] = useState(null);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
   const {
@@ -44,6 +48,7 @@ const RestaurantDashboard = () => {
     planChangeOptions,
     pendingPlanChange,
     isTrialExpired,
+    isBillingCanceled,
     isBillingSuspended,
     isBillingPastDue,
     billingAccessState,
@@ -55,10 +60,14 @@ const RestaurantDashboard = () => {
     setPlanChangeOpen,
     billingActionPlanCode,
     planCancellationAction,
+    billingReactivationAction,
+    billingPaymentRecoveryAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
+    handleReactivateBillingSubscription,
+    handleStartBillingPaymentRecovery,
   } = useRestaurantBilling({ projectId, toast, user });
 
   const {
@@ -119,15 +128,51 @@ const RestaurantDashboard = () => {
   };
 
   const trialBillingBlocked = isTrialExpired && billingAccessState === 'trial_expired';
+  const canceledBillingBlocked = isBillingCanceled && billingAccessState === 'canceled';
   const handleOpenPlanChange = () => {
     if (trialBillingBlocked && !canManageBilling) return;
+    if (!canManageBilling) return;
+    if (isBillingCanceled) {
+      toast({
+        title: 'Assinatura cancelada',
+        description: 'Reative a assinatura antes de trocar de plano.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (isBillingPastDue) return;
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
+  };
+
+  const handleOpenBillingDashboard = () => {
+    setBillingDashboardFocus(null);
+    setBillingDashboardOpen(true);
+  };
+
+  const handleBillingDashboardOpenChange = (nextOpen) => {
+    setBillingDashboardOpen(nextOpen);
+    if (!nextOpen) setBillingDashboardFocus(null);
+  };
+
+  const handleViewPendingInvoice = () => {
+    setBillingDashboardFocus('pending_invoice');
+    setBillingDashboardOpen(true);
+  };
+
+  const handleViewSuspendedPendingInvoice = () => {
+    setBillingSuspensionDismissed(true);
+    handleViewPendingInvoice();
   };
 
   useEffect(() => {
     if (!isBillingSuspended) setBillingSuspensionDismissed(false);
   }, [isBillingSuspended]);
+
+  useEffect(() => {
+    setTrialExpiredNoticeDismissed(false);
+    setBillingCanceledNoticeDismissed(false);
+  }, [projectId, billingSubscription?.id, billingSubscription?.status]);
 
   useEffect(() => {
     if (!ALLOWED_TABS.has(activeTab)) {
@@ -140,11 +185,14 @@ const RestaurantDashboard = () => {
 
   const isPastDue = billingAccessState === 'past_due';
   const isSuspended = billingAccessState === 'suspended';
-  const planLabel = isSuspended
-    ? `${billingPlanName} - suspenso`
-    : isPastDue
-      ? `${billingPlanName} - pagamento pendente`
-      : billingPlanName;
+  const isCanceled = billingAccessState === 'canceled';
+  const planLabel = isCanceled
+    ? `${billingPlanName} - cancelado`
+    : isSuspended
+      ? `${billingPlanName} - suspenso`
+      : isPastDue
+        ? `${billingPlanName} - pagamento pendente`
+        : billingPlanName;
 
   const canSendNotifications = memberRole === 'owner';
   const notificationSubTabs = useMemo(() => {
@@ -199,10 +247,15 @@ const RestaurantDashboard = () => {
 
   const accountMenuProps = useMemo(() => ({
     billingOptionDisabled: !projectId || billingLoading,
-    onOpenBilling: () => setBillingDashboardOpen(true),
+    onOpenBilling: handleOpenBillingDashboard,
     onOpenPlanChange: handleOpenPlanChange,
     onSignOut: handleSignOut,
-    planChangeDisabled: !projectId || billingLoading || isSuspended,
+    planChangeDisabled: !projectId || billingLoading || !canManageBilling || isSuspended || isCanceled || isPastDue,
+    planChangeDisabledReason: !canManageBilling
+      ? 'Apenas o proprietário do projeto pode alterar o plano.'
+      : isPastDue
+        ? 'Regularize a cobrança pendente antes de trocar de plano.'
+        : undefined,
     profileLabel: user?.email,
     profileMeta: planLabel,
     projectName: projectId
@@ -214,7 +267,11 @@ const RestaurantDashboard = () => {
     userEmail: user?.email,
   }), [
     billingLoading,
+    canManageBilling,
+    handleOpenBillingDashboard,
     handleOpenPlanChange,
+    isCanceled,
+    isPastDue,
     isSuspended,
     planLabel,
     projectDisplayName,
@@ -280,9 +337,15 @@ const RestaurantDashboard = () => {
         />
 
         <BillingDashboardDialog
+          billingPaymentRecoveryAction={billingPaymentRecoveryAction}
+          billingReactivationAction={billingReactivationAction}
           canManageBilling={canManageBilling}
+          isBillingCanceled={isBillingCanceled}
+          focusPendingInvoice={billingDashboardFocus === 'pending_invoice'}
+          onOpenChange={handleBillingDashboardOpenChange}
+          onReactivateSubscription={handleReactivateBillingSubscription}
           onSchedulePlanCancellation={handleSchedulePlanCancellation}
-          onOpenChange={setBillingDashboardOpen}
+          onStartPaymentRecovery={handleStartBillingPaymentRecovery}
           onUndoPlanCancellation={handleUndoPlanCancellation}
           open={billingDashboardOpen}
           pendingPlanChange={pendingPlanChange}
@@ -300,14 +363,6 @@ const RestaurantDashboard = () => {
             statusError={signupStatusError}
             statusLoading={signupStatusLoading}
           />
-        ) : trialBillingBlocked ? (
-          <TrialExpiredBillingState
-            billingError={billingError}
-            billingLoading={billingLoading}
-            canManageBilling={canManageBilling}
-            onOpenPlanChange={handleOpenPlanChange}
-            planChangeOptions={planChangeOptions}
-          />
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -315,7 +370,10 @@ const RestaurantDashboard = () => {
             transition={{ duration: 0.5 }}
           >
             {isBillingPastDue ? (
-              <BillingPastDueNotice subscription={billingSubscription} />
+              <BillingPastDueNotice
+                onViewPendingInvoice={handleViewPendingInvoice}
+                subscription={billingSubscription}
+              />
             ) : null}
 
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
@@ -356,11 +414,34 @@ const RestaurantDashboard = () => {
           </motion.div>
         )}
 
-        {projectId && !trialBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
+        {projectId && trialBillingBlocked && !trialExpiredNoticeDismissed ? (
+          <TrialExpiredBillingState
+            billingError={billingError}
+            billingLoading={billingLoading}
+            canManageBilling={canManageBilling}
+            onDismiss={() => setTrialExpiredNoticeDismissed(true)}
+            onOpenPlanChange={handleOpenPlanChange}
+            planChangeOptions={planChangeOptions}
+          />
+        ) : null}
+
+        {projectId && canceledBillingBlocked && !billingCanceledNoticeDismissed ? (
+          <BillingCanceledState
+            billingError={billingError}
+            canManageBilling={canManageBilling}
+            onDismiss={() => setBillingCanceledNoticeDismissed(true)}
+            onReactivateSubscription={handleReactivateBillingSubscription}
+            reactivationLoading={billingReactivationAction}
+            subscription={billingSubscription}
+            supportUrl={SUPPORT_WHATSAPP_URL}
+          />
+        ) : null}
+
+        {projectId && !trialBillingBlocked && !canceledBillingBlocked && isBillingSuspended && !billingSuspensionDismissed ? (
           <BillingSuspendedState
             billingError={billingError}
             onDismiss={() => setBillingSuspensionDismissed(true)}
-            supportUrl={SUPPORT_WHATSAPP_URL}
+            onViewPendingInvoice={handleViewSuspendedPendingInvoice}
           />
         ) : null}
 

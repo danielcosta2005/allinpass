@@ -36,7 +36,16 @@ describe("billing trial expiration enforcement", () => {
     expect(billingHookSource).toContain("memberRole");
     expect(dashboardSource).toContain("TrialExpiredBillingState");
     expect(dashboardSource).toContain("isTrialExpired");
+    expect(dashboardSource).toContain("trialExpiredNoticeDismissed");
+    expect(dashboardSource).toContain("onDismiss={() => setTrialExpiredNoticeDismissed(true)}");
     expect(trialExpiredStateSource).toContain("Trial encerrado");
+    expect(trialExpiredStateSource).toContain("Fechar aviso");
+    expect(trialExpiredStateSource).toContain("fixed inset-0");
+    expect(trialExpiredStateSource).toContain("backdrop-blur-sm");
+    expect(trialExpiredStateSource).toContain("role=\"dialog\"");
+    expect(trialExpiredStateSource).toContain("Clock");
+    expect(trialExpiredStateSource).not.toContain("Sparkles");
+    expect(trialExpiredStateSource).toContain("Continue usando o Allin Pass sem perder o ritmo");
     expect(trialExpiredStateSource).toContain("Escolher plano");
     expect(trialExpiredStateSource).toContain("Fale com o gestor");
   });
@@ -83,20 +92,20 @@ describe("billing trial expiration enforcement", () => {
     }
   });
 
-  test("superadmin pass management test functions keep the same billing guard as production functions", () => {
+  test("superadmin pass management functions keep the billing guard used by the UI", () => {
     const walletConfigSource = readIfExists("frontend/src/components/superadmin/WalletConfigTab.jsx");
-    const createPassTesteSource = readIfExists("supabase/functions/create-pass-teste/index.ts");
-    const updatePassTesteSource = readIfExists("supabase/functions/update-pass-teste/index.ts");
+    const createPassSource = readIfExists("supabase/functions/create-pass/index.ts");
+    const updatePassSource = readIfExists("supabase/functions/update-pass/index.ts");
 
-    expect(walletConfigSource).toContain("invokeWalletFunction('create-pass-teste'");
-    expect(walletConfigSource).toContain("invokeWalletFunction('update-pass-teste'");
-    expect(walletConfigSource).not.toContain("invokeWalletFunction('create-pass'");
-    expect(walletConfigSource).not.toContain("invokeWalletFunction('update-pass'");
+    expect(walletConfigSource).toContain("invokeWalletFunction('create-pass'");
+    expect(walletConfigSource).toContain("invokeWalletFunction('update-pass'");
+    expect(walletConfigSource).not.toContain("invokeWalletFunction('create-pass-teste'");
+    expect(walletConfigSource).not.toContain("invokeWalletFunction('update-pass-teste'");
     expect(walletConfigSource).toContain("readFunctionErrorPayload");
     expect(walletConfigSource).toContain("error?.context?.response || error?.context");
     expect(walletConfigSource).toContain("payload.message || payload.error");
 
-    for (const source of [createPassTesteSource, updatePassTesteSource]) {
+    for (const source of [createPassSource, updatePassSource]) {
       expect(source).toContain("../_shared/billingAccess.ts");
       expect(source).toContain("assertProjectBillingActive");
       expect(source).toContain("isProjectBillingInactiveError");

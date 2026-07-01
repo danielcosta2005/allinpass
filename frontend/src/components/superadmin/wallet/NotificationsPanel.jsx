@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/lib/supabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 import { Send, Loader2, Apple, Smartphone, Mail as MailIcon } from 'lucide-react';
+import { buildFunctionError } from '@/lib/functionErrors';
 
 const NotificationsPanel = ({ projectId }) => {
     const [title, setTitle] = useState('');
@@ -33,7 +34,7 @@ const NotificationsPanel = ({ projectId }) => {
 
         setIsSending(true);
         try {
-            const { error } = await supabase.functions.invoke('send-notification', {
+            const { error, response } = await supabase.functions.invoke('send-notification', {
                 body: {
                     project_id: projectId,
                     title,
@@ -42,7 +43,7 @@ const NotificationsPanel = ({ projectId }) => {
                 },
             });
 
-            if (error) throw error;
+            if (error) throw await buildFunctionError(error, response, 'Não foi possível enviar a notificação.');
 
             toast({
                 title: "Notificação enviada!",

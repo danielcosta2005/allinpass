@@ -71,6 +71,8 @@ describe("billing plan cancellation", () => {
     const dashboardSource = readIfExists("frontend/src/pages/RestaurantDashboard.jsx");
     const dialogSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingDashboardDialog.jsx");
     const billingClientSource = readIfExists("frontend/src/lib/billing.js");
+    const billingHookSource = readIfExists("frontend/src/hooks/useRestaurantBilling.js");
+    const canceledStateSource = readIfExists("frontend/src/components/restaurant/dashboard/BillingCanceledState.jsx");
 
     expect(dialogSource).toContain("CancelPlanSection");
     expect(dialogSource).toContain("Cancelar plano");
@@ -81,14 +83,33 @@ describe("billing plan cancellation", () => {
     expect(dialogSource).toContain("onSchedulePlanCancellation");
     expect(dialogSource).toContain("onUndoPlanCancellation");
     expect(dialogSource).toContain("canManageBilling");
+    expect(dialogSource).toContain("isBillingCanceled");
+    expect(dialogSource).toContain("Reativar assinatura");
     expect(dialogSource).toContain("pendingPlanChange?.changeType === 'cancellation'");
 
     expect(dashboardSource).toContain("pendingPlanChange");
     expect(dashboardSource).toContain("handleSchedulePlanCancellation");
     expect(dashboardSource).toContain("handleUndoPlanCancellation");
     expect(dashboardSource).toContain("planCancellationAction");
+    expect(dashboardSource).toContain("isBillingCanceled={isBillingCanceled}");
 
     expect(billingClientSource).toContain("if (pendingPlanChange?.changeType === 'cancellation') return false;");
     expect(billingClientSource).toContain("getPlanChangeOptions");
+    expect(billingClientSource).toContain("CANCELED_SUBSCRIPTION_STATUS");
+    expect(billingClientSource).toContain("isCanceled");
+    expect(billingClientSource).toContain(".eq('status', CANCELED_SUBSCRIPTION_STATUS)");
+
+    expect(billingHookSource).toContain("isBillingCanceled");
+    expect(billingHookSource).toContain("return 'canceled'");
+    expect(dashboardSource).toContain("BillingCanceledState");
+    expect(dashboardSource).toContain("isBillingCanceled");
+    expect(dashboardSource).toContain("billingCanceledNoticeDismissed");
+    expect(dashboardSource).toContain("onDismiss={() => setBillingCanceledNoticeDismissed(true)}");
+    expect(canceledStateSource).toContain("Assinatura cancelada");
+    expect(canceledStateSource).toContain("Fechar aviso");
+    expect(canceledStateSource).toContain("fixed inset-0");
+    expect(canceledStateSource).toContain("backdrop-blur-sm");
+    expect(canceledStateSource).toContain("role=\"dialog\"");
+    expect(canceledStateSource).toContain("Falar com suporte");
   });
 });
