@@ -1,10 +1,20 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Check, Star } from 'lucide-react';
+import { BadgePercent, Check, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { formatCurrencyBRL } from '@/lib/subscriptionPlans';
+import {
+  calculateAffiliateFirstMonthPrice,
+  formatAffiliateDiscountPercent,
+  formatCurrencyBRL,
+  getAffiliateDiscountBps,
+} from '@/lib/subscriptionPlans';
 
-function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick }) {
+function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick, affiliateOffer = null }) {
+  const affiliateDiscountBps = getAffiliateDiscountBps(affiliateOffer);
+  const showAffiliateOffer = plan.type === 'paid' && affiliateDiscountBps > 0;
+  const affiliateDiscountPercent = formatAffiliateDiscountPercent(affiliateOffer);
+  const affiliateFirstMonthPrice = calculateAffiliateFirstMonthPrice(plan.price, affiliateOffer);
+
   return (
     <div
       className={`relative rounded-3xl p-8 transition-all duration-300 ${
@@ -60,6 +70,57 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick }) {
           <div className="space-y-1">
             <p className="text-4xl font-bold text-emerald-900">{plan.trialDays || 7} dias</p>
             <p className="text-sm font-semibold text-emerald-700">grátis e sem cartão de crédito</p>
+          </div>
+        ) : showAffiliateOffer ? (
+          <div className="space-y-3">
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                plan.highlighted
+                  ? 'bg-white text-purple-700'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
+              <BadgePercent className="h-3.5 w-3.5" />
+              Condição especial aplicada
+            </div>
+            <div
+              className={`border-t pt-3 ${
+                plan.highlighted ? 'border-white/20' : 'border-emerald-100'
+              }`}
+            >
+              <div
+                className={`mb-1 flex flex-wrap items-center gap-2 text-sm ${
+                  plan.highlighted ? 'text-purple-100' : 'text-gray-500'
+                }`}
+              >
+                <span className="line-through decoration-2">
+                  R$ {formatCurrencyBRL(plan.price)}/mês
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    plan.highlighted
+                      ? 'bg-emerald-300 text-emerald-950'
+                      : 'bg-emerald-600 text-white'
+                  }`}
+                >
+                  -{affiliateDiscountPercent}%
+                </span>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-1 gap-y-0.5">
+                <span className={`pb-1 text-sm ${plan.highlighted ? 'text-purple-100' : 'text-emerald-700'}`}>
+                  R$
+                </span>
+                <span className={`text-5xl font-bold ${plan.highlighted ? 'text-white' : 'text-emerald-700'}`}>
+                  {formatCurrencyBRL(affiliateFirstMonthPrice)}
+                </span>
+                <span className={`pb-1 text-sm font-semibold ${plan.highlighted ? 'text-purple-100' : 'text-emerald-800'}`}>
+                  no primeiro mês
+                </span>
+              </div>
+              <p className={`mt-1 text-xs ${plan.highlighted ? 'text-purple-100' : 'text-gray-500'}`}>
+                Depois, R$ {formatCurrencyBRL(plan.price)}/mês.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="flex items-baseline gap-1">

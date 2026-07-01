@@ -1,10 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CheckCircle2, CreditCard, Loader2, Lock } from 'lucide-react';
+import { BadgePercent, CheckCircle2, CreditCard, Loader2, Lock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { formatCurrencyBRL } from '@/lib/subscriptionPlans';
+import {
+  calculateAffiliateFirstMonthPrice,
+  formatAffiliateDiscountPercent,
+  formatCurrencyBRL,
+  getAffiliateDiscountBps,
+} from '@/lib/subscriptionPlans';
 
 export function FinalizingSignupCard({
   paidPlan,
@@ -64,11 +69,17 @@ export function FinalizingSignupCard({
 }
 
 export function PaymentStep({
+  affiliateOffer = null,
   checkoutError,
   checkoutLoading,
   onContinue,
   selectedPlan,
 }) {
+  const affiliateDiscountBps = getAffiliateDiscountBps(affiliateOffer);
+  const showAffiliateOffer = selectedPlan?.type === 'paid' && affiliateDiscountBps > 0;
+  const affiliateDiscountPercent = formatAffiliateDiscountPercent(affiliateOffer);
+  const affiliateFirstMonthPrice = calculateAffiliateFirstMonthPrice(selectedPlan?.price, affiliateOffer);
+
   return (
     <motion.div
       key="step-3"
@@ -87,9 +98,28 @@ export function PaymentStep({
             <p className="text-2xl font-bold text-slate-900">{selectedPlan.name}</p>
             <p className="text-sm text-slate-600 mt-1">{selectedPlan.description}</p>
           </div>
-          <p className="text-2xl font-bold text-purple-700">
-            R$ {formatCurrencyBRL(selectedPlan.price)}/mês
-          </p>
+          {showAffiliateOffer ? (
+            <div className="text-left sm:text-right">
+              <div className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                <BadgePercent className="h-3.5 w-3.5" />
+                Condição especial aplicada
+              </div>
+              <p className="text-sm text-slate-500 line-through decoration-2">
+                R$ {formatCurrencyBRL(selectedPlan.price)}/mês
+              </p>
+              <p className="text-2xl font-bold text-emerald-700">
+                R$ {formatCurrencyBRL(affiliateFirstMonthPrice)}
+                <span className="ml-1 text-sm font-semibold text-emerald-800">no primeiro mês</span>
+              </p>
+              <p className="text-xs text-slate-500">
+                -{affiliateDiscountPercent}% agora. Depois, R$ {formatCurrencyBRL(selectedPlan.price)}/mês.
+              </p>
+            </div>
+          ) : (
+            <p className="text-2xl font-bold text-purple-700">
+              R$ {formatCurrencyBRL(selectedPlan.price)}/mês
+            </p>
+          )}
         </div>
       </div>
 
