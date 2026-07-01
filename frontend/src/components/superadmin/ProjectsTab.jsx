@@ -13,13 +13,52 @@ import {
 } from "@/components/ui/alert-dialog";
 import { listProjects, createProject, updateProject, deleteProject, uploadProjectLogo } from '@/lib/api';
 
+function SkeletonBlock({ className }) {
+    return <div className={`animate-pulse rounded bg-muted ${className}`} />;
+}
+
+function ProjectCardSkeleton() {
+    return (
+        <div
+            className="min-h-[15rem] overflow-hidden rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
+            aria-hidden="true"
+        >
+            <div className="flex justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                    <SkeletonBlock className="mb-4 h-12 w-12" />
+                    <SkeletonBlock className="mb-3 h-5 w-2/3" />
+                    <div className="space-y-2">
+                        <SkeletonBlock className="h-3 w-full" />
+                        <SkeletonBlock className="h-3 w-4/5" />
+                    </div>
+                </div>
+                <div className="flex flex-col items-end gap-3">
+                    <SkeletonBlock className="h-9 w-9" />
+                    <SkeletonBlock className="h-9 w-9" />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ProjectCardsSkeleton({ count }) {
+    return (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3" aria-live="polite" aria-busy="true">
+            {Array.from({ length: count }).map((_, index) => (
+                <ProjectCardSkeleton key={index} />
+            ))}
+        </div>
+    );
+}
+
 const ProjectCard = ({ project, onSelect, onEdit, onDelete, canManage, canDelete }) => {
     const qrUrl = `${window.location.origin}/c/${project.id}/me`;
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
+            className="min-h-[15rem] overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         >
             <div className="p-6">
                 <div className="flex justify-between items-start">
@@ -207,7 +246,7 @@ const ProjectsTab = ({ onSelectProject, canManageProject = () => true, canDelete
             </div>
 
             {loading ? (
-                <div className="flex justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                <ProjectCardsSkeleton count={projects.length || 3} />
             ) : (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {projects.map((project) => (
