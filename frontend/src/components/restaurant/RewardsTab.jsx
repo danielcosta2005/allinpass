@@ -28,6 +28,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from "@/lib/functionErrors";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -179,7 +183,7 @@ function formatScannerRewardError(body, fallback) {
       : "Este passe nao tem pontos suficientes para esta recompensa.";
   }
 
-  return body?.message || body?.error || fallback?.message || "Nao foi possivel resgatar a recompensa.";
+  return getFunctionErrorMessage(body, fallback?.message || "Nao foi possivel resgatar a recompensa.");
 }
 
 export default function RewardsTab({ activeTab = "rewards", onTabChange, projectId }) {
@@ -489,7 +493,7 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
     });
 
     if (error) {
-      const errorBody = await readFunctionErrorBody(error, response);
+      const errorBody = await readFunctionErrorPayload(error, response);
       throw new Error(formatScannerRewardError(errorBody, error));
     }
     if (!data) throw new Error("Resposta vazia da Edge Function.");

@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabaseClient';
+import {
+  getFunctionErrorMessage,
+  getFunctionErrorStatus,
+  readFunctionErrorPayload,
+} from '@/lib/functionErrors';
 
 export const AUTH_SESSION_INVALID_EVENT = 'allinpass:auth-session-invalid';
 export const AUTH_SESSION_ERROR_CODE = 'AUTH_SESSION_INVALID';
@@ -73,37 +78,6 @@ async function getFreshSession() {
   return refreshedSession;
 }
 
-function getFunctionErrorStatus(error, response) {
-  return (
-    response?.status ||
-    error?.context?.status ||
-    error?.status ||
-    error?.context?.response?.status ||
-    null
-  );
-}
-
-async function readFunctionErrorPayload(error, response) {
-  const source = response || error?.context?.response || error?.context;
-  if (!source || typeof source.clone !== 'function') return null;
-
-  try {
-    return await source.clone().json();
-  } catch (_) {
-    try {
-      return await source.clone().text();
-    } catch {
-      return null;
-    }
-  }
-}
-
-function getPayloadMessage(payload) {
-  if (!payload) return '';
-  if (typeof payload === 'string') return payload;
-  return payload.message || payload.error || '';
-}
-
 function isInvalidSessionPayload(status, message) {
   const normalizedMessage = String(message || '')
     .normalize('NFD')
@@ -135,7 +109,7 @@ export async function invokeAuthenticatedFunction(functionName, options = {}) {
   if (error) {
     const status = getFunctionErrorStatus(error, response);
     const payload = await readFunctionErrorPayload(error, response);
-    const payloadMessage = getPayloadMessage(payload);
+    const payloadMessage = getFunctionErrorMessage(payload, '');
 
     if (isInvalidSessionPayload(status, payloadMessage || error.message)) {
       throw createInvalidSessionError();

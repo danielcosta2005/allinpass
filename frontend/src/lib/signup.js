@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabaseClient';
+import {
+  getFunctionErrorCode,
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from '@/lib/functionErrors';
 
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
 const SIGNUP_STATUS_DEDUPE_TTL_MS = 5_000;
@@ -20,7 +25,15 @@ function wait(ms) {
   });
 }
 
-async function readFunctionError(error) {
+async function readFunctionError(error, response) {
+  const functionPayload = await readFunctionErrorPayload(error, response);
+  if (functionPayload) {
+    return {
+      message: getFunctionErrorMessage(functionPayload),
+      code: getFunctionErrorCode(functionPayload),
+    };
+  }
+
   if (error?.context && typeof error.context.clone === 'function') {
     try {
       const payload = await error.context.clone().json();
@@ -200,7 +213,7 @@ export async function finalizeSignup({
 
     while (true) {
       try {
-        const { data, error } = await supabase.functions.invoke('signup-finalize', {
+        const { data, error, response } = await supabase.functions.invoke('signup-finalize', {
           body: {
             establishmentName,
             planCode,
@@ -209,7 +222,7 @@ export async function finalizeSignup({
         });
 
         if (error) {
-          const parsedError = await readFunctionError(error);
+          const parsedError = await readFunctionError(error, response);
           throw buildSignupError(parsedError.message, parsedError.code);
         }
 
@@ -320,7 +333,7 @@ export async function startPaidSignupCheckout({
   establishmentName,
   planCode,
 }) {
-  const { data, error } = await supabase.functions.invoke('signup-start-checkout', {
+  const { data, error, response } = await supabase.functions.invoke('signup-start-checkout', {
     body: {
       establishmentName,
       planCode,
@@ -328,7 +341,7 @@ export async function startPaidSignupCheckout({
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildSignupError(parsedError.message, parsedError.code);
   }
 
@@ -389,12 +402,12 @@ export async function getSignupStatus({ force = false, cacheKey = '' } = {}) {
   }
 
   const request = (async () => {
-    const { data, error } = await supabase.functions.invoke('signup-status', {
+    const { data, error, response } = await supabase.functions.invoke('signup-status', {
       body: {},
     });
 
     if (error) {
-      const parsedError = await readFunctionError(error);
+      const parsedError = await readFunctionError(error, response);
       throw buildSignupError(parsedError.message, parsedError.code);
     }
 
@@ -454,7 +467,7 @@ export async function precheckFreeTrialSignup({
   planCode = 'free_trial',
   captchaToken = '',
 }) {
-  const { data, error } = await supabase.functions.invoke('signup-precheck', {
+  const { data, error, response } = await supabase.functions.invoke('signup-precheck', {
     body: {
       email,
       establishmentName,
@@ -464,7 +477,7 @@ export async function precheckFreeTrialSignup({
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildSignupError(parsedError.message, parsedError.code);
   }
 

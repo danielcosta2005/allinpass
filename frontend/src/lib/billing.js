@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabaseClient';
 import { fetchSubscriptionPlans } from '@/lib/subscriptionPlans';
+import {
+  getFunctionErrorCode,
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from '@/lib/functionErrors';
 
 const VISIBLE_SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'paused', 'suspended'];
 const EXPIRED_SUBSCRIPTION_STATUS = 'expired';
@@ -9,13 +14,20 @@ const PAST_DUE_SUBSCRIPTION_STATUS = 'past_due';
 const FREE_PLAN_CODE = 'free_trial';
 const ACTIVE_PENDING_PLAN_CHANGE_STATUSES = ['pending', 'created', 'paid'];
 
-async function readFunctionError(error) {
-  const context = error?.context;
-  const response = context?.response;
+async function readFunctionError(error, invokeResponse) {
+  const payload = await readFunctionErrorPayload(error, invokeResponse);
+  if (payload) {
+    return {
+      error: getFunctionErrorMessage(payload),
+      code: getFunctionErrorCode(payload),
+    };
+  }
 
-  if (response && typeof response.json === 'function') {
+  const context = error?.context;
+
+  if (context && typeof context.json === 'function') {
     try {
-      return await response.json();
+      return await context.json();
     } catch {
       // keep the generic message below
     }
@@ -346,7 +358,7 @@ export function getBillingPlanName(subscription) {
 }
 
 export async function startBillingPlanChange({ projectId, planCode }) {
-  const { data, error } = await supabase.functions.invoke('billing-start-plan-change', {
+  const { data, error, response } = await supabase.functions.invoke('billing-start-plan-change', {
     body: {
       projectId,
       planCode,
@@ -354,7 +366,7 @@ export async function startBillingPlanChange({ projectId, planCode }) {
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildBillingError(parsedError.error, parsedError.code);
   }
 
@@ -366,14 +378,14 @@ export async function startBillingPlanChange({ projectId, planCode }) {
 }
 
 export async function finalizeBillingPlanChange({ planChangeSessionId }) {
-  const { data, error } = await supabase.functions.invoke('billing-finalize-plan-change', {
+  const { data, error, response } = await supabase.functions.invoke('billing-finalize-plan-change', {
     body: {
       planChangeSessionId,
     },
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildBillingError(parsedError.error, parsedError.code);
   }
 
@@ -385,7 +397,7 @@ export async function finalizeBillingPlanChange({ planChangeSessionId }) {
 }
 
 async function manageBillingPlanCancellation({ projectId, action }) {
-  const { data, error } = await supabase.functions.invoke('billing-manage-plan-cancellation', {
+  const { data, error, response } = await supabase.functions.invoke('billing-manage-plan-cancellation', {
     body: {
       projectId,
       action,
@@ -393,7 +405,7 @@ async function manageBillingPlanCancellation({ projectId, action }) {
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildBillingError(parsedError.error, parsedError.code);
   }
 
@@ -413,14 +425,14 @@ export async function undoBillingPlanCancellation({ projectId }) {
 }
 
 export async function reactivateBillingSubscription({ projectId }) {
-  const { data, error } = await supabase.functions.invoke('billing-reactivate-subscription', {
+  const { data, error, response } = await supabase.functions.invoke('billing-reactivate-subscription', {
     body: {
       projectId,
     },
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildBillingError(parsedError.error, parsedError.code);
   }
 
@@ -432,14 +444,14 @@ export async function reactivateBillingSubscription({ projectId }) {
 }
 
 export async function startBillingPaymentRecovery({ projectId }) {
-  const { data, error } = await supabase.functions.invoke('billing-start-payment-recovery', {
+  const { data, error, response } = await supabase.functions.invoke('billing-start-payment-recovery', {
     body: {
       projectId,
     },
   });
 
   if (error) {
-    const parsedError = await readFunctionError(error);
+    const parsedError = await readFunctionError(error, response);
     throw buildBillingError(parsedError.error, parsedError.code);
   }
 

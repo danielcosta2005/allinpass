@@ -1,16 +1,21 @@
 import { invokeAdmin } from './invokeAdmin';
 
 import { supabase } from '@/lib/supabaseClient';
+import { buildFunctionError } from '@/lib/functionErrors';
+
+async function buildAdminFunctionError(error, response) {
+    return buildFunctionError(error, response, 'Falha ao chamar edge function');
+}
 
 export async function adminCreateMember({ projectId, email, password, role }) {
-    const { data, error } = await supabase.functions.invoke('admin-create-member', {
+    const { data, error, response } = await supabase.functions.invoke('admin-create-member', {
         body: { projectId, email, password, role },
     });
 
     // ERRO DE INVOKE (401/403/404/500 etc)
     if (error) {
         console.error('invoke admin-create-member error:', error);
-        throw new Error(error.message || 'Falha ao chamar edge function');
+        throw await buildAdminFunctionError(error, response);
     }
 
     // ERRO RETORNADO NO JSON (você retorna { error: ... } em status 400)
@@ -27,13 +32,13 @@ export async function adminUpdateMember({ memberId, password, projectId, role })
 }
 
 export async function adminRemoveMember({ memberId, projectId }) {
-    const { data, error } = await supabase.functions.invoke('admin-remove-member', {
+    const { data, error, response } = await supabase.functions.invoke('admin-remove-member', {
         body: { memberId, projectId },
     });
 
     if (error) {
         console.error('invoke admin-remove-member error:', error);
-        throw new Error(error.message || 'Falha ao chamar edge function');
+        throw await buildAdminFunctionError(error, response);
     }
 
     if (!data || data.error) {
@@ -45,13 +50,13 @@ export async function adminRemoveMember({ memberId, projectId }) {
 }
 
 export async function adminListAdmins() {
-    const { data, error } = await supabase.functions.invoke('superadmin-list-admins', {
+    const { data, error, response } = await supabase.functions.invoke('superadmin-list-admins', {
         body: {},
     });
 
     if (error) {
         console.error('invoke superadmin-list-admins error:', error);
-        throw new Error(error.message || 'Falha ao chamar edge function');
+        throw await buildAdminFunctionError(error, response);
     }
 
     if (!data || data.error) {
@@ -63,13 +68,13 @@ export async function adminListAdmins() {
 }
 
 export async function adminCreateAdmin({ email, password }) {
-    const { data, error } = await supabase.functions.invoke('superadmin-create-admin', {
+    const { data, error, response } = await supabase.functions.invoke('superadmin-create-admin', {
         body: { email, password },
     });
 
     if (error) {
         console.error('invoke superadmin-create-admin error:', error);
-        throw new Error(error.message || 'Falha ao chamar edge function');
+        throw await buildAdminFunctionError(error, response);
     }
 
     if (!data || data.error) {
@@ -81,13 +86,13 @@ export async function adminCreateAdmin({ email, password }) {
 }
 
 export async function adminRemoveAdmin({ adminId }) {
-    const { data, error } = await supabase.functions.invoke('superadmin-remove-admin', {
+    const { data, error, response } = await supabase.functions.invoke('superadmin-remove-admin', {
         body: { adminId },
     });
 
     if (error) {
         console.error('invoke superadmin-remove-admin error:', error);
-        throw new Error(error.message || 'Falha ao chamar edge function');
+        throw await buildAdminFunctionError(error, response);
     }
 
     if (!data || data.error) {

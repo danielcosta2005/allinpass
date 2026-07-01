@@ -40,6 +40,11 @@ import GenerationResultModal from '@/components/superadmin/wallet/GenerationResu
 import LocationsTab from '@/components/superadmin/LocationsTab';
 import { listPassLocationIds } from '@/lib/api';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import {
+  getFunctionErrorMessage as getSharedFunctionErrorMessage,
+  getFunctionErrorStatus,
+  readFunctionErrorPayload as readSharedFunctionErrorPayload,
+} from '@/lib/functionErrors';
 
 const IMAGE_UPLOAD_RULES = {
   icon: {
@@ -195,16 +200,16 @@ function normalizeLocationIds(input) {
 async function invokeWalletFunction(functionName, body) {
   // Keep auth/header handling inside the configured Supabase client.
   // This avoids fragile manual fetches when env URLs contain a trailing slash.
-  const { data, error } = await supabase.functions.invoke(functionName, { body });
+  const { data, error, response } = await supabase.functions.invoke(functionName, { body });
 
   if (error) {
-    const payload = await readFunctionErrorPayload(error);
+    const payload = await readSharedFunctionErrorPayload(error, response);
     const message =
-      getFunctionErrorMessage(payload) ||
+      getSharedFunctionErrorMessage(payload, '') ||
       translateWalletError(payload || error, `Falha ao chamar ${functionName}.`);
     const normalizedError = new Error(message);
     normalizedError.code = payload?.code || null;
-    normalizedError.status = error?.context?.status || null;
+    normalizedError.status = getFunctionErrorStatus(error, response);
     normalizedError.payload = payload || null;
     throw normalizedError;
   }
