@@ -242,7 +242,6 @@ const AdminTab = () => {
                             </div>
                             <div>
                               <p className="font-semibold text-foreground">{admin.email || 'Email não informado'}</p>
-                              <p className="font-mono text-xs text-muted-foreground">{admin.id}</p>
                             </div>
                           </div>
                         </td>
