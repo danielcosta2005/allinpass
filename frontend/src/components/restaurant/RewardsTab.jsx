@@ -755,7 +755,7 @@ export default function RewardsTab({ activeTab = "rewards", onTabChange, project
                     <th className="px-4 py-3">Pontos</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">
-                      <div className="ml-auto w-[220px] text-center">AÃ§Ãµes</div>
+                      <div className="ml-auto w-[220px] text-center">Ações</div>
                     </th>
                   </tr>
                 </thead>
