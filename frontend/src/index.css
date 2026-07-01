@@ -86,6 +86,7 @@
   html {
     scrollbar-gutter: stable;
     scroll-behavior: smooth;
+    overflow-y: scroll;
   }
   * {
     @apply border-border;
@@ -93,6 +94,11 @@
   body {
     @apply bg-background text-foreground;
     overflow-x: hidden;
+  }
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+    padding-right: 0 !important;
+    --removed-body-scroll-bar-size: 0px;
   }
 }
 
