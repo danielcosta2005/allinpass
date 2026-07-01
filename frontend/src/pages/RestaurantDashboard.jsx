@@ -61,11 +61,13 @@ const RestaurantDashboard = () => {
     billingActionPlanCode,
     planCancellationAction,
     billingReactivationAction,
+    billingPaymentRecoveryAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
     handleReactivateBillingSubscription,
+    handleStartBillingPaymentRecovery,
   } = useRestaurantBilling({ projectId, toast, user });
 
   const {
@@ -335,6 +337,7 @@ const RestaurantDashboard = () => {
         />
 
         <BillingDashboardDialog
+          billingPaymentRecoveryAction={billingPaymentRecoveryAction}
           billingReactivationAction={billingReactivationAction}
           canManageBilling={canManageBilling}
           isBillingCanceled={isBillingCanceled}
@@ -342,6 +345,7 @@ const RestaurantDashboard = () => {
           onOpenChange={handleBillingDashboardOpenChange}
           onReactivateSubscription={handleReactivateBillingSubscription}
           onSchedulePlanCancellation={handleSchedulePlanCancellation}
+          onStartPaymentRecovery={handleStartBillingPaymentRecovery}
           onUndoPlanCancellation={handleUndoPlanCancellation}
           open={billingDashboardOpen}
           pendingPlanChange={pendingPlanChange}

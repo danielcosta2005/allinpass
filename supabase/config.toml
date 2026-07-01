@@ -430,6 +430,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/billing-reactivate-subscription/index.ts"
 
+[functions.billing-start-payment-recovery]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-start-payment-recovery/index.ts"
+
 [functions.billing-close-cycles]
 enabled = true
 verify_jwt = false

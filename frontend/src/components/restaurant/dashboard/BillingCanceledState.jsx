@@ -128,7 +128,7 @@ function BillingCanceledState({
             <AlertDialogTitle>Confirmar reativação</AlertDialogTitle>
             <AlertDialogDescription>
               <span className="block">
-                A assinatura será reativada, um novo ciclo de cobrança será iniciado e o acesso operacional do
+                A assinatura será reativada no Asaas, um novo ciclo de cobrança será iniciado e o acesso operacional do
                 projeto será liberado novamente. A cobrança seguirá a forma de pagamento cadastrada.
               </span>
               <span className="mt-3 block rounded-md border border-border bg-muted/50 p-3 text-left">

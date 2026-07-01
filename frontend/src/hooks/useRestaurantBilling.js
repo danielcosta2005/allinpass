@@ -11,6 +11,7 @@ import {
   isTrialExpired as isTrialExpiredSubscription,
   reactivateBillingSubscription,
   scheduleBillingPlanCancellation,
+  startBillingPaymentRecovery,
   startBillingPlanChange,
   undoBillingPlanCancellation,
 } from '@/lib/billing';
@@ -86,6 +87,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
   const [planCancellationAction, setPlanCancellationAction] = useState('');
   const [billingReactivationAction, setBillingReactivationAction] = useState(false);
+  const [billingPaymentRecoveryAction, setBillingPaymentRecoveryAction] = useState(false);
   const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
   const billingAccessState = getBillingAccessState(billingSubscription);
@@ -340,6 +342,43 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     }
   }, [billingReactivationAction, canManageBilling, projectId, refreshBillingState, toast]);
 
+  const handleStartBillingPaymentRecovery = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingPaymentRecoveryAction) return;
+
+    setBillingPaymentRecoveryAction(true);
+    setBillingError('');
+
+    try {
+      const result = await startBillingPaymentRecovery({ projectId });
+
+      if (result?.already_paid) {
+        await refreshBillingState();
+        toast({
+          title: 'Pagamento já identificado',
+          description: 'Aguarde a confirmação do pagamento pelo Asaas e atualize o painel.',
+        });
+        return;
+      }
+
+      if (result?.invoice_url) {
+        window.location.assign(result.invoice_url);
+        return;
+      }
+
+      throw new Error('Não foi possível abrir a fatura pendente.');
+    } catch (error) {
+      const message = error?.message || 'Não foi possível iniciar a regularização do pagamento.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao regularizar pagamento',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingPaymentRecoveryAction(false);
+    }
+  }, [billingPaymentRecoveryAction, canManageBilling, projectId, refreshBillingState, toast]);
+
   return {
     billingSubscription,
     planChangeOptions,
@@ -358,10 +397,12 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     billingActionPlanCode,
     planCancellationAction,
     billingReactivationAction,
+    billingPaymentRecoveryAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
     handleReactivateBillingSubscription,
+    handleStartBillingPaymentRecovery,
   };
 }

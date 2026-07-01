@@ -430,3 +430,22 @@ export async function reactivateBillingSubscription({ projectId }) {
 
   return data;
 }
+
+export async function startBillingPaymentRecovery({ projectId }) {
+  const { data, error } = await supabase.functions.invoke('billing-start-payment-recovery', {
+    body: {
+      projectId,
+    },
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildBillingError(parsedError.error, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildBillingError(data.error, data.code || null);
+  }
+
+  return data;
+}
