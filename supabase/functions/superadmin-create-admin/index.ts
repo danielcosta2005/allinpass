@@ -28,6 +28,33 @@ function getBearerToken(req: Request) {
   return match?.[1] || "";
 }
 
+function normalizeOrigin(value: string | null | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    return new URL(raw).origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+function getInviteRedirectTo(req: Request) {
+  const configuredBaseUrl =
+    Deno.env.get("APP_BASE_URL") ||
+    Deno.env.get("SITE_URL") ||
+    Deno.env.get("PUBLIC_SITE_URL") ||
+    Deno.env.get("FRONTEND_URL");
+
+  const origin = normalizeOrigin(configuredBaseUrl) || normalizeOrigin(req.headers.get("Origin"));
+  return origin ? `${origin}/reset-password?flow=invite` : undefined;
+}
+
+function getInviteOptions(req: Request) {
+  const redirectTo = getInviteRedirectTo(req);
+  return redirectTo ? { redirectTo } : {};
+}
+
 async function getCallerProfile(supabaseAdmin: any, req: Request) {
   const token = getBearerToken(req);
   if (!token) throw new HttpError(401, "Missing Authorization header");
@@ -71,15 +98,10 @@ Deno.serve(async (req) => {
 
     ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
 
-    const { email, password } = await req.json().catch(() => ({}));
+    const { email } = await req.json().catch(() => ({}));
     const normalizedEmail = String(email || "").trim().toLowerCase();
-    const cleanPassword = typeof password === "string" ? password.trim() : "";
 
     if (!normalizedEmail) throw new HttpError(400, "Email é obrigatório.");
-    if (cleanPassword && cleanPassword.length < 6) {
-      throw new HttpError(400, "A senha deve ter no mínimo 6 caracteres.");
-    }
-
     const { data: usersPage, error: listError } = await supabaseAdmin.auth.admin.listUsers({
       page: 1,
       perPage: 1000,
@@ -94,20 +116,13 @@ Deno.serve(async (req) => {
     let inviteSent = false;
 
     if (!userId) {
-      if (cleanPassword) {
-        const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: normalizedEmail,
-          password: cleanPassword,
-          email_confirm: true,
-        });
-        if (createError) throw createError;
-        userId = created.user?.id || null;
-      } else {
-        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
-        if (inviteError) throw inviteError;
-        userId = invited.user?.id || null;
-        inviteSent = true;
-      }
+      const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
+        normalizedEmail,
+        getInviteOptions(req),
+      );
+      if (inviteError) throw inviteError;
+      userId = invited.user?.id || null;
+      inviteSent = true;
     }
 
     if (!userId) throw new Error("Não foi possível determinar o userId.");

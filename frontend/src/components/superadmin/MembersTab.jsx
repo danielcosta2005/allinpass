@@ -31,13 +31,13 @@ const memberRoleLabels = {
   staff: 'Funcionário',
 };
 
-const MembersTab = ({ projectId }) => {
+const MembersTab = ({ projectId, canManageMembers = true, canSetMemberPassword = false }) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' });
+  const [createForm, setCreateForm] = useState({ email: '', role: 'staff' });
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ newPassword: '', role: 'staff' });
@@ -80,16 +80,13 @@ const MembersTab = ({ projectId }) => {
 
   const handleCreateMember = async (e) => {
     e.preventDefault();
-    if (createForm.password && !validatePassword(createForm.password)) {
-      toast({ title: "Senha inválida", description: "A senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
-      return;
-    }
+    if (!canManageMembers) return;
+
     setIsSubmitting(true);
     try {
       const result = await adminCreateMember({
         projectId,
         email: createForm.email.trim(),
-        password: createForm.password || undefined,
         role: createForm.role,
       });
       
@@ -99,7 +96,7 @@ const MembersTab = ({ projectId }) => {
         toast({ title: "Membro adicionado!", description: `${createForm.email} foi criado e adicionado ao projeto.` });
       }
 
-      setCreateForm({ email: '', password: '', role: 'staff' });
+      setCreateForm({ email: '', role: 'staff' });
       setShowCreateModal(false);
       await fetchMembers();
     } catch (error) {
@@ -110,6 +107,7 @@ const MembersTab = ({ projectId }) => {
   };
 
   const openEditModal = (member) => {
+    if (!canManageMembers) return;
     setMemberToEdit(member);
     setEditForm({ newPassword: '', role: member.role });
     setShowEditModal(true);
@@ -117,7 +115,9 @@ const MembersTab = ({ projectId }) => {
   
   const handleUpdateMember = async (e) => {
     e.preventDefault();
-    if (editForm.newPassword && !validatePassword(editForm.newPassword)) {
+    if (!canManageMembers) return;
+
+    if (canSetMemberPassword && editForm.newPassword && !validatePassword(editForm.newPassword)) {
       toast({ title: "Senha inválida", description: "A nova senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
       return;
     }
@@ -127,7 +127,7 @@ const MembersTab = ({ projectId }) => {
         memberId: memberToEdit.user_id,
         projectId,
         role: editForm.role,
-        password: editForm.newPassword || undefined,
+        password: canSetMemberPassword ? editForm.newPassword || undefined : undefined,
       });
       toast({ title: "Membro atualizado!", description: "As informações do membro foram salvas." });
       setShowEditModal(false);
@@ -142,6 +142,7 @@ const MembersTab = ({ projectId }) => {
 
   const handleRemoveMember = async () => {
     if (!memberToRemove) return;
+    if (!canManageMembers) return;
     setIsSubmitting(true);
     try {
       await adminRemoveMember({ projectId, memberId: memberToRemove.user_id });
@@ -159,9 +160,11 @@ const MembersTab = ({ projectId }) => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Membros</h2>
-        <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
-          <Plus className="w-4 h-4" /> Novo Membro
-        </Button>
+        {canManageMembers && (
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
+            <Plus className="w-4 h-4" /> Novo Membro
+          </Button>
+        )}
       </div>
       
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
@@ -176,7 +179,7 @@ const MembersTab = ({ projectId }) => {
                   <th scope="col" className="px-6 py-3">Email</th>
                   <th scope="col" className="px-6 py-3">Papel</th>
                   <th scope="col" className="px-6 py-3">Criação</th>
-                  <th scope="col" className="px-6 py-3 text-right">Ações</th>
+                  {canManageMembers && <th scope="col" className="px-6 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -186,10 +189,12 @@ const MembersTab = ({ projectId }) => {
                     <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
                     <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
                     <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}><Edit className="h-4 w-4 text-blue-500" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                    </td>
+                    {canManageMembers && (
+                      <td className="px-6 py-4 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}><Edit className="h-4 w-4 text-blue-500" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -205,13 +210,12 @@ const MembersTab = ({ projectId }) => {
           <DialogHeader><DialogTitle>Criar Novo Membro</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateMember} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={createForm.email} onChange={handleCreateFormChange} required disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="password">Senha (Opcional)</Label><Input id="password" type="password" placeholder="Deixe em branco para enviar convite" value={createForm.password} onChange={handleCreateFormChange} disabled={isSubmitting}/></div>
             <div className="space-y-2"><Label htmlFor="role">Papel</Label>
               <select id="role" value={createForm.role} onChange={handleCreateFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
                 <option value="owner">Gestor</option><option value="staff">Funcionário</option>
               </select>
             </div>
-            <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Criar</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Enviar convite</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -220,7 +224,9 @@ const MembersTab = ({ projectId }) => {
         <DialogContent>
           <DialogHeader><DialogTitle>Editar Membro</DialogTitle><DialogDescription>{memberToEdit?.email}</DialogDescription></DialogHeader>
           <form onSubmit={handleUpdateMember} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
+            {canSetMemberPassword && (
+              <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
+            )}
             <div className="space-y-2"><Label htmlFor="role">Papel</Label>
               <select id="role" value={editForm.role} onChange={handleEditFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
                 <option value="owner">Gestor</option><option value="staff">Funcionário</option>

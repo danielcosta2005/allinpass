@@ -62,7 +62,7 @@ function ProjectNames({ projects }) {
   );
 }
 
-const AdminTab = () => {
+const AdminTab = ({ canManageAdmins = false }) => {
   const { toast } = useToast();
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ const AdminTab = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [adminToRemove, setAdminToRemove] = useState(null);
   const [expandedAdminId, setExpandedAdminId] = useState(null);
-  const [createForm, setCreateForm] = useState({ email: '', password: '' });
+  const [createForm, setCreateForm] = useState({ email: '' });
 
   const fetchAdmins = useCallback(async () => {
     setLoading(true);
@@ -101,19 +101,8 @@ const AdminTab = () => {
     event.preventDefault();
 
     const email = createForm.email.trim().toLowerCase();
-    const password = createForm.password.trim();
-
     if (!email) {
       toast({ title: 'Email obrigatório', variant: 'destructive' });
-      return;
-    }
-
-    if (password && password.length < 6) {
-      toast({
-        title: 'Senha inválida',
-        description: 'A senha deve ter no mínimo 6 caracteres.',
-        variant: 'destructive',
-      });
       return;
     }
 
@@ -121,17 +110,16 @@ const AdminTab = () => {
     try {
       const result = await adminCreateAdmin({
         email,
-        password: password || undefined,
       });
 
       toast({
-        title: result.inviteSent ? 'Convite enviado' : 'Admin criado',
+        title: result.inviteSent ? 'Convite enviado' : 'Admin liberado',
         description: result.inviteSent
           ? `Um convite foi enviado para ${email}.`
           : `${email} agora tem acesso de admin.`,
       });
 
-      setCreateForm({ email: '', password: '' });
+      setCreateForm({ email: '' });
       setShowCreateModal(false);
       await fetchAdmins();
     } catch (error) {
@@ -182,16 +170,18 @@ const AdminTab = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => setShowCreateModal(true)}
-            className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
-            disabled={isSubmitting}
-          >
-            <UserPlus className="h-4 w-4" />
-            Novo Admin
-          </Button>
-        </div>
+        {canManageAdmins && (
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setShowCreateModal(true)}
+              className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600"
+              disabled={isSubmitting}
+            >
+              <UserPlus className="h-4 w-4" />
+              Novo Admin
+            </Button>
+          </div>
+        )}
       </div>
 
       <motion.div
@@ -211,7 +201,7 @@ const AdminTab = () => {
                   <th className="px-6 py-3">Admin</th>
                   <th className="px-6 py-3">Projetos vinculados</th>
                   <th className="px-6 py-3">Criado em</th>
-                  <th className="px-6 py-3 text-right">Ações</th>
+                  {canManageAdmins && <th className="px-6 py-3 text-right">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -249,22 +239,24 @@ const AdminTab = () => {
                           <span className="text-sm font-semibold text-foreground">{linkedProjects.length}</span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">{formatDate(admin.created_at)}</td>
-                        <td className="px-6 py-4 text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setAdminToRemove(admin);
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4 text-red-500" />
-                          </Button>
-                        </td>
+                        {canManageAdmins && (
+                          <td className="px-6 py-4 text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setAdminToRemove(admin);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                       {canExpandProjects && isExpanded && (
                         <tr className="border-t border-border bg-muted/50">
-                          <td colSpan={4} className="px-6 py-4">
+                          <td colSpan={canManageAdmins ? 4 : 3} className="px-6 py-4">
                             <div className="space-y-2">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 Projetos vinculados
@@ -304,25 +296,13 @@ const AdminTab = () => {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Senha (opcional)</Label>
-              <Input
-                id="password"
-                type="password"
-                value={createForm.password}
-                onChange={handleCreateChange}
-                placeholder="Deixe em branco para enviar convite"
-                disabled={isSubmitting}
-              />
-            </div>
-
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)} disabled={isSubmitting}>
                 Cancelar
               </Button>
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Criar
+                Enviar convite
               </Button>
             </DialogFooter>
           </form>

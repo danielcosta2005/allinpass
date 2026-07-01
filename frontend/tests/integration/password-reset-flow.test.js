@@ -41,7 +41,9 @@ describe("password reset flow", () => {
     expect(resetPasswordSource).toContain("Link expirado ou inválido");
     expect(authContextSource).toContain("p === '/reset-password'");
     expect(authCallbackSource).toContain("authType === 'recovery'");
+    expect(authCallbackSource).toContain("authType === 'invite'");
     expect(authCallbackSource).toContain("flow === 'recovery'");
+    expect(authCallbackSource).toContain("flow === 'invite'");
     expect(authCallbackSource).toContain("event === 'PASSWORD_RECOVERY'");
     expect(authCallbackSource).toContain("navigate('/reset-password', { replace: true })");
   });

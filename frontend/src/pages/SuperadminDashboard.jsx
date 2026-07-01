@@ -29,6 +29,7 @@ const SuperadminDashboard = () => {
   const { toast } = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const isSuperadmin = canSeeSuperadminTabs(role);
+  const canViewAdmins = canAccessAdminPanel(role);
   const canAccessKpiMembersAndCustomers = canAccessAdminPanel(role);
   const defaultTab = getDefaultAdminTab(role);
 
@@ -124,7 +125,10 @@ const SuperadminDashboard = () => {
     }
 
     if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
-      tabs.push({ value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false });
+      tabs.push(
+        { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
+        { value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false },
+      );
     }
 
     tabs.push({ value: 'projects', label: 'Projetos', icon: Settings, disabled: false });
@@ -249,7 +253,13 @@ const SuperadminDashboard = () => {
             )}
             {canAccessKpiMembersAndCustomers && (
               <TabsContent value="members" className="mt-0">
-                {selectedProject && <MembersTab projectId={selectedProject.id} />}
+                {selectedProject && (
+                  <MembersTab
+                    projectId={selectedProject.id}
+                    canManageMembers={canAccessKpiMembersAndCustomers}
+                    canSetMemberPassword={isSuperadmin}
+                  />
+                )}
               </TabsContent>
             )}
             {canAccessKpiMembersAndCustomers && (
@@ -267,9 +277,9 @@ const SuperadminDashboard = () => {
                 <FinancialPlansTab />
               </TabsContent>
             )}
-            {isSuperadmin && (
+            {canViewAdmins && (
               <TabsContent value="admins" className="mt-0">
-                <AdminTab />
+                <AdminTab canManageAdmins={isSuperadmin} />
               </TabsContent>
             )}
             {isSuperadmin && (

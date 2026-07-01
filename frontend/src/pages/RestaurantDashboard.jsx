@@ -195,6 +195,8 @@ const RestaurantDashboard = () => {
         : billingPlanName;
 
   const canSendNotifications = memberRole === 'owner';
+  const canManageMembers = memberRole === 'owner';
+  const canManageRewards = memberRole === 'owner';
   const notificationSubTabs = useMemo(() => {
     return canSendNotifications
       ? NOTIFICATION_SUBTABS
@@ -397,6 +399,7 @@ const RestaurantDashboard = () => {
               <TabsContent value="rewards" className="mt-0">
                 <RewardsTab
                   activeTab={activeRewardTab}
+                  canManageRewards={canManageRewards}
                   onTabChange={handleRewardSubTabChange}
                   projectId={projectId}
                 />
@@ -405,7 +408,7 @@ const RestaurantDashboard = () => {
                 <CustomersTab projectId={projectId} />
               </TabsContent>
               <TabsContent value="members" className="mt-0">
-                <MembersTab projectId={projectId} />
+                <MembersTab projectId={projectId} canManageMembers={canManageMembers} />
               </TabsContent>
               <TabsContent value="visits" className="mt-0">
                 <VisitsTab projectId={projectId} />

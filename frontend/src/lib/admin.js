@@ -67,9 +67,9 @@ export async function adminListAdmins() {
     return data.admins || [];
 }
 
-export async function adminCreateAdmin({ email, password }) {
+export async function adminCreateAdmin({ email }) {
     const { data, error, response } = await supabase.functions.invoke('superadmin-create-admin', {
-        body: { email, password },
+        body: { email },
     });
 
     if (error) {

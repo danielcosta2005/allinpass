@@ -33,7 +33,7 @@ export default function AuthCallback() {
       const flow = searchParams.get('flow') || hashParams.get('flow');
       const projectId = searchParams.get('projectId');
 
-      if (authType === 'recovery' || flow === 'recovery') {
+      if (authType === 'recovery' || flow === 'recovery' || authType === 'invite' || flow === 'invite') {
         navigateToPasswordReset();
         return;
       }
