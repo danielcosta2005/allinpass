@@ -967,6 +967,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (subscription.status === "past_due") {
+      throw new BillingPlanChangeError(
+        "BILLING_PLAN_CHANGE_PAST_DUE_REQUIRES_PAYMENT",
+        "Regularize a cobrança pendente antes de alterar o plano.",
+        409,
+      );
+    }
+
     if (subscription.plan_id === targetPlan.id) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_ALREADY_ON_PLAN",

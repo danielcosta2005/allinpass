@@ -56,6 +56,8 @@ const INVOICE_STATUS_LABELS = {
   no_overage: 'Fatura sem excedente',
 };
 
+const PENDING_INVOICE_STATUSES = new Set(['past_due', 'failed', 'open', 'pending', 'draft']);
+
 const PERCENT_AXIS_TICKS = [25, 50, 75, 100];
 
 function formatCurrencyFromCents(value) {
@@ -119,6 +121,13 @@ function getStatusTone(status) {
 function getCycleDisplayTitle(cycle) {
   if (!cycle) return INVOICE_STATUS_LABELS.no_overage;
   return cycle.title || INVOICE_STATUS_LABELS[cycle.status] || INVOICE_STATUS_LABELS.pending;
+}
+
+function getPendingInvoiceCycle(cycles) {
+  return cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.status))
+    || cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.batch?.status))
+    || cycles.find((cycle) => PENDING_INVOICE_STATUSES.has(cycle.invoice?.status))
+    || null;
 }
 
 function buildUsageChartData(cycle, resource) {
@@ -444,6 +453,7 @@ function CancelPlanSection({
 function BillingDashboardDialog({
   billingReactivationAction = false,
   canManageBilling = false,
+  focusPendingInvoice = false,
   isBillingCanceled = false,
   onOpenChange,
   onReactivateSubscription,
@@ -463,7 +473,11 @@ function BillingDashboardDialog({
     refreshBillingUsageDashboard,
   } = useBillingUsageDashboard({ projectId, open });
   const cycles = billingUsageData.cycles || [];
+  const preferredCycleId = focusPendingInvoice
+    ? getPendingInvoiceCycle(cycles)?.id
+    : null;
   const selectedCycle = cycles.find((cycle) => cycle.id === selectedCycleId)
+    || cycles.find((cycle) => cycle.id === preferredCycleId)
     || cycles.find((cycle) => cycle.id === billingUsageData.currentCycleId)
     || cycles[0]
     || null;
@@ -473,8 +487,8 @@ function BillingDashboardDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSelectedCycleId(billingUsageData.currentCycleId || cycles[0]?.id || null);
-  }, [billingUsageData.currentCycleId, cycles, open]);
+    setSelectedCycleId(preferredCycleId || billingUsageData.currentCycleId || cycles[0]?.id || null);
+  }, [billingUsageData.currentCycleId, cycles, open, preferredCycleId]);
 
   const handleSelectCycle = (cycleId) => {
     setSelectedCycleId(cycleId);

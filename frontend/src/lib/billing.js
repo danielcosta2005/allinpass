@@ -297,6 +297,7 @@ export function getPlanChangeActionLabel(changeKind) {
 export async function getPlanChangeOptions(currentSubscription, planList, pendingPlanChange = null) {
   if (!currentSubscription) return [];
   if (isBillingSuspended(currentSubscription)) return [];
+  if (isBillingPastDue(currentSubscription)) return [];
   if (isBillingCanceled(currentSubscription)) return [];
 
   const plans = Array.isArray(planList) ? planList : await fetchSubscriptionPlans();

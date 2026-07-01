@@ -40,6 +40,7 @@ const RestaurantDashboard = () => {
   const [trialExpiredNoticeDismissed, setTrialExpiredNoticeDismissed] = useState(false);
   const [billingCanceledNoticeDismissed, setBillingCanceledNoticeDismissed] = useState(false);
   const [billingDashboardOpen, setBillingDashboardOpen] = useState(false);
+  const [billingDashboardFocus, setBillingDashboardFocus] = useState(null);
   const { projectDisplayName, isProjectNameLoading } = useProjectName(projectId);
 
   const {
@@ -136,8 +137,31 @@ const RestaurantDashboard = () => {
       });
       return;
     }
+    if (isBillingPastDue) {
+      toast({
+        title: 'Pagamento pendente',
+        description: 'Regularize a cobrança pendente antes de trocar de plano.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
+  };
+
+  const handleOpenBillingDashboard = () => {
+    setBillingDashboardFocus(null);
+    setBillingDashboardOpen(true);
+  };
+
+  const handleBillingDashboardOpenChange = (nextOpen) => {
+    setBillingDashboardOpen(nextOpen);
+    if (!nextOpen) setBillingDashboardFocus(null);
+  };
+
+  const handleViewPendingInvoice = () => {
+    setBillingDashboardFocus('pending_invoice');
+    setBillingDashboardOpen(true);
   };
 
   useEffect(() => {
@@ -222,7 +246,7 @@ const RestaurantDashboard = () => {
 
   const accountMenuProps = useMemo(() => ({
     billingOptionDisabled: !projectId || billingLoading,
-    onOpenBilling: () => setBillingDashboardOpen(true),
+    onOpenBilling: handleOpenBillingDashboard,
     onOpenPlanChange: handleOpenPlanChange,
     onSignOut: handleSignOut,
     planChangeDisabled: !projectId || billingLoading || isSuspended || isCanceled,
@@ -237,6 +261,7 @@ const RestaurantDashboard = () => {
     userEmail: user?.email,
   }), [
     billingLoading,
+    handleOpenBillingDashboard,
     handleOpenPlanChange,
     isCanceled,
     isSuspended,
@@ -307,7 +332,8 @@ const RestaurantDashboard = () => {
           billingReactivationAction={billingReactivationAction}
           canManageBilling={canManageBilling}
           isBillingCanceled={isBillingCanceled}
-          onOpenChange={setBillingDashboardOpen}
+          focusPendingInvoice={billingDashboardFocus === 'pending_invoice'}
+          onOpenChange={handleBillingDashboardOpenChange}
           onReactivateSubscription={handleReactivateBillingSubscription}
           onSchedulePlanCancellation={handleSchedulePlanCancellation}
           onUndoPlanCancellation={handleUndoPlanCancellation}
@@ -334,7 +360,10 @@ const RestaurantDashboard = () => {
             transition={{ duration: 0.5 }}
           >
             {isBillingPastDue ? (
-              <BillingPastDueNotice subscription={billingSubscription} />
+              <BillingPastDueNotice
+                onViewPendingInvoice={handleViewPendingInvoice}
+                subscription={billingSubscription}
+              />
             ) : null}
 
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
