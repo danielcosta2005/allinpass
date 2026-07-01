@@ -84,7 +84,7 @@ describe("billing plan cancellation", () => {
     expect(dialogSource).toContain("onUndoPlanCancellation");
     expect(dialogSource).toContain("canManageBilling");
     expect(dialogSource).toContain("isBillingCanceled");
-    expect(dialogSource).toContain("disabled={isBusy || isBillingCanceled}");
+    expect(dialogSource).toContain("Reativar assinatura");
     expect(dialogSource).toContain("pendingPlanChange?.changeType === 'cancellation'");
 
     expect(dashboardSource).toContain("pendingPlanChange");

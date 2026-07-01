@@ -9,6 +9,7 @@ import {
   isBillingPastDue,
   isBillingSuspended,
   isTrialExpired as isTrialExpiredSubscription,
+  reactivateBillingSubscription,
   scheduleBillingPlanCancellation,
   startBillingPlanChange,
   undoBillingPlanCancellation,
@@ -84,6 +85,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
   const [planCancellationAction, setPlanCancellationAction] = useState('');
+  const [billingReactivationAction, setBillingReactivationAction] = useState(false);
   const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
   const billingAccessState = getBillingAccessState(billingSubscription);
@@ -312,6 +314,32 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     }
   }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
 
+  const handleReactivateBillingSubscription = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingReactivationAction) return;
+
+    setBillingReactivationAction(true);
+    setBillingError('');
+
+    try {
+      await reactivateBillingSubscription({ projectId });
+      await refreshBillingState();
+      toast({
+        title: 'Assinatura reativada',
+        description: 'Seu projeto voltou ao plano ativo e um novo ciclo de cobrança foi iniciado.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível reativar a assinatura.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao reativar assinatura',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingReactivationAction(false);
+    }
+  }, [billingReactivationAction, canManageBilling, projectId, refreshBillingState, toast]);
+
   return {
     billingSubscription,
     planChangeOptions,
@@ -329,9 +357,11 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     setPlanChangeOpen,
     billingActionPlanCode,
     planCancellationAction,
+    billingReactivationAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
+    handleReactivateBillingSubscription,
   };
 }

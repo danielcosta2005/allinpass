@@ -65,6 +65,25 @@ function formatCurrencyFromCents(value) {
   }).format(Number(value || 0) / 100);
 }
 
+function getReactivationPlanSummary(subscription) {
+  const planName = subscription?.plan?.name
+    || subscription?.planName
+    || subscription?.plan_name
+    || 'Plano atual';
+  const rawPriceCents = subscription?.basePriceCents
+    ?? subscription?.base_price_cents
+    ?? subscription?.plan?.basePriceCents
+    ?? subscription?.plan?.base_price_cents;
+  const priceCents = Number(rawPriceCents);
+
+  return {
+    planName,
+    priceLabel: rawPriceCents !== undefined && rawPriceCents !== null && Number.isFinite(priceCents)
+      ? `${formatCurrencyFromCents(priceCents)}/mês`
+      : 'Valor não informado',
+  };
+}
+
 function formatInteger(value) {
   return new Intl.NumberFormat('pt-BR').format(Number(value || 0));
 }
@@ -261,14 +280,17 @@ function HistoryItem({ cycle, isSelected, onSelect }) {
 
 function CancelPlanSection({
   action,
+  billingReactivationAction,
   canManageBilling,
   isBillingCanceled,
+  onReactivateSubscription,
   onSchedulePlanCancellation,
   onUndoPlanCancellation,
   pendingPlanChange,
   subscription,
 }) {
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [reactivationConfirmationOpen, setReactivationConfirmationOpen] = useState(false);
   if (!canManageBilling || !subscription) return null;
 
   const isCancellationPending = pendingPlanChange?.changeType === 'cancellation';
@@ -281,7 +303,70 @@ function CancelPlanSection({
   const periodText = periodEndLabel || 'fim do período de cobrança';
   const isScheduling = action === 'schedule';
   const isUndoing = action === 'undo';
-  const isBusy = Boolean(action);
+  const isReactivating = Boolean(billingReactivationAction);
+  const isBusy = Boolean(action) || isReactivating;
+  const reactivationPlanSummary = getReactivationPlanSummary(subscription);
+
+  if (isBillingCanceled) {
+    return (
+      <>
+        <section className="border-t border-border pt-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <h3 className="text-base font-semibold text-foreground">Assinatura cancelada</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Reative a assinatura para voltar a operar com este plano e iniciar um novo ciclo de cobrança.
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="min-w-[176px] border-emerald-500 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+              disabled={isBusy}
+              onClick={() => setReactivationConfirmationOpen(true)}
+            >
+              {isReactivating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+              Reativar assinatura
+            </Button>
+          </div>
+        </section>
+
+        <AlertDialog open={reactivationConfirmationOpen} onOpenChange={setReactivationConfirmationOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar reativação</AlertDialogTitle>
+              <AlertDialogDescription>
+                <span className="block">
+                  A assinatura será reativada, um novo ciclo de cobrança será iniciado e o acesso operacional do
+                  projeto será liberado novamente. A cobrança seguirá a forma de pagamento cadastrada.
+                </span>
+                <span className="mt-3 block rounded-md border border-border bg-muted/50 p-3 text-left">
+                  <span className="block font-medium text-foreground">
+                    Plano que será reativado: {reactivationPlanSummary.planName}
+                  </span>
+                  <span className="mt-1 block text-muted-foreground">
+                    Valor mensal: {reactivationPlanSummary.priceLabel}
+                  </span>
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isBusy}>Voltar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isBusy}
+                onClick={onReactivateSubscription}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                {isReactivating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Confirmar reativação
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
+    );
+  }
 
   return (
     <>
@@ -310,7 +395,7 @@ function CancelPlanSection({
               type="button"
               variant="outline"
               className="min-w-[132px] border-emerald-500 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
-              disabled={isBusy || isBillingCanceled}
+              disabled={isBusy}
               onClick={onUndoPlanCancellation}
             >
               {isUndoing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -321,7 +406,7 @@ function CancelPlanSection({
               type="button"
               variant="outline"
               className="min-w-[132px] border-rose-500 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-400 dark:text-rose-300 dark:hover:bg-rose-500/10"
-              disabled={isBusy || isBillingCanceled}
+              disabled={isBusy}
               onClick={() => setConfirmationOpen(true)}
             >
               {isScheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -342,7 +427,7 @@ function CancelPlanSection({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isBusy}>Voltar</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isBusy || isBillingCanceled}
+              disabled={isBusy}
               onClick={onSchedulePlanCancellation}
               className="bg-rose-600 text-white hover:bg-rose-700"
             >
@@ -357,9 +442,11 @@ function CancelPlanSection({
 }
 
 function BillingDashboardDialog({
+  billingReactivationAction = false,
   canManageBilling = false,
   isBillingCanceled = false,
   onOpenChange,
+  onReactivateSubscription,
   onSchedulePlanCancellation,
   onUndoPlanCancellation,
   open,
@@ -515,8 +602,10 @@ function BillingDashboardDialog({
 
             <CancelPlanSection
               action={planCancellationAction}
+              billingReactivationAction={billingReactivationAction}
               canManageBilling={canManageBilling}
               isBillingCanceled={isBillingCanceled}
+              onReactivateSubscription={onReactivateSubscription}
               onSchedulePlanCancellation={onSchedulePlanCancellation}
               onUndoPlanCancellation={onUndoPlanCancellation}
               pendingPlanChange={pendingPlanChange}

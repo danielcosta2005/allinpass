@@ -410,3 +410,22 @@ export async function scheduleBillingPlanCancellation({ projectId }) {
 export async function undoBillingPlanCancellation({ projectId }) {
   return manageBillingPlanCancellation({ projectId, action: 'undo' });
 }
+
+export async function reactivateBillingSubscription({ projectId }) {
+  const { data, error } = await supabase.functions.invoke('billing-reactivate-subscription', {
+    body: {
+      projectId,
+    },
+  });
+
+  if (error) {
+    const parsedError = await readFunctionError(error);
+    throw buildBillingError(parsedError.error, parsedError.code);
+  }
+
+  if (data?.error) {
+    throw buildBillingError(data.error, data.code || null);
+  }
+
+  return data;
+}

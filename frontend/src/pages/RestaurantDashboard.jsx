@@ -59,10 +59,12 @@ const RestaurantDashboard = () => {
     setPlanChangeOpen,
     billingActionPlanCode,
     planCancellationAction,
+    billingReactivationAction,
     billingPlanName,
     handleStartPlanChange,
     handleSchedulePlanCancellation,
     handleUndoPlanCancellation,
+    handleReactivateBillingSubscription,
   } = useRestaurantBilling({ projectId, toast, user });
 
   const {
@@ -126,7 +128,14 @@ const RestaurantDashboard = () => {
   const canceledBillingBlocked = isBillingCanceled && billingAccessState === 'canceled';
   const handleOpenPlanChange = () => {
     if (trialBillingBlocked && !canManageBilling) return;
-    if (canceledBillingBlocked) return;
+    if (isBillingCanceled) {
+      toast({
+        title: 'Assinatura cancelada',
+        description: 'Reative a assinatura antes de trocar de plano.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (isBillingSuspended) return;
     setPlanChangeOpen(true);
   };
@@ -295,10 +304,12 @@ const RestaurantDashboard = () => {
         />
 
         <BillingDashboardDialog
+          billingReactivationAction={billingReactivationAction}
           canManageBilling={canManageBilling}
           isBillingCanceled={isBillingCanceled}
-          onSchedulePlanCancellation={handleSchedulePlanCancellation}
           onOpenChange={setBillingDashboardOpen}
+          onReactivateSubscription={handleReactivateBillingSubscription}
+          onSchedulePlanCancellation={handleSchedulePlanCancellation}
           onUndoPlanCancellation={handleUndoPlanCancellation}
           open={billingDashboardOpen}
           pendingPlanChange={pendingPlanChange}
@@ -378,7 +389,11 @@ const RestaurantDashboard = () => {
         {projectId && canceledBillingBlocked && !billingCanceledNoticeDismissed ? (
           <BillingCanceledState
             billingError={billingError}
+            canManageBilling={canManageBilling}
             onDismiss={() => setBillingCanceledNoticeDismissed(true)}
+            onReactivateSubscription={handleReactivateBillingSubscription}
+            reactivationLoading={billingReactivationAction}
+            subscription={billingSubscription}
             supportUrl={SUPPORT_WHATSAPP_URL}
           />
         ) : null}
