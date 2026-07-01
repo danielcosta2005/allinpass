@@ -361,7 +361,7 @@ function DashboardShell({
         <header
           className={cn(
             hasContentHeader ? 'sticky top-0 z-30' : 'sticky top-0 z-30 lg:hidden',
-            'border-b border-border bg-card/90 backdrop-blur'
+            'relative bg-card/90 backdrop-blur'
           )}
         >
           <div className="flex min-h-16 items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
@@ -375,6 +375,7 @@ function DashboardShell({
             </button>
             {hasContentHeader ? <div className="min-w-0 flex-1">{contentHeader}</div> : null}
           </div>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-border" aria-hidden="true" />
         </header>
 
         <main className={cn(

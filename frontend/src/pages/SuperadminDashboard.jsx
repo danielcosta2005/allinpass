@@ -161,14 +161,6 @@ const SuperadminDashboard = () => {
     return [...mainTabs, ...projectTabs];
   }, [mainTabs, projectTabs]);
 
-  const isProjectTabActive = useMemo(() => {
-    return projectTabs.some((tab) => tab.value === activeTab);
-  }, [projectTabs, activeTab]);
-
-  const activeTabConfig = useMemo(() => {
-    return availableTabs.find((tab) => tab.value === activeTab) || availableTabs[0] || null;
-  }, [availableTabs, activeTab]);
-
   const adminNavGroups = useMemo(() => {
     return [
       { label: 'Global', items: mainTabs },
@@ -186,25 +178,6 @@ const SuperadminDashboard = () => {
     signingOut,
     userEmail: user?.email,
   }), [handleSignOut, isSuperadmin, signingOut, user?.email]);
-
-  const contentHeader = (
-    <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {isProjectTabActive && selectedProject ? 'Projeto selecionado' : 'Painel Administrativo'}
-        </p>
-        <h1 className="truncate text-xl font-bold leading-tight text-foreground sm:text-2xl">
-          {isProjectTabActive && selectedProject
-            ? selectedProject.name || 'Projeto'
-            : activeTabConfig?.label || 'Painel Administrativo'}
-        </h1>
-      </div>
-      <div className="hidden shrink-0 text-right md:block">
-        <p className="text-sm font-semibold text-foreground">{activeTabConfig?.label || 'Dashboard'}</p>
-        <p className="text-xs font-medium text-muted-foreground">{isSuperadmin ? 'Superadmin' : 'Admin'}</p>
-      </div>
-    </div>
-  );
 
   useEffect(() => {
     const currentTab = availableTabs.find((tab) => tab.value === activeTab);
@@ -251,7 +224,7 @@ const SuperadminDashboard = () => {
         activeItem={activeTab}
         brandLabel="Allin Pass"
         brandMeta="Painel Administrativo"
-        contentHeader={contentHeader}
+        contentHeader={null}
         navGroups={adminNavGroups}
         onBrandClick={handleDashboardHome}
         onNavigate={handleTabChange}

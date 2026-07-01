@@ -34,7 +34,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -76,27 +75,27 @@ const STATUS_LABELS = {
 };
 
 const STATUS_STYLES = {
-  active: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  applied: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  paid: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
-  trialing: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-  sent: 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300',
-  past_due: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  paused: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  pending: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  processing: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  created: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  suspended: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  expired: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  failed: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  overdue: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  sem_assinatura: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  canceled: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
-  cancelled: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
-  superseded: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
-  open: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
-  draft: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
-  void: 'border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300',
+  active: 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-white',
+  applied: 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-white',
+  paid: 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-white',
+  trialing: 'border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500 dark:text-white',
+  sent: 'border-sky-600 bg-sky-600 text-white dark:border-sky-500 dark:bg-sky-500 dark:text-white',
+  past_due: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  paused: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  pending: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  processing: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  created: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  suspended: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  expired: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  failed: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  overdue: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  sem_assinatura: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  canceled: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
+  cancelled: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
+  superseded: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
+  open: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
+  draft: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
+  void: 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white',
 };
 
 const RISK_LABELS = {
@@ -119,9 +118,9 @@ const RISK_LEVEL_LABELS = {
 };
 
 const RISK_STYLES = {
-  high: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300',
-  medium: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
-  low: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  high: 'border-rose-600 bg-rose-600 text-white dark:border-rose-500 dark:bg-rose-500 dark:text-white',
+  medium: 'border-amber-600 bg-amber-600 text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white',
+  low: 'border-emerald-600 bg-emerald-600 text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-white',
 };
 
 const CHANGE_LABELS = {
@@ -429,6 +428,31 @@ function formatSignedCurrencyFromCents(value) {
   return `${prefix}${formatCurrencyFromCents(Math.abs(cents))}`;
 }
 
+function StableNativeSelect({
+  value,
+  onValueChange,
+  children,
+  ariaLabel,
+  className,
+}) {
+  return (
+    <div className="relative min-w-0 max-w-full">
+      <select
+        value={value}
+        onChange={(event) => onValueChange(event.target.value)}
+        aria-label={ariaLabel}
+        className={cn(
+          'flex w-full min-w-0 max-w-full appearance-none items-center justify-between rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm ring-offset-background transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+          className
+        )}
+      >
+        {children}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
+    </div>
+  );
+}
+
 function AnimatedButtonText({ children }) {
   return (
     <span className="inline-flex font-bold">
@@ -509,7 +533,7 @@ function TableHeader({ label, info, className = 'px-4 py-3 font-semibold' }) {
 
 function StatusBadge({ value, compact = false }) {
   const normalized = normalizeFilterValue(value || 'sem_assinatura');
-  const className = STATUS_STYLES[normalized] || 'border-border bg-muted text-muted-foreground';
+  const className = STATUS_STYLES[normalized] || 'border-slate-600 bg-slate-600 text-white dark:border-slate-500 dark:bg-slate-500 dark:text-white';
 
   return (
     <span className={cn('inline-flex items-center rounded border font-semibold', compact ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs', className)}>
@@ -732,7 +756,7 @@ function ProjectPendingChangeInline({ project }) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs">
-      <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-700 dark:text-amber-300">
+      <span className="inline-flex items-center gap-1 rounded border border-amber-600 bg-amber-600 px-2 py-0.5 font-semibold text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white">
         <Clock3 className="h-3 w-3" />
         {getChangeLabel(project.pendingChangeType)}
       </span>
@@ -801,7 +825,7 @@ function ProjectPendingChangeCell({ project }) {
 
   return (
     <div className="space-y-1.5">
-      <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+      <span className="inline-flex items-center gap-1 rounded border border-amber-600 bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white dark:border-amber-500 dark:bg-amber-500 dark:text-white">
         <Clock3 className="h-3.5 w-3.5" />
         {getChangeLabel(project.pendingChangeType)}
       </span>
@@ -1163,8 +1187,8 @@ function FinancialQuickViews({ filters, counts, onChange }) {
             variant="ghost"
             size="sm"
             className={cn(
-              'h-8 gap-1.5 rounded px-2.5 text-xs font-medium text-muted-foreground hover:bg-background/80 hover:text-foreground',
-              selected && 'bg-background text-foreground shadow-sm hover:bg-background hover:text-foreground'
+              'h-8 shrink-0 gap-1.5 rounded px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-background/80 hover:text-foreground',
+              selected && 'bg-background text-foreground ring-1 ring-border/60 hover:bg-background hover:text-foreground'
             )}
             onClick={() => onChange('quickView', option.value)}
             aria-pressed={selected}
@@ -1204,50 +1228,55 @@ function FinancialFilters({ filters, planOptions, onChange, onReset }) {
           aria-label="Buscar por projeto, e-mail ou intermediador"
         />
       </div>
-      <Select value={filters.plan} onValueChange={(value) => onChange('plan', value)}>
-        <SelectTrigger className="h-9 bg-background" aria-label="Filtrar por plano"><SelectValue placeholder="Plano" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos os planos</SelectItem>
-          {planOptions.map(([value, label]) => (
-            <SelectItem key={value} value={value}>{label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={filters.status} onValueChange={(value) => onChange('status', value)}>
-        <SelectTrigger className="h-9 bg-background" aria-label="Filtrar por status"><SelectValue placeholder="Status" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos os status</SelectItem>
-          <SelectItem value="active">Ativa</SelectItem>
-          <SelectItem value="trialing">Período gratuito</SelectItem>
-          <SelectItem value="past_due">Pagamento pendente</SelectItem>
-          <SelectItem value="suspended">Suspensa</SelectItem>
-          <SelectItem value="expired">Expirada</SelectItem>
-          <SelectItem value="sem_assinatura">Sem assinatura</SelectItem>
-        </SelectContent>
-      </Select>
-      <Select value={filters.risk} onValueChange={(value) => onChange('risk', value)}>
-        <SelectTrigger className="h-9 bg-background" aria-label="Filtrar por risco"><SelectValue placeholder="Risco" /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Todos os riscos</SelectItem>
-          <SelectItem value="high">Alto</SelectItem>
-          <SelectItem value="medium">Médio</SelectItem>
-          <SelectItem value="low">Baixo</SelectItem>
-        </SelectContent>
-      </Select>
-      {hasActiveFilters ? (
-        <div className="flex items-center md:col-span-2 xl:col-span-1">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-9 gap-1.5 px-2.5 text-xs text-muted-foreground"
-            onClick={onReset}
-          >
-            <X className="h-3.5 w-3.5" />
-            Limpar
-          </Button>
-        </div>
-      ) : null}
+      <StableNativeSelect
+        value={filters.plan}
+        onValueChange={(value) => onChange('plan', value)}
+        ariaLabel="Filtrar por plano"
+        className="h-9"
+      >
+        <option value="all">Todos os planos</option>
+        {planOptions.map(([value, label]) => (
+          <option key={value} value={value}>{label}</option>
+        ))}
+      </StableNativeSelect>
+      <StableNativeSelect
+        value={filters.status}
+        onValueChange={(value) => onChange('status', value)}
+        ariaLabel="Filtrar por status"
+        className="h-9"
+      >
+        <option value="all">Todos os status</option>
+        <option value="active">Ativa</option>
+        <option value="trialing">Período gratuito</option>
+        <option value="past_due">Pagamento pendente</option>
+        <option value="suspended">Suspensa</option>
+        <option value="expired">Expirada</option>
+        <option value="sem_assinatura">Sem assinatura</option>
+      </StableNativeSelect>
+      <StableNativeSelect
+        value={filters.risk}
+        onValueChange={(value) => onChange('risk', value)}
+        ariaLabel="Filtrar por risco"
+        className="h-9"
+      >
+        <option value="all">Todos os riscos</option>
+        <option value="high">Alto</option>
+        <option value="medium">Médio</option>
+        <option value="low">Baixo</option>
+      </StableNativeSelect>
+      <div className="flex min-h-9 items-center md:col-span-2 xl:col-span-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-9 w-full justify-center gap-1.5 px-2.5 text-xs text-muted-foreground transition-colors duration-150 sm:w-auto"
+          onClick={onReset}
+          disabled={!hasActiveFilters}
+        >
+          <X className="h-3.5 w-3.5" />
+          Limpar
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1417,16 +1446,16 @@ function PaginationControls({
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Linhas por página</span>
-          <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
-            <SelectTrigger className="h-9 w-[5.5rem]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <SelectItem key={option} value={String(option)}>{option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <StableNativeSelect
+            value={String(pageSize)}
+            onValueChange={(value) => onPageSizeChange(Number(value))}
+            ariaLabel="Linhas por página"
+            className="h-9 w-[5.5rem]"
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={String(option)}>{option}</option>
+            ))}
+          </StableNativeSelect>
         </div>
 
         <div className="flex items-center gap-2">
