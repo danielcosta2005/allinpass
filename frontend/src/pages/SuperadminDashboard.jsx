@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Users, Wallet, Settings, LayoutDashboard, Bell, ShieldCheck } from 'lucide-react';
+import { Users, Wallet, Settings, LayoutDashboard, Bell, ShieldCheck, CreditCard } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import DashboardShell from '@/components/dashboard/DashboardShell';
 import ProjectsTab from '@/components/superadmin/ProjectsTab';
@@ -9,6 +9,7 @@ import MembersTab from '@/components/superadmin/MembersTab';
 import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import DashboardTab from '@/components/superadmin/DashboardTab';
+import FinancialPlansTab from '@/components/superadmin/FinancialPlansTab';
 import NotificationsConfigTab from '@/components/superadmin/NotificationsConfigTab';
 import AdminTab from '@/components/superadmin/AdminTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -115,6 +116,7 @@ const SuperadminDashboard = () => {
     if (isSuperadmin) {
       tabs.push(
         { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
+        { value: 'financeiro', label: 'Financeiro', icon: CreditCard, disabled: false },
         { value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false },
       );
     }
@@ -282,7 +284,12 @@ const SuperadminDashboard = () => {
             )}
             {canAccessKpiMembersAndCustomers && (
               <TabsContent value="dashboard" className="mt-0">
-                <DashboardTab />
+                <DashboardTab showFinancialKpis={isSuperadmin} />
+              </TabsContent>
+            )}
+            {isSuperadmin && (
+              <TabsContent value="financeiro" className="mt-0">
+                <FinancialPlansTab />
               </TabsContent>
             )}
             {isSuperadmin && (

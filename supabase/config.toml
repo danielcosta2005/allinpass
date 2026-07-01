@@ -445,6 +445,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/send-email/index.ts"
 
+[functions.claim-preview]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/claim-preview/index.ts"
+
 [functions.universal-link]
 enabled = true
 verify_jwt = false

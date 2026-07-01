@@ -329,10 +329,7 @@ serve(async (req) => {
 
     // single shareable link persisted in qr_url
     const appBaseUrl = resolveAppBaseUrl(req, body);
-    const qrDescriptionParam = description
-      ? `?description=${encodeURIComponent(description)}`
-      : "";
-    const qr_url = `${appBaseUrl}/claim/${encodeURIComponent(short_code)}${qrDescriptionParam}`;
+    const qr_url = `${appBaseUrl}/claim/${encodeURIComponent(short_code)}`;
 
     const { error: insertError } = await sbAdmin.from("passes").insert({
       id,
