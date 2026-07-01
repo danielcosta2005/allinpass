@@ -18,6 +18,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { useBillingUsageDashboard } from '@/hooks/useBillingUsageDashboard';
 
@@ -249,7 +259,110 @@ function HistoryItem({ cycle, isSelected, onSelect }) {
   );
 }
 
-function BillingDashboardDialog({ open, onOpenChange, projectId }) {
+function CancelPlanSection({
+  action,
+  canManageBilling,
+  onSchedulePlanCancellation,
+  onUndoPlanCancellation,
+  pendingPlanChange,
+  subscription,
+}) {
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  if (!canManageBilling || !subscription) return null;
+
+  const isCancellationPending = pendingPlanChange?.changeType === 'cancellation';
+  const hasOtherPendingChange = Boolean(
+    pendingPlanChange
+      && pendingPlanChange.effectiveMode === 'next_cycle'
+      && pendingPlanChange.changeType !== 'cancellation',
+  );
+  const periodEndLabel = formatDate(pendingPlanChange?.currentPeriodEnd || subscription.currentPeriodEnd);
+  const periodText = periodEndLabel || 'fim do período de cobrança';
+  const isScheduling = action === 'schedule';
+  const isUndoing = action === 'undo';
+  const isBusy = Boolean(action);
+
+  return (
+    <>
+      <section className="border-t border-border pt-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
+            <h3 className="text-base font-semibold text-foreground">
+              {isCancellationPending ? 'Cancelamento agendado' : 'Cancelar plano'}
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {isCancellationPending
+                ? `Seu plano continua ativo até ${periodText}.`
+                : 'Se você cancelar, continuará com acesso total aos recursos do seu plano até o fim do período de cobrança.'}
+            </p>
+            {hasOtherPendingChange ? (
+              <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-300">
+                Existe uma mudança de plano agendada. Se confirmar o cancelamento, ela será substituída.
+              </p>
+            ) : null}
+          </div>
+
+          {isCancellationPending ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="min-w-[132px] border-emerald-500 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
+              disabled={isBusy}
+              onClick={onUndoPlanCancellation}
+            >
+              {isUndoing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Manter assinatura
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              className="min-w-[132px] border-rose-500 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-400 dark:text-rose-300 dark:hover:bg-rose-500/10"
+              disabled={isBusy}
+              onClick={() => setConfirmationOpen(true)}
+            >
+              {isScheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Cancelar
+            </Button>
+          )}
+        </div>
+      </section>
+
+      <AlertDialog open={confirmationOpen} onOpenChange={setConfirmationOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar cancelamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              O cancelamento será agendado para {periodText}. Até lá, o projeto continua com acesso aos recursos do plano atual.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBusy}>Voltar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isBusy}
+              onClick={onSchedulePlanCancellation}
+              className="bg-rose-600 text-white hover:bg-rose-700"
+            >
+              {isScheduling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmar cancelamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function BillingDashboardDialog({
+  canManageBilling = false,
+  onOpenChange,
+  onSchedulePlanCancellation,
+  onUndoPlanCancellation,
+  open,
+  pendingPlanChange = null,
+  planCancellationAction = '',
+  projectId,
+}) {
   const topRef = useRef(null);
   const [selectedCycleId, setSelectedCycleId] = useState(null);
   const {
@@ -395,6 +508,15 @@ function BillingDashboardDialog({ open, onOpenChange, projectId }) {
                 Nenhum ciclo de faturamento encontrado.
               </div>
             )}
+
+            <CancelPlanSection
+              action={planCancellationAction}
+              canManageBilling={canManageBilling}
+              onSchedulePlanCancellation={onSchedulePlanCancellation}
+              onUndoPlanCancellation={onUndoPlanCancellation}
+              pendingPlanChange={pendingPlanChange}
+              subscription={billingUsageData.subscription}
+            />
           </div>
         </div>
       </DialogContent>

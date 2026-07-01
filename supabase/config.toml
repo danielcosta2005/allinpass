@@ -420,6 +420,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/billing-finalize-plan-change/index.ts"
 
+[functions.billing-manage-plan-cancellation]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-manage-plan-cancellation/index.ts"
+
 [functions.billing-close-cycles]
 enabled = true
 verify_jwt = false

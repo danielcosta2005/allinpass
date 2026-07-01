@@ -42,6 +42,7 @@ const RestaurantDashboard = () => {
   const {
     billingSubscription,
     planChangeOptions,
+    pendingPlanChange,
     isTrialExpired,
     isBillingSuspended,
     isBillingPastDue,
@@ -53,8 +54,11 @@ const RestaurantDashboard = () => {
     planChangeOpen,
     setPlanChangeOpen,
     billingActionPlanCode,
+    planCancellationAction,
     billingPlanName,
     handleStartPlanChange,
+    handleSchedulePlanCancellation,
+    handleUndoPlanCancellation,
   } = useRestaurantBilling({ projectId, toast, user });
 
   const {
@@ -234,8 +238,8 @@ const RestaurantDashboard = () => {
     } catch (e) {
       console.error('[logout] erro ao sair', e);
       toast({
-        title: 'Nao foi possivel sair agora',
-        description: 'Tente novamente. Se persistir, recarregue a pagina.',
+        title: 'Não foi possível sair agora',
+        description: 'Tente novamente. Se persistir, recarregue a página.',
         variant: 'destructive',
       });
     } finally {
@@ -260,7 +264,7 @@ const RestaurantDashboard = () => {
         onBrandClick={() => handleTabChange('kpis')}
         onNavigate={handleDashboardNavigate}
         statusNotice={isBillingSuspended && billingSuspensionDismissed
-          ? 'Regularize a cobranca pendente para liberar as acoes operacionais.'
+          ? 'Regularize a cobrança pendente para liberar as ações operacionais.'
           : null}
       >
         <BillingPlanDialog
@@ -276,8 +280,13 @@ const RestaurantDashboard = () => {
         />
 
         <BillingDashboardDialog
+          canManageBilling={canManageBilling}
+          onSchedulePlanCancellation={handleSchedulePlanCancellation}
           onOpenChange={setBillingDashboardOpen}
+          onUndoPlanCancellation={handleUndoPlanCancellation}
           open={billingDashboardOpen}
+          pendingPlanChange={pendingPlanChange}
+          planCancellationAction={planCancellationAction}
           projectId={projectId}
         />
 

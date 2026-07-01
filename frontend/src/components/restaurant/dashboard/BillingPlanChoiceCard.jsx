@@ -86,11 +86,11 @@ const getPlanCardTone = (plan) => {
 
 const getPlanChangeHint = (plan) => {
   if (plan?.isCurrent) return 'Ativo agora';
-  if (plan?.isPendingPlanChange) return 'Agendado para proximo ciclo';
+  if (plan?.isPendingPlanChange) return 'Agendado para próximo ciclo';
   if (plan?.changeKind === 'downgrade') return 'Menor mensalidade';
   if (plan?.changeKind === 'upgrade') return 'Mais capacidade';
-  if (plan?.changeKind === 'trial_conversion') return 'Ativacao paga';
-  return 'Troca disponivel';
+  if (plan?.changeKind === 'trial_conversion') return 'Ativação paga';
+  return 'Troca disponível';
 };
 
 function BillingPlanChoiceCard({
@@ -108,7 +108,7 @@ function BillingPlanChoiceCard({
   const isActionDisabled = disabled || !plan.isSelectable;
   const actionLabel = plan.actionLabel || (
     plan.isPendingPlanChange
-      ? 'Downgrade ja agendado'
+      ? 'Downgrade já agendado'
       : plan.changeKind === 'downgrade'
         ? 'Fazer downgrade'
         : 'Trocar plano'
@@ -117,7 +117,7 @@ function BillingPlanChoiceCard({
   const priceLabel = hasZeroTrialPrice
     ? `${plan.trialDays || 7} dias`
     : formatCurrencyBRL(plan.price).replace(/^R\$\s?/, '');
-  const suffixLabel = hasZeroTrialPrice ? 'gratis' : '/mes';
+  const suffixLabel = hasZeroTrialPrice ? 'grátis' : '/mês';
 
   return (
     <div className={`relative flex h-full min-h-[520px] flex-col rounded-2xl border p-6 transition-all duration-300 ${tone.wrapper}`}>
