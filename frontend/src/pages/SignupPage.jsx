@@ -14,6 +14,12 @@ import {
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import {
+  trackSignupCompleted,
+  trackSignupPaymentInfoAdded,
+  trackSignupPurchaseCompleted,
+  trackSignupTrialStarted,
+} from '@/lib/signupPixelEvents';
+import {
   PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS,
   PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
   clearExistingCustomerSignupContext,
@@ -235,6 +241,40 @@ function SignupPage() {
     return result;
   }, [refreshAuthProfile]);
 
+  const findTrackedPlan = useCallback((planCode) => {
+    const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
+    return availablePlans.find((plan) => plan.code === normalizedPlanCode) || selectedPlan;
+  }, [availablePlans, selectedPlan]);
+
+  const trackSignupFinalization = useCallback(({
+    result,
+    planCode,
+    checkoutSessionId = '',
+    source,
+  }) => {
+    const finalizedPlanCode = String(
+      result?.plan?.code || planCode || selectedPlan?.code || 'free_trial'
+    ).trim().toLowerCase();
+    const trackedPlan = findTrackedPlan(finalizedPlanCode);
+    const trackingPayload = {
+      source,
+      plan: trackedPlan,
+      planCode: finalizedPlanCode,
+      planName: result?.plan?.name,
+      projectId: result?.project?.id,
+      subscriptionId: result?.subscription?.id,
+      checkoutSessionId: result?.checkout?.id || checkoutSessionId,
+    };
+
+    trackSignupCompleted(trackingPayload);
+
+    if (finalizedPlanCode === 'free_trial') {
+      trackSignupTrialStarted(trackingPayload);
+    } else {
+      trackSignupPurchaseCompleted(trackingPayload);
+    }
+  }, [findTrackedPlan, selectedPlan]);
+
   const buildSignupEmailRedirectTo = useCallback((metadata = {}) => {
     const planCode = String(metadata.planCode || selectedPlan?.code || 'free_trial').trim().toLowerCase();
     const params = new URLSearchParams({
@@ -445,10 +485,15 @@ function SignupPage() {
         return;
       }
 
-      await provisionSignup({
+      const result = await provisionSignup({
         establishmentName: signupContext.establishmentName,
         planCode: signupContext.planCode,
         userId: data?.session?.user?.id || data?.user?.id,
+      });
+      trackSignupFinalization({
+        result,
+        planCode: signupContext.planCode,
+        source: 'signup_create_password',
       });
       setFinishedFlow('trial');
     } catch (error) {
@@ -658,6 +703,14 @@ function SignupPage() {
       const checkout = await startPaidSignupCheckout({
         establishmentName,
         planCode,
+      });
+
+      trackSignupPaymentInfoAdded({
+        source: 'signup_payment_step',
+        plan: findTrackedPlan(planCode),
+        planCode,
+        checkoutSessionId: checkout.checkout_session_id,
+        providerCheckoutId: checkout.provider_checkout_id,
       });
 
       window.location.assign(checkout.checkout_url);
@@ -879,6 +932,14 @@ function SignupPage() {
         if (finalizedPlanCode) {
           setResolvedPlanCode(finalizedPlanCode);
         }
+        trackSignupFinalization({
+          result,
+          planCode: finalizedPlanCode || planCode,
+          checkoutSessionId: checkoutSessionIdFromRedirect,
+          source: isPaidFinalize
+            ? 'signup_paid_checkout_return'
+            : 'signup_email_confirmation',
+        });
         const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
         const passwordSetupRequired = Boolean(result?.auth?.password_setup_required);
         const existingCustomerPasswordReadyBeforeFinalize = isExistingCustomerSignupPasswordReady({
@@ -923,6 +984,7 @@ function SignupPage() {
     searchParams,
     shouldFinalizeFromRedirect,
     toast,
+    trackSignupFinalization,
   ]);
 
   useEffect(() => {

@@ -71,6 +71,8 @@ describe("signup paid checkout recovery", () => {
     expect(recoveryHookSource).toContain("getSignupStatus");
     expect(recoveryHookSource).toContain("startPaidSignupCheckout");
     expect(recoveryHookSource).toContain("finalizeSignup");
+    expect(recoveryHookSource).toContain("trackSignupPaymentInfoAdded");
+    expect(recoveryHookSource).toContain("trackSignupPurchaseCompleted");
     expect(recoveryHookSource).toContain("PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS");
     expect(noProjectStateSource).toContain("payment_pending");
     expect(noProjectStateSource).toContain("Continuar pagamento");

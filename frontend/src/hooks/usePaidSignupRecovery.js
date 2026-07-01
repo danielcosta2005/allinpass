@@ -5,6 +5,11 @@ import {
   getSignupStatus,
   startPaidSignupCheckout,
 } from '@/lib/signup';
+import {
+  trackSignupCompleted,
+  trackSignupPaymentInfoAdded,
+  trackSignupPurchaseCompleted,
+} from '@/lib/signupPixelEvents';
 
 export function usePaidSignupRecovery({
   projectId,
@@ -100,6 +105,14 @@ export function usePaidSignupRecovery({
 
     try {
       const checkout = await startPaidSignupCheckout({ establishmentName, planCode });
+      trackSignupPaymentInfoAdded({
+        source: 'org_paid_signup_recovery',
+        planCode,
+        checkoutSessionId: checkout.checkout_session_id,
+        providerCheckoutId: checkout.provider_checkout_id,
+        valueCents: signupStatus?.amountCents,
+        currency: signupStatus?.currency || 'BRL',
+      });
       window.location.assign(checkout.checkout_url);
     } catch (error) {
       const message = error?.message || 'Nao foi possivel iniciar o checkout.';
@@ -111,7 +124,13 @@ export function usePaidSignupRecovery({
       });
       setSignupActionLoading(false);
     }
-  }, [resolvePendingSignupData, signupActionLoading, toast]);
+  }, [
+    resolvePendingSignupData,
+    signupActionLoading,
+    signupStatus?.amountCents,
+    signupStatus?.currency,
+    toast,
+  ]);
 
   const handleFinalizeActivation = useCallback(async () => {
     if (signupActionLoading) return;
@@ -131,13 +150,26 @@ export function usePaidSignupRecovery({
     setSignupActionLoading(true);
 
     try {
-      await finalizeSignup({
+      const result = await finalizeSignup({
         establishmentName,
         planCode,
         checkoutSessionId,
         dedupeKey: `org-finalize:${planCode}:${checkoutSessionId}`,
         retryDelaysMs: PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
       });
+      const trackingPayload = {
+        source: 'org_paid_signup_recovery',
+        planCode: result?.plan?.code || planCode,
+        planName: result?.plan?.name,
+        projectId: result?.project?.id,
+        subscriptionId: result?.subscription?.id,
+        checkoutSessionId: result?.checkout?.id || checkoutSessionId,
+        valueCents: signupStatus?.amountCents,
+        currency: signupStatus?.currency || 'BRL',
+      };
+
+      trackSignupCompleted(trackingPayload);
+      trackSignupPurchaseCompleted(trackingPayload);
 
       toast({
         title: 'Conta ativada',
@@ -154,7 +186,14 @@ export function usePaidSignupRecovery({
       });
       setSignupActionLoading(false);
     }
-  }, [resolvePendingSignupData, signupActionLoading, signupStatus?.checkoutSessionId, toast]);
+  }, [
+    resolvePendingSignupData,
+    signupActionLoading,
+    signupStatus?.amountCents,
+    signupStatus?.checkoutSessionId,
+    signupStatus?.currency,
+    toast,
+  ]);
 
   return {
     signupStatus,

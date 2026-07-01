@@ -131,30 +131,38 @@ export const resetConsent = () => {
   notify();
 };
 
-const canTrack = () => isFbqReady() && pixelInitialized && getConsentState() === 'accepted';
+const canTrack = () => {
+  if (getConsentState() !== 'accepted') return false;
+  initPixel();
+  return isFbqReady() && pixelInitialized;
+};
 
 export const trackStandard = (eventName, params) => {
-  if (!canTrack()) return;
+  if (!canTrack()) return false;
   try {
     if (params) {
       window.fbq('track', eventName, params);
     } else {
       window.fbq('track', eventName);
     }
+    return true;
   } catch {
     // pixel may be blocked or stub still loading — ignore silently
+    return false;
   }
 };
 
 export const trackCustom = (eventName, params) => {
-  if (!canTrack()) return;
+  if (!canTrack()) return false;
   try {
     if (params) {
       window.fbq('trackCustom', eventName, params);
     } else {
       window.fbq('trackCustom', eventName);
     }
+    return true;
   } catch {
     // see trackStandard
+    return false;
   }
 };
