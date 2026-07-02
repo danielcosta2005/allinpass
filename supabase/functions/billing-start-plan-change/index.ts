@@ -75,7 +75,7 @@ function requiredEnv(name: string) {
   if (!value) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_MISSING_ENV",
-      `Variavel ${name} ausente.`,
+      `Variável ${name} ausente.`,
       500,
     );
   }
@@ -259,7 +259,7 @@ async function resolveAsaasSubscriptionId({
   if (!customerId) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_ASAAS_SUBSCRIPTION_NOT_FOUND",
-      "Nao encontramos o cliente da assinatura no Asaas para atualizar o plano.",
+      "Não encontramos o cliente da assinatura no Asaas para atualizar o plano.",
       409,
     );
   }
@@ -280,7 +280,7 @@ async function resolveAsaasSubscriptionId({
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = getAsaasErrorMessage(body) || "Nao foi possivel localizar a assinatura no Asaas.";
+    const message = getAsaasErrorMessage(body) || "Não foi possível localizar a assinatura no Asaas.";
     throw new BillingPlanChangeError("BILLING_PLAN_CHANGE_ASAAS_ERROR", message, 502);
   }
 
@@ -288,7 +288,7 @@ async function resolveAsaasSubscriptionId({
   if (!providerSubscriptionId) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_ASAAS_SUBSCRIPTION_NOT_FOUND",
-      "Nao encontramos uma assinatura ativa no Asaas para atualizar este plano.",
+      "Não encontramos uma assinatura ativa no Asaas para atualizar este plano.",
       409,
     );
   }
@@ -312,7 +312,7 @@ async function requireOwnerMembership(
   if (!data) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_PROJECT_NOT_FOUND",
-      "Projeto nao encontrado para este usuario.",
+      "Projeto não encontrado para este usuário.",
       404,
     );
   }
@@ -320,7 +320,7 @@ async function requireOwnerMembership(
   if (data.role !== "owner") {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_OWNER_REQUIRED",
-      "Apenas o proprietario do projeto pode alterar o plano.",
+      "Apenas o proprietário do projeto pode alterar o plano.",
       403,
     );
   }
@@ -362,7 +362,7 @@ async function getCurrentSubscription(
   if (!data) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_SUBSCRIPTION_NOT_FOUND",
-      "Assinatura nao encontrada para este projeto.",
+      "Assinatura não encontrada para este projeto.",
       404,
     );
   }
@@ -399,7 +399,7 @@ async function getTargetPlan(
   if (!plan) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_TARGET_PLAN_NOT_FOUND",
-      "Plano ativo nao encontrado.",
+      "Plano ativo não encontrado.",
       404,
     );
   }
@@ -608,7 +608,7 @@ async function createPlanChangeCheckout({
 
   const asaasBody = await asaasResponse.json().catch(() => ({}));
   if (!asaasResponse.ok) {
-    const message = getAsaasErrorMessage(asaasBody) || "Nao foi possivel criar o checkout de mudanca de plano.";
+    const message = getAsaasErrorMessage(asaasBody) || "Não foi possível criar o checkout de mudança de plano.";
     await supabaseAdmin
       .from("billing_plan_change_sessions")
       .update({
@@ -629,7 +629,7 @@ async function createPlanChangeCheckout({
   if (!providerCheckoutId) {
     throw new BillingPlanChangeError(
       "BILLING_PLAN_CHANGE_ASAAS_MISSING_ID",
-      "Asaas nao retornou o ID do checkout.",
+      "Asaas não retornou o ID do checkout.",
       502,
     );
   }
@@ -722,7 +722,7 @@ async function updateAsaasSubscription({
 
   const asaasBody = await asaasResponse.json().catch(() => ({}));
   if (!asaasResponse.ok) {
-    const message = getAsaasErrorMessage(asaasBody) || "Nao foi possivel atualizar a assinatura no Asaas.";
+    const message = getAsaasErrorMessage(asaasBody) || "Não foi possível atualizar a assinatura no Asaas.";
     throw new BillingPlanChangeError("BILLING_PLAN_CHANGE_ASAAS_ERROR", message, 502);
   }
 
@@ -876,7 +876,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return errorResponse(
       origin,
-      new BillingPlanChangeError("BILLING_PLAN_CHANGE_METHOD_NOT_ALLOWED", "Metodo nao permitido.", 405),
+      new BillingPlanChangeError("BILLING_PLAN_CHANGE_METHOD_NOT_ALLOWED", "Método não permitido.", 405),
     );
   }
 
@@ -889,7 +889,7 @@ Deno.serve(async (req) => {
     if (!authHeader.startsWith("Bearer ")) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_MISSING_AUTHORIZATION",
-        "Sessao obrigatoria para alterar o plano.",
+        "Sessão obrigatória para alterar o plano.",
         401,
       );
     }
@@ -907,7 +907,7 @@ Deno.serve(async (req) => {
     if (userError || !user) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_INVALID_SESSION",
-        "Sessao invalida ou expirada.",
+        "Sessão inválida ou expirada.",
         401,
       );
     }
@@ -935,7 +935,7 @@ Deno.serve(async (req) => {
     if (planCode === FREE_PLAN_CODE) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_UNSUPPORTED_PLAN",
-        "Free trial nao pode ser destino de mudanca de plano.",
+        "Free trial não pode ser destino de mudança de plano.",
         400,
       );
     }
@@ -967,10 +967,18 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (subscription.status === "past_due") {
+      throw new BillingPlanChangeError(
+        "BILLING_PLAN_CHANGE_PAST_DUE_REQUIRES_PAYMENT",
+        "Regularize a cobrança pendente antes de alterar o plano.",
+        409,
+      );
+    }
+
     if (subscription.plan_id === targetPlan.id) {
       throw new BillingPlanChangeError(
         "BILLING_PLAN_CHANGE_ALREADY_ON_PLAN",
-        "Este projeto ja esta neste plano.",
+        "Este projeto já está neste plano.",
         409,
       );
     }

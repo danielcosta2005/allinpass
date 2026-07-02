@@ -4,6 +4,7 @@ import { Users, Plus, Loader2, Edit, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
@@ -164,14 +165,14 @@ const MembersTab = ({ projectId }) => {
         </Button>
       </div>
       
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white rounded-2xl p-6 shadow-lg border border-purple-100">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
         <h3 className="text-lg font-bold mb-4">Membros do Projeto</h3>
         {loading ? (
           <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
         ) : members.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-6 py-3">Email</th>
                   <th scope="col" className="px-6 py-3">Papel</th>
@@ -182,7 +183,7 @@ const MembersTab = ({ projectId }) => {
               <tbody>
                 {members.map(member => (
                     
-                    <tr key={member.user_id} className="bg-white border-b">
+                    <tr key={member.user_id} className="border-b border-border bg-card">
                     <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
                     <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
                     <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
@@ -196,7 +197,7 @@ const MembersTab = ({ projectId }) => {
             </table>
           </div>
         ) : (
-          <p className="text-gray-600 text-center mt-4">Nenhum membro neste projeto.</p>
+          <p className="text-muted-foreground text-center mt-4">Nenhum membro neste projeto.</p>
         )}
       </motion.div>
 
@@ -206,10 +207,20 @@ const MembersTab = ({ projectId }) => {
           <form onSubmit={handleCreateMember} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={createForm.email} onChange={handleCreateFormChange} required disabled={isSubmitting}/></div>
             <div className="space-y-2"><Label htmlFor="password">Senha (Opcional)</Label><Input id="password" type="password" placeholder="Deixe em branco para enviar convite" value={createForm.password} onChange={handleCreateFormChange} disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
-              <select id="role" value={createForm.role} onChange={handleCreateFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
-              </select>
+            <div className="space-y-2"><Label htmlFor="create-role">Papel</Label>
+              <Select
+                value={createForm.role}
+                onValueChange={(value) => setCreateForm((prev) => ({ ...prev, role: value }))}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger id="create-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner">Gestor</SelectItem>
+                  <SelectItem value="staff">Funcionário</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Criar</Button></DialogFooter>
           </form>
@@ -221,10 +232,20 @@ const MembersTab = ({ projectId }) => {
           <DialogHeader><DialogTitle>Editar Membro</DialogTitle><DialogDescription>{memberToEdit?.email}</DialogDescription></DialogHeader>
           <form onSubmit={handleUpdateMember} className="space-y-4">
             <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
-              <select id="role" value={editForm.role} onChange={handleEditFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
-              </select>
+            <div className="space-y-2"><Label htmlFor="edit-role">Papel</Label>
+              <Select
+                value={editForm.role}
+                onValueChange={(value) => setEditForm((prev) => ({ ...prev, role: value }))}
+                disabled={isSubmitting}
+              >
+                <SelectTrigger id="edit-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner">Gestor</SelectItem>
+                  <SelectItem value="staff">Funcionário</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Salvar</Button></DialogFooter>
           </form>

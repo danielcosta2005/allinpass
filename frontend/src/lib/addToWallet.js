@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
+import { buildFunctionError } from '@/lib/functionErrors';
 
 export async function addToWallet(user) {
   const { projectId, googleSub, email, name, platform } = user;
@@ -7,7 +8,7 @@ export async function addToWallet(user) {
     throw new Error("Dados insuficientes para gerar o passe.");
   }
 
-  const { data, error } = await supabase.functions.invoke('generate-pass', {
+  const { data, error, response } = await supabase.functions.invoke('generate-pass', {
     body: {
       projectId,
       platform,
@@ -18,7 +19,7 @@ export async function addToWallet(user) {
   });
 
   if (error) {
-    throw new Error(`Erro ao invocar a Edge Function: ${error.message}`);
+    throw await buildFunctionError(error, response, 'Erro ao gerar o passe.');
   }
 
   if (data.error) {

@@ -1,5 +1,5 @@
 export const PROJECT_BILLING_INACTIVE = "PROJECT_BILLING_INACTIVE";
-export const PROJECT_BILLING_INACTIVE_MESSAGE = "Trial encerrado. Assine um plano para continuar.";
+export const PROJECT_BILLING_INACTIVE_MESSAGE = "Plano inativo. Regularize sua assinatura para continuar.";
 export const PROJECT_USAGE_LIMIT_EXCEEDED = "PROJECT_USAGE_LIMIT_EXCEEDED";
 export const PROJECT_USAGE_LIMIT_EXCEEDED_MESSAGE = "Franquia do free trial esgotada. Assine um plano para continuar.";
 

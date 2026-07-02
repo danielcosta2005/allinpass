@@ -5,13 +5,23 @@ import {
   getPendingBillingPlanChange,
   getBillingSubscriptionForAccess,
   getPlanChangeOptions,
+  isBillingCanceled,
+  isBillingPastDue,
+  isBillingSuspended,
   isTrialExpired as isTrialExpiredSubscription,
+  reactivateBillingSubscription,
+  scheduleBillingPlanCancellation,
+  startBillingPaymentRecovery,
   startBillingPlanChange,
+  undoBillingPlanCancellation,
 } from '@/lib/billing';
 import { supabase } from '@/lib/supabaseClient';
 
 const getBillingAccessState = (subscription) => {
   if (isTrialExpiredSubscription(subscription)) return 'trial_expired';
+  if (isBillingCanceled(subscription)) return 'canceled';
+  if (isBillingSuspended(subscription)) return 'suspended';
+  if (isBillingPastDue(subscription)) return 'past_due';
   if (subscription) return 'active';
   return 'missing';
 };
@@ -54,8 +64,8 @@ const getPlanChangeSuccessToast = ({ plan, result }) => {
     return {
       title: 'Downgrade agendado',
       description: plan?.name
-        ? `Seu plano atual continua ativo ate o fim do ciclo. O plano ${plan.name} sera aplicado automaticamente no proximo ciclo.`
-        : 'Seu plano atual continua ativo ate o fim do ciclo. O novo plano sera aplicado automaticamente no proximo ciclo.',
+        ? `Seu plano atual continua ativo até o fim do ciclo. O plano ${plan.name} será aplicado automaticamente no próximo ciclo.`
+        : 'Seu plano atual continua ativo até o fim do ciclo. O novo plano será aplicado automaticamente no próximo ciclo.',
     };
   }
 
@@ -63,7 +73,7 @@ const getPlanChangeSuccessToast = ({ plan, result }) => {
     title: 'Plano atualizado',
     description: plan?.name
       ? `Seu projeto agora usa o plano ${plan.name}.`
-      : 'A mudanca de plano foi aplicada ao projeto.',
+      : 'A mudança de plano foi aplicada ao projeto.',
   };
 };
 
@@ -75,9 +85,16 @@ export function useRestaurantBilling({ projectId, toast, user }) {
   const [billingError, setBillingError] = useState('');
   const [planChangeOpen, setPlanChangeOpen] = useState(false);
   const [billingActionPlanCode, setBillingActionPlanCode] = useState('');
+  const [planCancellationAction, setPlanCancellationAction] = useState('');
+  const [billingReactivationAction, setBillingReactivationAction] = useState(false);
+  const [billingPaymentRecoveryAction, setBillingPaymentRecoveryAction] = useState(false);
+  const [pendingPlanChange, setPendingPlanChange] = useState(null);
 
   const billingAccessState = getBillingAccessState(billingSubscription);
   const isTrialExpired = billingAccessState === 'trial_expired';
+  const isBillingCanceledState = billingAccessState === 'canceled';
+  const isBillingSuspendedState = billingAccessState === 'suspended';
+  const isBillingPastDueState = billingAccessState === 'past_due';
   const canManageBilling = memberRole === 'owner';
   const billingPlanName = billingLoading && !billingSubscription
     ? 'Carregando plano'
@@ -88,6 +105,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError('');
       setBillingLoading(false);
       return null;
@@ -101,12 +119,14 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(data.subscription);
       setPlanChangeOptions(data.planChangeOptions);
       setMemberRole(data.memberRole);
+      setPendingPlanChange(data.pendingPlanChange);
       return data.subscription;
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel carregar o plano atual.';
+      const message = error?.message || 'Não foi possível carregar o plano atual.';
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError(message);
       return null;
     } finally {
@@ -119,6 +139,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setBillingSubscription(null);
       setPlanChangeOptions([]);
       setMemberRole(null);
+      setPendingPlanChange(null);
       setBillingError('');
       setBillingLoading(false);
       return undefined;
@@ -134,13 +155,15 @@ export function useRestaurantBilling({ projectId, toast, user }) {
         setBillingSubscription(data.subscription);
         setPlanChangeOptions(data.planChangeOptions);
         setMemberRole(data.memberRole);
+        setPendingPlanChange(data.pendingPlanChange);
       })
       .catch((error) => {
         if (cancelled) return;
         setBillingSubscription(null);
         setPlanChangeOptions([]);
         setMemberRole(null);
-        setBillingError(error?.message || 'Nao foi possivel carregar o plano atual.');
+        setPendingPlanChange(null);
+        setBillingError(error?.message || 'Não foi possível carregar o plano atual.');
       })
       .finally(() => {
         if (!cancelled) setBillingLoading(false);
@@ -172,8 +195,8 @@ export function useRestaurantBilling({ projectId, toast, user }) {
 
     if (planChangeStatus !== 'success') {
       toast({
-        title: planChangeStatus === 'expired' ? 'Checkout expirado' : 'Mudanca nao concluida',
-        description: 'Voce pode abrir a selecao de planos e tentar novamente.',
+        title: planChangeStatus === 'expired' ? 'Checkout expirado' : 'Mudança não concluída',
+        description: 'Você pode abrir a seleção de planos e tentar novamente.',
         variant: planChangeStatus === 'expired' ? 'destructive' : undefined,
       });
       clearPlanChangeParams();
@@ -191,10 +214,10 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       })
       .catch((error) => {
         if (cancelled) return;
-        setBillingError(error?.message || 'Nao foi possivel finalizar a mudanca de plano.');
+        setBillingError(error?.message || 'Não foi possível finalizar a mudança de plano.');
         toast({
-          title: 'Mudanca pendente',
-          description: error?.message || 'Aguarde a confirmacao do pagamento e atualize o painel.',
+          title: 'Mudança pendente',
+          description: error?.message || 'Aguarde a confirmação do pagamento e atualize o painel.',
           variant: 'destructive',
         });
       })
@@ -229,7 +252,7 @@ export function useRestaurantBilling({ projectId, toast, user }) {
       setPlanChangeOpen(false);
       toast(getPlanChangeSuccessToast({ plan, result }));
     } catch (error) {
-      const message = error?.message || 'Nao foi possivel iniciar a mudanca de plano.';
+      const message = error?.message || 'Não foi possível iniciar a mudança de plano.';
       setBillingError(message);
       toast({
         title: 'Erro ao alterar plano',
@@ -241,10 +264,129 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     }
   }, [billingActionPlanCode, projectId, refreshBillingState, toast]);
 
+  const handleSchedulePlanCancellation = useCallback(async () => {
+    if (!projectId || !canManageBilling || planCancellationAction) return;
+
+    setPlanCancellationAction('schedule');
+    setBillingError('');
+
+    try {
+      const result = await scheduleBillingPlanCancellation({ projectId });
+      await refreshBillingState();
+      toast({
+        title: result?.already_scheduled ? 'Cancelamento já agendado' : 'Cancelamento agendado',
+        description: 'Seu plano continua ativo até o fim do período de cobrança.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível agendar o cancelamento do plano.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao cancelar plano',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPlanCancellationAction('');
+    }
+  }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
+
+  const handleUndoPlanCancellation = useCallback(async () => {
+    if (!projectId || !canManageBilling || planCancellationAction) return;
+
+    setPlanCancellationAction('undo');
+    setBillingError('');
+
+    try {
+      await undoBillingPlanCancellation({ projectId });
+      await refreshBillingState();
+      toast({
+        title: 'Assinatura mantida',
+        description: 'O cancelamento agendado foi desfeito.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível desfazer o cancelamento do plano.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao manter assinatura',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPlanCancellationAction('');
+    }
+  }, [canManageBilling, planCancellationAction, projectId, refreshBillingState, toast]);
+
+  const handleReactivateBillingSubscription = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingReactivationAction) return;
+
+    setBillingReactivationAction(true);
+    setBillingError('');
+
+    try {
+      await reactivateBillingSubscription({ projectId });
+      await refreshBillingState();
+      toast({
+        title: 'Assinatura reativada',
+        description: 'Seu projeto voltou ao plano ativo e um novo ciclo de cobrança foi iniciado.',
+      });
+    } catch (error) {
+      const message = error?.message || 'Não foi possível reativar a assinatura.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao reativar assinatura',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingReactivationAction(false);
+    }
+  }, [billingReactivationAction, canManageBilling, projectId, refreshBillingState, toast]);
+
+  const handleStartBillingPaymentRecovery = useCallback(async () => {
+    if (!projectId || !canManageBilling || billingPaymentRecoveryAction) return;
+
+    setBillingPaymentRecoveryAction(true);
+    setBillingError('');
+
+    try {
+      const result = await startBillingPaymentRecovery({ projectId });
+
+      if (result?.already_paid) {
+        await refreshBillingState();
+        toast({
+          title: 'Pagamento já identificado',
+          description: 'Aguarde a confirmação do pagamento pelo Asaas e atualize o painel.',
+        });
+        return;
+      }
+
+      if (result?.invoice_url) {
+        window.location.assign(result.invoice_url);
+        return;
+      }
+
+      throw new Error('Não foi possível abrir a fatura pendente.');
+    } catch (error) {
+      const message = error?.message || 'Não foi possível iniciar a regularização do pagamento.';
+      setBillingError(message);
+      toast({
+        title: 'Erro ao regularizar pagamento',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setBillingPaymentRecoveryAction(false);
+    }
+  }, [billingPaymentRecoveryAction, canManageBilling, projectId, refreshBillingState, toast]);
+
   return {
     billingSubscription,
     planChangeOptions,
+    pendingPlanChange,
     isTrialExpired,
+    isBillingCanceled: isBillingCanceledState,
+    isBillingSuspended: isBillingSuspendedState,
+    isBillingPastDue: isBillingPastDueState,
     billingAccessState,
     memberRole,
     canManageBilling,
@@ -253,7 +395,14 @@ export function useRestaurantBilling({ projectId, toast, user }) {
     planChangeOpen,
     setPlanChangeOpen,
     billingActionPlanCode,
+    planCancellationAction,
+    billingReactivationAction,
+    billingPaymentRecoveryAction,
     billingPlanName,
     handleStartPlanChange,
+    handleSchedulePlanCancellation,
+    handleUndoPlanCancellation,
+    handleReactivateBillingSubscription,
+    handleStartBillingPaymentRecovery,
   };
 }

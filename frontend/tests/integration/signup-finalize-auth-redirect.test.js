@@ -97,4 +97,29 @@ describe("signup finalize auth redirect", () => {
     expect(signupClientSource).toContain("SIGNUP_FINALIZE_PAYMENT_NOT_CONFIRMED");
     expect(signupClientSource).toContain("retryDelaysMs");
   });
+
+  test("signup finalization emits Meta Pixel registration and purchase events", () => {
+    const signupPageSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
+      "utf8"
+    );
+    const pixelEventsSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/lib/signupPixelEvents.js"),
+      "utf8"
+    );
+
+    expect(signupPageSource).toContain("trackSignupFinalization");
+    expect(signupPageSource).toContain("trackSignupCompleted");
+    expect(signupPageSource).toContain("trackSignupTrialStarted");
+    expect(signupPageSource).toContain("trackSignupPaymentInfoAdded");
+    expect(signupPageSource).toContain("trackSignupPurchaseCompleted");
+    expect(signupPageSource).toContain("signup_paid_checkout_return");
+    expect(signupPageSource).toContain("signup_email_confirmation");
+    expect(pixelEventsSource).toContain("CompleteRegistration");
+    expect(pixelEventsSource).toContain("StartTrial");
+    expect(pixelEventsSource).toContain("AddPaymentInfo");
+    expect(pixelEventsSource).toContain("Purchase");
+    expect(pixelEventsSource).toContain("plan_code");
+    expect(pixelEventsSource).toContain("SIGNUP_PIXEL_EVENTS_STORAGE_KEY");
+  });
 });

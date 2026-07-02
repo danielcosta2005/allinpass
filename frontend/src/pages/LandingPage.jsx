@@ -11,6 +11,7 @@ import {
 import ConsentBanner from '@/components/landing/ConsentBanner';
 import PrivacyPolicyModal from '@/components/landing/PrivacyPolicyModal';
 import { useToast } from '@/components/ui/use-toast';
+import { resolveAffiliateRef } from '@/lib/affiliates';
 import {
   Wallet,
   Smartphone,
@@ -24,6 +25,7 @@ import {
   ArrowRight,
   ChevronDown,
   Apple,
+  BadgePercent,
   Users,
   LogIn,
   LayoutDashboard,
@@ -34,6 +36,8 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
   buildSignupPath,
   fetchSubscriptionPlans,
+  formatAffiliateDiscountPercent,
+  normalizeAffiliateRef,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
@@ -648,7 +652,12 @@ const HowItWorks = () => {
   );
 };
 
-const Pricing = ({ plans }) => {
+const Pricing = ({ plans, affiliateOffer = null }) => {
+  const affiliateRef = affiliateOffer?.valid ? affiliateOffer.code : '';
+  const affiliateDiscountPercent = affiliateOffer?.valid
+    ? formatAffiliateDiscountPercent(affiliateOffer)
+    : '';
+
   return (
     <section id="planos" className="scroll-mt-20 py-24 sm:py-32">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
@@ -669,6 +678,17 @@ const Pricing = ({ plans }) => {
           <motion.p variants={fadeUp} className="mt-4 text-lg text-gray-600">
             Comece pequeno, escale quando quiser. Sem fidelidade, sem multas, sem surpresas.
           </motion.p>
+          {affiliateOffer?.valid ? (
+            <motion.div
+              variants={fadeUp}
+              className="mt-5 inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200"
+            >
+              <BadgePercent className="h-4 w-4" />
+              <span>
+                Condição especial aplicada: {affiliateDiscountPercent}% de desconto no primeiro mês pelo link de vendedor.
+              </span>
+            </motion.div>
+          ) : null}
         </motion.div>
 
         <motion.div
@@ -687,7 +707,8 @@ const Pricing = ({ plans }) => {
             >
               <PlanCard
                 plan={p}
-                ctaTo={buildSignupPath(p.key)}
+                ctaTo={buildSignupPath(p.key, { ref: affiliateRef })}
+                affiliateOffer={p.type === 'paid' ? affiliateOffer : null}
                 onCtaClick={() => {
                   trackStandard('InitiateCheckout', {
                     value: Number(p.price) || 0,
@@ -700,6 +721,7 @@ const Pricing = ({ plans }) => {
                     plan_code: p.code,
                     plan_name: p.name,
                     plan_price: Number(p.price) || 0,
+                    affiliate_ref_present: Boolean(affiliateRef),
                   });
                 }}
               />
@@ -930,6 +952,7 @@ const Footer = ({ onOpenPrivacy, onResetCookies }) => {
 
 const LandingPage = () => {
   const [plans, setPlans] = useState(subscriptionPlans);
+  const [affiliateOffer, setAffiliateOffer] = useState({ valid: false, code: '', discountBps: 0 });
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const viewContentFiredRef = useRef(false);
   const scrollMilestonesRef = useRef(new Set());
@@ -937,6 +960,33 @@ const LandingPage = () => {
 
   useEffect(() => {
     initPixelIfConsented();
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const rawRef = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('ref')
+      : '';
+    const normalizedRef = normalizeAffiliateRef(rawRef);
+
+    if (!normalizedRef) {
+      setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const loadAffiliateOffer = async () => {
+      const result = await resolveAffiliateRef(normalizedRef);
+      if (!mounted) return;
+      setAffiliateOffer(result?.valid ? result : { valid: false, code: '', discountBps: 0 });
+    };
+
+    loadAffiliateOffer();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const handleResetCookies = () => {
@@ -1028,7 +1078,7 @@ const LandingPage = () => {
           <TrustBar />
           <Features />
           <HowItWorks />
-          <Pricing plans={plans} />
+          <Pricing plans={plans} affiliateOffer={affiliateOffer} />
           <FAQ />
           <FinalCTA />
         </main>

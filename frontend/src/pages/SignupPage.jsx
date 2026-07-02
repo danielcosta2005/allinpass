@@ -11,8 +11,15 @@ import {
   fetchSubscriptionPlans,
   findPlanByKey,
   isPaidPlan,
+  normalizeAffiliateRef,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
+import {
+  trackSignupCompleted,
+  trackSignupPaymentInfoAdded,
+  trackSignupPurchaseCompleted,
+  trackSignupTrialStarted,
+} from '@/lib/signupPixelEvents';
 import {
   PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS,
   PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,
@@ -29,6 +36,7 @@ import {
   getTurnstileSiteKey,
   shouldUseSignupCaptcha,
 } from '@/lib/turnstileConfig';
+import { resolveAffiliateRef } from '@/lib/affiliates';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
@@ -69,6 +77,20 @@ function SignupPage() {
   const existingCustomerSignupContext = readExistingCustomerSignupContext();
   const contextPlanKey = String(existingCustomerSignupContext?.planKey || '').trim();
   const contextPlanCode = String(existingCustomerSignupContext?.planCode || '').trim().toLowerCase();
+  const currentAffiliateRef = useMemo(
+    () => normalizeAffiliateRef(
+      searchParams.get('ref')
+        || existingCustomerSignupContext?.affiliateRef
+        || authSession?.user?.user_metadata?.affiliate_ref
+        || '',
+    ),
+    [
+      searchParams,
+      existingCustomerSignupContext?.affiliateRef,
+      authSession?.user?.user_metadata?.affiliate_ref,
+    ],
+  );
+  const [affiliateOffer, setAffiliateOffer] = useState({ valid: false, code: '', discountBps: 0 });
   const selectedPlanKey = useMemo(() => {
     const explicitPlanKey = String(searchParams.get('plano') || '').trim();
     if (explicitPlanKey) return explicitPlanKey;
@@ -217,6 +239,7 @@ function SignupPage() {
     planCode,
     userId,
     checkoutSessionId = '',
+    affiliateRef: signupAffiliateRef = '',
     finalizeInitialDelayMs = 0,
     finalizeRetryDelaysMs = [],
   }) => {
@@ -224,6 +247,7 @@ function SignupPage() {
       establishmentName,
       planCode: planCode || 'free_trial',
       checkoutSessionId,
+      affiliateRef: signupAffiliateRef,
       dedupeKey: userId
         ? `signup-finalize:${userId}:${planCode || 'free_trial'}:${checkoutSessionId || 'free'}`
         : '',
@@ -235,6 +259,40 @@ function SignupPage() {
     return result;
   }, [refreshAuthProfile]);
 
+  const findTrackedPlan = useCallback((planCode) => {
+    const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
+    return availablePlans.find((plan) => plan.code === normalizedPlanCode) || selectedPlan;
+  }, [availablePlans, selectedPlan]);
+
+  const trackSignupFinalization = useCallback(({
+    result,
+    planCode,
+    checkoutSessionId = '',
+    source,
+  }) => {
+    const finalizedPlanCode = String(
+      result?.plan?.code || planCode || selectedPlan?.code || 'free_trial'
+    ).trim().toLowerCase();
+    const trackedPlan = findTrackedPlan(finalizedPlanCode);
+    const trackingPayload = {
+      source,
+      plan: trackedPlan,
+      planCode: finalizedPlanCode,
+      planName: result?.plan?.name,
+      projectId: result?.project?.id,
+      subscriptionId: result?.subscription?.id,
+      checkoutSessionId: result?.checkout?.id || checkoutSessionId,
+    };
+
+    trackSignupCompleted(trackingPayload);
+
+    if (finalizedPlanCode === 'free_trial') {
+      trackSignupTrialStarted(trackingPayload);
+    } else {
+      trackSignupPurchaseCompleted(trackingPayload);
+    }
+  }, [findTrackedPlan, selectedPlan]);
+
   const buildSignupEmailRedirectTo = useCallback((metadata = {}) => {
     const planCode = String(metadata.planCode || selectedPlan?.code || 'free_trial').trim().toLowerCase();
     const params = new URLSearchParams({
@@ -242,6 +300,7 @@ function SignupPage() {
       planCode,
     });
     const establishmentName = String(metadata.establishmentName || '').trim();
+    const affiliateRef = normalizeAffiliateRef(metadata.affiliateRef || currentAffiliateRef);
     const isPaidEmailPlan = planCode && planCode !== 'free_trial';
     const isExistingCustomer = metadata.existingCustomer === true;
 
@@ -249,9 +308,10 @@ function SignupPage() {
     if (isPaidEmailPlan) params.set('checkout', 'pending');
     if (isExistingCustomer) params.set('existingCustomer', '1');
     if (establishmentName) params.set('establishmentName', establishmentName);
+    if (affiliateRef) params.set('ref', affiliateRef);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
-  }, [selectedPlan, selectedPlanKey]);
+  }, [currentAffiliateRef, selectedPlan, selectedPlanKey]);
 
   const handlePasswordSetupSubmit = async (event) => {
     event.preventDefault();
@@ -313,6 +373,7 @@ function SignupPage() {
             || '',
           planCode: signupPlanCodeForCurrentView,
           planKey: selectedPlanKey,
+          affiliateRef: currentAffiliateRef,
         });
         clearSignupPasswordSetupRequired();
         setPasswordSetupValue('');
@@ -399,9 +460,11 @@ function SignupPage() {
 
     try {
       const signupPlanIsPaid = String(signupContext.planCode || '').trim().toLowerCase() !== 'free_trial';
+      const signupAffiliateRef = normalizeAffiliateRef(signupContext.affiliateRef || currentAffiliateRef);
       const emailRedirectTo = buildSignupEmailRedirectTo({
         establishmentName: signupContext.establishmentName,
         planCode: signupContext.planCode,
+        affiliateRef: signupAffiliateRef,
       });
       const { data, error } = await supabase.auth.signUp({
         email: signupContext.email,
@@ -411,6 +474,7 @@ function SignupPage() {
             establishment_name: signupContext.establishmentName,
             plan_code: signupContext.planCode,
             plan_key: selectedPlanKey,
+            affiliate_ref: signupAffiliateRef,
           },
           emailRedirectTo,
         },
@@ -445,10 +509,16 @@ function SignupPage() {
         return;
       }
 
-      await provisionSignup({
+      const result = await provisionSignup({
         establishmentName: signupContext.establishmentName,
         planCode: signupContext.planCode,
+        affiliateRef: signupAffiliateRef,
         userId: data?.session?.user?.id || data?.user?.id,
+      });
+      trackSignupFinalization({
+        result,
+        planCode: signupContext.planCode,
+        source: 'signup_create_password',
       });
       setFinishedFlow('trial');
     } catch (error) {
@@ -490,6 +560,7 @@ function SignupPage() {
       const establishmentName = formData.establishmentName.trim();
       const normalizedEmail = formData.email.trim().toLowerCase();
       const planCode = selectedPlan?.code || 'free_trial';
+      const signupAffiliateRef = currentAffiliateRef;
       setResolvedPlanCode(String(planCode).trim().toLowerCase());
       const precheck = await precheckFreeTrialSignup({
         email: normalizedEmail,
@@ -503,6 +574,7 @@ function SignupPage() {
           establishmentName,
           planCode,
           existingCustomer: true,
+          affiliateRef: signupAffiliateRef,
         });
         await sendExistingCustomerSignupLink({
           email: normalizedEmail,
@@ -510,6 +582,7 @@ function SignupPage() {
           establishmentName,
           planCode,
           planKey: selectedPlanKey,
+          affiliateRef: signupAffiliateRef,
         });
 
         setConfirmationFlow('existing-customer');
@@ -533,6 +606,7 @@ function SignupPage() {
         establishmentName,
         email: normalizedEmail,
         planCode,
+        affiliateRef: signupAffiliateRef,
       });
       setFormData((previous) => ({
         ...previous,
@@ -585,10 +659,12 @@ function SignupPage() {
             establishmentName: formData.establishmentName.trim(),
             planCode: selectedPlan?.code || 'free_trial',
             existingCustomer: true,
+            affiliateRef: currentAffiliateRef,
           }),
           establishmentName: formData.establishmentName.trim(),
           planCode: selectedPlan?.code || 'free_trial',
           planKey: selectedPlanKey,
+          affiliateRef: currentAffiliateRef,
         });
       } else {
         const { error } = await supabase.auth.resend({
@@ -598,6 +674,7 @@ function SignupPage() {
             emailRedirectTo: buildSignupEmailRedirectTo({
               establishmentName: formData.establishmentName.trim(),
               planCode: selectedPlan?.code || 'free_trial',
+              affiliateRef: currentAffiliateRef,
             }),
           },
         });
@@ -658,6 +735,15 @@ function SignupPage() {
       const checkout = await startPaidSignupCheckout({
         establishmentName,
         planCode,
+        affiliateRef: currentAffiliateRef,
+      });
+
+      trackSignupPaymentInfoAdded({
+        source: 'signup_payment_step',
+        plan: findTrackedPlan(planCode),
+        planCode,
+        checkoutSessionId: checkout.checkout_session_id,
+        providerCheckoutId: checkout.provider_checkout_id,
       });
 
       window.location.assign(checkout.checkout_url);
@@ -706,6 +792,31 @@ function SignupPage() {
       turnstileResetRef.current = null;
     }
   }, [signupCaptchaEnabled]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!currentAffiliateRef) {
+      setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
+      return () => {
+        mounted = false;
+      };
+    }
+
+    setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
+
+    const loadAffiliateOffer = async () => {
+      const result = await resolveAffiliateRef(currentAffiliateRef);
+      if (!mounted) return;
+      setAffiliateOffer(result?.valid ? result : { valid: false, code: '', discountBps: 0 });
+    };
+
+    loadAffiliateOffer();
+
+    return () => {
+      mounted = false;
+    };
+  }, [currentAffiliateRef]);
 
   useEffect(() => {
     let mounted = true;
@@ -828,6 +939,7 @@ function SignupPage() {
       try {
         const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
         const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
+        const redirectAffiliateRef = normalizeAffiliateRef(searchParams.get('ref') || currentAffiliateRef);
         const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
         const contextPlanCode = String(existingCustomerContext?.planCode || '').trim().toLowerCase();
         const establishmentName = String(
@@ -872,6 +984,7 @@ function SignupPage() {
           planCode,
           userId: user.id,
           checkoutSessionId: checkoutSessionIdFromRedirect,
+          affiliateRef: redirectAffiliateRef,
           finalizeInitialDelayMs: isPaidFinalize ? PAID_SIGNUP_FINALIZE_INITIAL_DELAY_MS : 0,
           finalizeRetryDelaysMs: isPaidFinalize ? PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS : [],
         });
@@ -879,6 +992,14 @@ function SignupPage() {
         if (finalizedPlanCode) {
           setResolvedPlanCode(finalizedPlanCode);
         }
+        trackSignupFinalization({
+          result,
+          planCode: finalizedPlanCode || planCode,
+          checkoutSessionId: checkoutSessionIdFromRedirect,
+          source: isPaidFinalize
+            ? 'signup_paid_checkout_return'
+            : 'signup_email_confirmation',
+        });
         const finalizedEstablishmentName = establishmentName || result?.project?.name || '';
         const passwordSetupRequired = Boolean(result?.auth?.password_setup_required);
         const existingCustomerPasswordReadyBeforeFinalize = isExistingCustomerSignupPasswordReady({
@@ -922,7 +1043,9 @@ function SignupPage() {
     provisionSignup,
     searchParams,
     shouldFinalizeFromRedirect,
+    currentAffiliateRef,
     toast,
+    trackSignupFinalization,
   ]);
 
   useEffect(() => {
@@ -1024,6 +1147,7 @@ function SignupPage() {
 
                 {!finishedFlow && step === 3 && paidPlan && (
                   <PaymentStep
+                    affiliateOffer={affiliateOffer}
                     checkoutError={checkoutError}
                     checkoutLoading={checkoutLoading}
                     onContinue={handlePaymentContinue}
@@ -1098,7 +1222,12 @@ function SignupPage() {
             </section>
 
             <aside className="xl:sticky xl:top-24 h-fit">
-              <PlanCard plan={selectedPlan} ctaTo={undefined} showCta={false} />
+              <PlanCard
+                plan={selectedPlan}
+                ctaTo={undefined}
+                showCta={false}
+                affiliateOffer={paidPlan ? affiliateOffer : null}
+              />
             </aside>
           </div>
         </main>

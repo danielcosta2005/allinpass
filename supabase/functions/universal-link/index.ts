@@ -112,6 +112,12 @@ function corsHeaders(origin?: string) {
   };
 }
 
+function cleanString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 function isIOS(userAgent: string | null) {
   const ua = (userAgent ?? "").toLowerCase();
   return (
@@ -212,6 +218,16 @@ function addMonthsClamped(date: Date, months: number) {
     date.getUTCSeconds(),
     date.getUTCMilliseconds(),
   ));
+}
+
+function getPassMode(typeRaw: unknown) {
+  return cleanString(typeRaw)?.toLowerCase() === "value" ? "value" : "loyalty";
+}
+
+function getInitialMetricMetadata(passMode: string) {
+  return passMode === "value"
+    ? { balance_cents: 0, currency: "BRL" }
+    : { points: 0 };
 }
 
 type AuthUserInfo = {
@@ -441,6 +457,7 @@ Deno.serve(async (req) => {
     const preferApple = isIOS(ua);
     const authUser = await getUserFromAuthHeader(sbAdmin, req);
     const passFields = isObject(pass.fields) ? pass.fields : {};
+    const passMode = getPassMode(pass.type);
 
     const cookieDevice = getCookie(req, "device_key");
     const legacyDevice = getCookie(req, "pass_token");
@@ -491,16 +508,27 @@ Deno.serve(async (req) => {
         },
       }
       : {};
+    const baseMetricMetadata = getInitialMetricMetadata(passMode);
+    let userPassMetadata: Record<string, any> = { ...baseMetricMetadata };
 
     if (existingUP?.issued_at && existingUP?.expires_at) {
       issuedAt = new Date(existingUP.issued_at);
       expiresAt = new Date(existingUP.expires_at);
 
+      const existingMetadata = existingUP.metadata && typeof existingUP.metadata === "object"
+        ? existingUP.metadata
+        : {};
+      userPassMetadata = {
+        ...baseMetricMetadata,
+        ...existingMetadata,
+      };
+
       if (authUser?.id) {
         const nextMeta = {
-          ...(existingUP.metadata ?? {}),
+          ...userPassMetadata,
           ...claimMeta,
         };
+        userPassMetadata = nextMeta;
 
         const nextUserId = existingUP.user_id ?? authUser.id;
 
@@ -521,11 +549,12 @@ Deno.serve(async (req) => {
         project_id: pass.project_id,
         device_key: deviceKey,
         pass_token: passToken,
-        pass_type: pass.type ?? "loyalty",
+        pass_type: pass.type ?? passMode,
         user_id: authUser?.id ?? null,
         issued_at: issuedAt.toISOString(),
         expires_at: expiresAt.toISOString(),
         metadata: {
+          ...baseMetricMetadata,
           ua,
           ...(claimMeta ?? {}),
         },
@@ -539,6 +568,12 @@ Deno.serve(async (req) => {
           "upstream",
         );
       }
+
+      userPassMetadata = {
+        ...baseMetricMetadata,
+        ua,
+        ...(claimMeta ?? {}),
+      };
     }
 
     const colors = pass.design?.colors ?? {};
@@ -546,10 +581,10 @@ Deno.serve(async (req) => {
     const fields = passFields;
 
     const pass_data = {
-      type: pass.type ?? "loyalty",
+      type: pass.type ?? passMode,
       title: pass.title ?? "Cartão Fidelidade",
       description: pass.description ?? "Ganhe prêmios acumulando pontos!",
-      fields,
+      fields: { ...fields, ...userPassMetadata },
       colors,
       images,
       exp_date: expiresAt.toISOString(),

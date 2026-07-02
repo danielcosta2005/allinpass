@@ -4,6 +4,7 @@ import { Bot, Loader2, Plus, Sparkles, Zap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabaseClient";
@@ -312,11 +313,11 @@ export default function AutomationsTab({
         transition={{ duration: 0.3 }}
         className="space-y-4"
       >
-        <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg">
+        <div className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-xl font-semibold text-gray-900">Automações</h3>
-              <p className="mt-1 text-sm text-gray-600">
+              <h3 className="text-xl font-semibold text-foreground">Automações</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
                 {isReadOnly
                   ? "Acompanhe as automações configuradas para este projeto."
                   : "Crie regras para enviar notificações automaticamente com base no comportamento dos passes."}
@@ -332,14 +333,14 @@ export default function AutomationsTab({
         </div>
 
         {isLoadingAutomations ? (
-          <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+          <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
             <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
-            <p className="mt-3 text-sm text-gray-600">Carregando automações...</p>
+            <p className="mt-3 text-sm text-muted-foreground">Carregando automações...</p>
           </div>
         ) : automations.length === 0 ? (
-          <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
-            <Bot className="mx-auto h-10 w-10 text-gray-400" />
-            <p className="mt-4 text-base font-medium text-gray-800">Voce nao possui automações</p>
+          <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+            <Bot className="mx-auto h-10 w-10 text-muted-foreground/70" />
+            <p className="mt-4 text-base font-medium text-foreground">Voce nao possui automações</p>
             {!isReadOnly && (
               <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
                 <Plus className="h-4 w-4" />
@@ -348,10 +349,10 @@ export default function AutomationsTab({
             )}
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr className="border-b text-left text-gray-600">
+              <thead className="bg-muted">
+                <tr className="border-b border-border text-left text-muted-foreground">
                   <th className="px-4 py-3">Trigger</th>
                   <th className="px-4 py-3">Mensagem</th>
                   <th className="px-4 py-3 text-center">Status</th>
@@ -361,12 +362,12 @@ export default function AutomationsTab({
                 {automations.map((automation) => (
                   <tr key={automation.id} className="border-b last:border-b-0">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{optionById(automation.type).label}</p>
-                      <p className="text-xs text-gray-500">
+                      <p className="font-medium text-foreground">{optionById(automation.type).label}</p>
+                      <p className="text-xs text-muted-foreground">
                         {triggerSummary(automation.type, automation.quantity)}
                       </p>
                     </td>
-                    <td className="px-4 py-3 text-gray-700">{automation.message}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{automation.message}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-3">
                         {isReadOnly ? (
@@ -379,7 +380,7 @@ export default function AutomationsTab({
                           />
                         )}
                         {canManageAutomations && (
-                          <span className="text-xs font-medium text-gray-600">
+                          <span className="text-xs font-medium text-muted-foreground">
                             {automation.status === "on" ? "On" : "Off"}
                           </span>
                         )}
@@ -402,15 +403,15 @@ export default function AutomationsTab({
       transition={{ duration: 0.3 }}
       className="space-y-4"
     >
-      <div className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg">
-        <h3 className="text-xl font-semibold text-gray-900">Nova automação</h3>
-        <p className="mt-1 text-sm text-gray-600">
+      <div className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+        <h3 className="text-xl font-semibold text-foreground">Nova automação</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
           Defina o trigger, ajuste a mensagem e salve para habilitar o envio automatico.
         </p>
       </div>
 
       <div
-        className="rounded-2xl border border-purple-100 bg-white p-6 shadow-lg"
+        className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         style={{
           backgroundImage: "radial-gradient(circle, #ececf5 1px, transparent 1px)",
           backgroundSize: "14px 14px",
@@ -422,38 +423,42 @@ export default function AutomationsTab({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0 }}
-            className={`rounded-2xl bg-white p-6 shadow-lg transition-all cursor-pointer ${
+            className={`rounded-2xl bg-card p-6 shadow-lg transition-all cursor-pointer ${
               activeBox === "trigger"
                 ? "border-2 border-indigo-400 shadow-xl"
-                : "border border-purple-100 hover:border-indigo-200"
+                : "border border-border hover:border-primary/40"
             }`}
           >
-            <div className="mb-3 inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-medium text-gray-700">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1 text-sm font-medium text-foreground">
               <Zap className="h-4 w-4" />
               Trigger
             </div>
-            <p className="mb-3 text-sm text-gray-600">Selecione o evento que inicia a automação.</p>
+            <p className="mb-3 text-sm text-muted-foreground">Selecione o evento que inicia a automação.</p>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <label htmlFor="automation-trigger-type" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Tipo de trigger
                 </label>
-                <select
+                <Select
                   value={triggerId}
-                  onChange={(e) => handleTriggerChange(e.target.value)}
-                  className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                  onValueChange={handleTriggerChange}
                 >
-                  {TRIGGER_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id="automation-trigger-type" className="h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TRIGGER_OPTIONS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Valor
                 </label>
                 <div className="flex items-center gap-2">
@@ -463,7 +468,7 @@ export default function AutomationsTab({
                     value={triggerValue}
                     onChange={(e) => handleTriggerValueChange(e.target.value)}
                   />
-                  <span className="text-sm text-gray-500">{selectedTrigger.unit}</span>
+                  <span className="text-sm text-muted-foreground">{selectedTrigger.unit}</span>
                 </div>
               </div>
             </div>
@@ -476,23 +481,23 @@ export default function AutomationsTab({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
-            className={`rounded-2xl bg-white p-6 shadow-lg transition-all cursor-pointer ${
+            className={`rounded-2xl bg-card p-6 shadow-lg transition-all cursor-pointer ${
               activeBox === "message"
                 ? "border-2 border-indigo-400 shadow-xl"
-                : "border border-purple-100 hover:border-indigo-200"
+                : "border border-border hover:border-primary/40"
             }`}
           >
-            <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+            <div className="mb-2 inline-flex items-center gap-2 text-sm font-medium text-foreground">
               <Sparkles className="h-4 w-4 text-indigo-500" />
               Mensagem
             </div>
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              className="min-h-[130px] border-gray-200 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-gray-300"
+              className="min-h-[130px] border-input focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-ring"
               placeholder={buildSuggestedMessage(triggerId, triggerValue)}
             />
-            <p className="mt-2 text-xs text-gray-500">
+            <p className="mt-2 text-xs text-muted-foreground">
               Sugestao baseada no trigger atual: {buildSuggestedMessage(triggerId, triggerValue)}
             </p>
           </motion.div>
@@ -504,17 +509,17 @@ export default function AutomationsTab({
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className={`rounded-2xl bg-white p-6 shadow-lg transition-all cursor-pointer ${
+            className={`rounded-2xl bg-card p-6 shadow-lg transition-all cursor-pointer ${
               activeBox === "action"
                 ? "border-2 border-indigo-400 shadow-xl"
-                : "border border-purple-100 hover:border-indigo-200"
+                : "border border-border hover:border-primary/40"
             }`}
           >
-            <div className="mb-3 inline-flex items-center gap-2 rounded-md border px-3 py-1 text-sm font-medium text-gray-700">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-border px-3 py-1 text-sm font-medium text-foreground">
               <Bot className="h-4 w-4" />
               Action
             </div>
-            <p className="mb-4 text-sm text-gray-600">Salvar automação para executar a notificação automaticamente.</p>
+            <p className="mb-4 text-sm text-muted-foreground">Salvar automação para executar a notificação automaticamente.</p>
             <div className="flex flex-wrap gap-2">
               <Button onClick={saveAutomation} disabled={isSaving}>
                 {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

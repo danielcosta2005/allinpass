@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle,
   Eye,
   Gift,
-  History,
   Loader2,
   Plus,
   ScanLine,
@@ -22,7 +21,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -30,6 +28,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
+import {
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from "@/lib/functionErrors";
 import QrScanner from "@/lib/qrScanner";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -91,6 +93,47 @@ function formatDateTime(iso) {
   return d.toLocaleString("pt-BR");
 }
 
+function parseCurrencyToCents(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const cents = Math.round(amount * 100);
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+function formatCurrencyCents(cents) {
+  const parsed = Number(cents);
+  const normalizedCents = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
+function getRewardType(reward) {
+  return reward?.reward_type === "value" ? "value" : "loyalty";
+}
+
+function formatRewardCost(reward) {
+  if (getRewardType(reward) === "value") {
+    return formatCurrencyCents(reward?.value_required_cents);
+  }
+  return `${reward?.points_required ?? 0} ponto(s)`;
+}
+
+function formatRedemptionBalance(redemption) {
+  if (redemption?.reward_type === "value") {
+    return `${formatCurrencyCents(redemption.value_before_cents)} -> ${formatCurrencyCents(redemption.value_after_cents)}`;
+  }
+  return `${redemption?.points_before ?? 0} -> ${redemption?.points_after ?? 0}`;
+}
+
 function normalizeCustomer(customer) {
   if (Array.isArray(customer)) return customer[0] || null;
   return customer || null;
@@ -99,7 +142,7 @@ function normalizeCustomer(customer) {
 function RedemptionsTable({ redemptions, isCompact = false }) {
   if (!redemptions?.length) {
     return (
-      <div className="px-4 py-6 text-sm text-gray-500">
+      <div className="px-4 py-6 text-sm text-muted-foreground">
         Nenhum resgate encontrado.
       </div>
     );
@@ -108,33 +151,33 @@ function RedemptionsTable({ redemptions, isCompact = false }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[720px] text-left text-sm">
-        <thead className="bg-gray-50 text-xs uppercase text-gray-600">
+        <thead className="bg-muted text-xs uppercase text-muted-foreground">
           <tr>
             {!isCompact && <th className="px-4 py-3">Recompensa</th>}
             <th className="px-4 py-3">Cliente</th>
             <th className="px-4 py-3">Email</th>
             <th className="px-4 py-3">Data/Hora</th>
-            <th className="px-4 py-3 text-center">Pontos</th>
+            <th className="px-4 py-3 text-center">Saldo/Pontos</th>
           </tr>
         </thead>
         <tbody>
           {redemptions.map((redemption) => {
             const customer = normalizeCustomer(redemption.customers);
-            const customerName = customer?.name || "Cliente não identificado";
+            const customerName = customer?.name || "Cliente nÃ£o identificado";
             const customerEmail = customer?.email || "-";
 
             return (
               <tr key={redemption.id} className="border-t">
                 {!isCompact && (
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                  <td className="px-4 py-3 font-medium text-foreground">
                     {redemption.reward_name || "-"}
                   </td>
                 )}
-                <td className="px-4 py-3 text-gray-800">{customerName}</td>
-                <td className="px-4 py-3 text-gray-700">{customerEmail}</td>
-                <td className="px-4 py-3 text-gray-700">{formatDateTime(redemption.created_at)}</td>
-                <td className="px-4 py-3 text-center font-medium text-gray-800">
-                  {redemption.points_before} -&gt; {redemption.points_after}
+                <td className="px-4 py-3 text-foreground">{customerName}</td>
+                <td className="px-4 py-3 text-muted-foreground">{customerEmail}</td>
+                <td className="px-4 py-3 text-muted-foreground">{formatDateTime(redemption.created_at)}</td>
+                <td className="px-4 py-3 text-center font-medium text-foreground">
+                  {formatRedemptionBalance(redemption)}
                 </td>
               </tr>
             );
@@ -181,10 +224,14 @@ function formatScannerRewardError(body, fallback) {
       : "Este passe nao tem pontos suficientes para esta recompensa.";
   }
 
-  return body?.message || body?.error || fallback?.message || "Nao foi possivel resgatar a recompensa.";
+  if (body?.error === "insufficient_balance") {
+    return `Este passe nao tem saldo suficiente para esta recompensa. Saldo atual: ${formatCurrencyCents(body.balance_cents)}. Necessario: ${formatCurrencyCents(body.value_required_cents)}.`;
+  }
+
+  return getFunctionErrorMessage(body, fallback?.message || "Nao foi possivel resgatar a recompensa.");
 }
 
-export default function RewardsTab({ projectId }) {
+export default function RewardsTab({ activeTab = "rewards", onTabChange, projectId }) {
   const { toast } = useToast();
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
@@ -196,10 +243,12 @@ export default function RewardsTab({ projectId }) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [updatingRewardId, setUpdatingRewardId] = useState(null);
-  const [activeSubTab, setActiveSubTab] = useState("rewards");
+  const activeSubTab = activeTab === "history" ? "history" : "rewards";
 
   const [name, setName] = useState("");
+  const [rewardType, setRewardType] = useState("loyalty");
   const [pointsRequired, setPointsRequired] = useState(10);
+  const [valueRequired, setValueRequired] = useState("");
 
   const [redeemingReward, setRedeemingReward] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -216,6 +265,12 @@ export default function RewardsTab({ projectId }) {
     () => rewards.filter((reward) => reward.status === "active"),
     [rewards],
   );
+
+  useEffect(() => {
+    if (activeTab !== "rewards" && activeTab !== "history") {
+      onTabChange?.("rewards");
+    }
+  }, [activeTab, onTabChange]);
 
   const clearResetTimer = useCallback(() => {
     if (resetTimerRef.current) {
@@ -245,7 +300,7 @@ export default function RewardsTab({ projectId }) {
     try {
       const { data, error } = await supabase
         .from("rewards")
-        .select("id, project_id, name, points_required, status, created_at, updated_at")
+        .select("id, project_id, name, reward_type, points_required, value_required_cents, currency, status, created_at, updated_at")
         .eq("project_id", projectId)
         .order("created_at", { ascending: false });
 
@@ -269,7 +324,7 @@ export default function RewardsTab({ projectId }) {
     let query = supabase
       .from("reward_redemptions")
       .select(
-        "id, reward_id, reward_name, customer_id, user_pass_id, points_spent, points_before, points_after, notification_warning, created_at, customers(name, email)"
+        "id, reward_id, reward_name, reward_type, customer_id, user_pass_id, points_spent, points_before, points_after, value_spent_cents, value_before_cents, value_after_cents, currency, notification_warning, created_at, customers(name, email)"
       )
       .eq("project_id", projectId)
       .order("created_at", { ascending: false })
@@ -353,21 +408,30 @@ export default function RewardsTab({ projectId }) {
 
   function startCreate() {
     setName("");
+    setRewardType("loyalty");
     setPointsRequired(10);
+    setValueRequired("");
     setIsCreating(true);
   }
 
   async function saveReward() {
     const finalName = name.trim();
     const finalPoints = Number(pointsRequired);
+    const finalRewardType = rewardType === "value" ? "value" : "loyalty";
+    const finalValueCents = parseCurrencyToCents(valueRequired);
 
     if (!finalName) {
       toast({ variant: "destructive", title: "Nome obrigatorio" });
       return;
     }
 
-    if (!Number.isInteger(finalPoints) || finalPoints <= 0) {
+    if (finalRewardType === "loyalty" && (!Number.isInteger(finalPoints) || finalPoints <= 0)) {
       toast({ variant: "destructive", title: "Pontos invalidos", description: "Informe um numero inteiro maior que zero." });
+      return;
+    }
+
+    if (finalRewardType === "value" && !finalValueCents) {
+      toast({ variant: "destructive", title: "Valor invalido", description: "Informe um valor maior que zero, como 12,34." });
       return;
     }
 
@@ -378,10 +442,13 @@ export default function RewardsTab({ projectId }) {
         .insert({
           project_id: projectId,
           name: finalName,
-          points_required: finalPoints,
+          reward_type: finalRewardType,
+          points_required: finalRewardType === "loyalty" ? finalPoints : null,
+          value_required_cents: finalRewardType === "value" ? finalValueCents : null,
+          currency: "BRL",
           status: "active",
         })
-        .select("id, project_id, name, points_required, status, created_at, updated_at")
+        .select("id, project_id, name, reward_type, points_required, value_required_cents, currency, status, created_at, updated_at")
         .single();
 
       if (error) throw error;
@@ -415,7 +482,7 @@ export default function RewardsTab({ projectId }) {
         .update({ status: nextStatus })
         .eq("id", reward.id)
         .eq("project_id", projectId)
-        .select("id, project_id, name, points_required, status, created_at, updated_at")
+        .select("id, project_id, name, reward_type, points_required, value_required_cents, currency, status, created_at, updated_at")
         .single();
 
       if (error) throw error;
@@ -485,7 +552,7 @@ export default function RewardsTab({ projectId }) {
     });
 
     if (error) {
-      const errorBody = await readFunctionErrorBody(error, response);
+      const errorBody = await readFunctionErrorPayload(error, response);
       throw new Error(formatScannerRewardError(errorBody, error));
     }
     if (!data) throw new Error("Resposta vazia da Edge Function.");
@@ -527,7 +594,7 @@ export default function RewardsTab({ projectId }) {
       }
       toast({
         title: "Recompensa contabilizada",
-        description: `${data.reward_name}: ${data.points_before} -> ${data.points_after} ponto(s).`,
+        description: `${data.reward_name}: ${formatRedemptionBalance(data)}.`,
       });
     } catch (err) {
       setScanResult({ success: false, error: err?.message || String(err) });
@@ -605,54 +672,53 @@ export default function RewardsTab({ projectId }) {
 
   return (
     <div className="space-y-4">
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-        className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Gift className="h-5 w-5 text-indigo-600" />
-              <h2 className="text-xl font-semibold text-gray-900">Recompensas</h2>
-            </div>
-            <p className="mt-1 text-sm text-gray-600">
-              Configure benefícios por pontos e contabilize resgates pelo QR Code do cliente.
-            </p>
-          </div>
-
-          <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
-            <Plus className="h-4 w-4" />
-            Criar recompensa
-          </Button>
-        </div>
-      </motion.div>
 
       {isCreating && (
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-purple-100 bg-white p-5 shadow-lg"
+          className="rounded-2xl border border-border bg-card p-5 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
         >
-          <h3 className="text-lg font-semibold text-gray-900">Nova recompensa</h3>
-          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_180px]">
+          <h3 className="text-lg font-semibold text-foreground">Nova recompensa</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_170px_180px]">
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Nome
               </label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Cafe gratis" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Pontos
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Tipo
               </label>
-              <Input
-                type="number"
-                min={1}
-                value={pointsRequired}
-                onChange={(e) => setPointsRequired(Number(e.target.value))}
-              />
+              <select
+                value={rewardType}
+                onChange={(e) => setRewardType(e.target.value === "value" ? "value" : "loyalty")}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                <option value="loyalty">Fidelidade</option>
+                <option value="value">Valor</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {rewardType === "value" ? "Valor" : "Pontos"}
+              </label>
+              {rewardType === "value" ? (
+                <Input
+                  inputMode="decimal"
+                  value={valueRequired}
+                  onChange={(e) => setValueRequired(e.target.value)}
+                  placeholder="12,34"
+                />
+              ) : (
+                <Input
+                  type="number"
+                  min={1}
+                  value={pointsRequired}
+                  onChange={(e) => setPointsRequired(Number(e.target.value))}
+                />
+              )}
             </div>
           </div>
 
@@ -674,11 +740,11 @@ export default function RewardsTab({ projectId }) {
           if (!open) closeRedeem();
         }}
       >
-        <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-purple-100 bg-white p-5 shadow-2xl">
+        <DialogContent className="max-h-[92vh] max-w-[520px] overflow-y-auto rounded-2xl border-border bg-card p-5 shadow-2xl">
           <DialogHeader className="pr-8">
             <DialogTitle>Resgatar recompensa</DialogTitle>
             <DialogDescription>
-              {redeemingReward?.name} - {redeemingReward?.points_required} ponto(s)
+              {redeemingReward?.name} - {formatRewardCost(redeemingReward)}
             </DialogDescription>
           </DialogHeader>
 
@@ -697,7 +763,7 @@ export default function RewardsTab({ projectId }) {
                     <CheckCircle className="mb-3 h-14 w-14 text-green-400" />
                     <p className="text-xl font-semibold">Resgate contabilizado</p>
                     <p className="mt-1 text-sm">
-                      Saldo: {scanResult.data.points_before} para {scanResult.data.points_after}
+                      Saldo: {formatRedemptionBalance(scanResult.data)}
                     </p>
                     {scanResult.data.notification_warning ? (
                       <p className="mt-2 text-xs text-yellow-200">Notificacao: {scanResult.data.notification_warning}</p>
@@ -738,43 +804,40 @@ export default function RewardsTab({ projectId }) {
         </DialogContent>
       </Dialog>
 
-      <Tabs value={activeSubTab} onValueChange={setActiveSubTab} className="space-y-4">
-        <TabsList className="flex w-full flex-wrap gap-2 lg:w-auto lg:inline-flex">
-          <TabsTrigger value="rewards" className="gap-2">
-            <Gift className="h-4 w-4" />
-            Recompensas
-          </TabsTrigger>
-          <TabsTrigger value="history" className="gap-2">
-            <History className="h-4 w-4" />
-            Historico de resgates
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="rewards" className="space-y-4">
+      {activeSubTab === "rewards" ? (
+        <div className="space-y-4">
           {isLoading ? (
-            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
+            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
               <Loader2 className="mx-auto h-8 w-8 animate-spin text-indigo-600" />
-              <p className="mt-3 text-sm text-gray-600">Carregando recompensas...</p>
+              <p className="mt-3 text-sm text-muted-foreground">Carregando recompensas...</p>
             </div>
           ) : rewards.length === 0 ? (
-            <div className="rounded-2xl border border-purple-100 bg-white p-10 text-center shadow-lg">
-              <Gift className="mx-auto h-10 w-10 text-gray-400" />
-              <p className="mt-4 text-base font-medium text-gray-800">Voce ainda nao possui recompensas</p>
+            <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+              <Gift className="mx-auto h-10 w-10 text-muted-foreground/70" />
+              <p className="mt-4 text-base font-medium text-foreground">Voce ainda nao possui recompensas</p>
               <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
                 <Plus className="h-4 w-4" />
                 Criar recompensa
               </Button>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="border-b text-left text-gray-600">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex justify-end border-b px-4 py-3">
+                <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
+                  <Plus className="h-4 w-4" />
+                  Criar recompensa
+                </Button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-muted">
+                  <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="px-4 py-3">Recompensa</th>
-                    <th className="px-4 py-3">Pontos</th>
+                    <th className="px-4 py-3">Tipo</th>
+                    <th className="px-4 py-3">Custo</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">
-                      <div className="ml-auto w-[220px] text-center">Ações</div>
+                      <div className="ml-auto w-[220px] text-center">AÃ§Ãµes</div>
                     </th>
                   </tr>
                 </thead>
@@ -789,10 +852,13 @@ export default function RewardsTab({ projectId }) {
                       <React.Fragment key={reward.id}>
                         <tr className="border-b last:border-b-0">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-gray-900">{reward.name}</p>
+                            <p className="font-medium text-foreground">{reward.name}</p>
                           </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {reward.points_required} ponto(s)
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {getRewardType(reward) === "value" ? "Valor" : "Fidelidade"}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {formatRewardCost(reward)}
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
@@ -801,11 +867,11 @@ export default function RewardsTab({ projectId }) {
                                 disabled={updatingRewardId === reward.id}
                                 onChange={() => toggleRewardStatus(reward)}
                               />
-                              <span className="text-xs font-medium text-gray-600">
+                              <span className="text-xs font-medium text-muted-foreground">
                                 {isActive ? "On" : "Off"}
                               </span>
                               {updatingRewardId === reward.id && (
-                                <Loader2 className="h-4 w-4 animate-spin text-gray-500" />
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                               )}
                             </div>
                           </td>
@@ -832,10 +898,10 @@ export default function RewardsTab({ projectId }) {
                                     side="top"
                                     align="end"
                                     sideOffset={10}
-                                    className="w-56 rounded-xl border border-slate-200 bg-white p-3 text-left text-slate-900 shadow-xl"
+                                    className="w-56 rounded-xl border border-border bg-popover p-3 text-left text-popover-foreground shadow-xl"
                                   >
                                     <p className="text-sm font-semibold">Visualizar resgates</p>
-                                    <p className="mt-1 text-xs text-slate-600">
+                                    <p className="mt-1 text-xs text-muted-foreground">
                                       Veja o historico desta recompensa.
                                     </p>
                                   </TooltipContent>
@@ -855,14 +921,14 @@ export default function RewardsTab({ projectId }) {
                         </tr>
 
                         {isExpanded ? (
-                          <tr className="border-b bg-gray-50">
-                            <td colSpan={4} className="px-4 py-4">
-                              <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                          <tr className="border-b border-border bg-muted/50">
+                            <td colSpan={5} className="px-4 py-4">
+                              <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                                 <div className="flex items-center justify-between border-b px-4 py-3">
-                                  <div className="text-sm font-semibold text-gray-900">
+                                  <div className="text-sm font-semibold text-foreground">
                                     Historico de resgates
                                   </div>
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-muted-foreground">
                                     {isLoadingRedemptions ? "Carregando..." : `${redemptions.length} resgate(s)`}
                                   </div>
                                 </div>
@@ -882,23 +948,26 @@ export default function RewardsTab({ projectId }) {
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
 
               {activeRewards.length === 0 ? (
-                <div className="border-t bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                <div className="border-t border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
                   Todas as recompensas estao inativas.
                 </div>
               ) : null}
             </div>
           )}
-        </TabsContent>
+        </div>
+      ) : null}
 
-        <TabsContent value="history" className="space-y-4">
-          <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+      {activeSubTab === "history" ? (
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Historico geral de resgates</h3>
-                <p className="mt-1 text-sm text-gray-600">
+                <h3 className="text-base font-semibold text-foreground">Historico geral de resgates</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
                   Todos os resgates contabilizados pelo scanner neste projeto.
                 </p>
               </div>
@@ -921,8 +990,8 @@ export default function RewardsTab({ projectId }) {
               <RedemptionsTable redemptions={generalRedemptions} />
             )}
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      ) : null}
     </div>
   );
 }

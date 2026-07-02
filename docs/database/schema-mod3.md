@@ -106,8 +106,16 @@ Colunas principais:
 - comercial snapshot: `base_price_cents`, `included_pass_installs`, `included_notification_sends`
 - preco de excedente snapshot: `overage_pass_install_cents`, `overage_notification_sent_cents`
 - gateway: `gateway_provider`, `gateway_subscription_id`
+- inadimplência paga: `delinquent_since`, `grace_ends_at`, `suspended_at`, `last_payment_failure_at`, `delinquency_gateway_charge_id`, `delinquency_reason`
 
 Para Asaas, `gateway_subscription_id` deve conter somente o ID real da assinatura (`sub_...`). IDs UUID de checkout pertencem a `signup_checkout_sessions.provider_checkout_id` ou `billing_plan_change_sessions.provider_checkout_id` e nao devem ser usados em `/subscriptions/{id}`.
+
+Semantica de status:
+- `active`, `trialing`, `past_due` e `paused` preservam acesso operacional.
+- `past_due` indica cobrança paga vencida/falha dentro do grace period.
+- `suspended` bloqueia acesso operacional depois que `grace_ends_at` vence.
+- `expired` continua reservado para free trial encerrado.
+- `canceled` continua reservado para cancelamento/inativacao da assinatura no gateway.
 
 ### `public.billing_subscription_changes`
 Historico de troca de plano e base para franquia efetiva do ciclo.
@@ -131,13 +139,29 @@ Colunas principais:
 - tipo/estado: `cycle_type`, `status`
 
 ### `public.billing_invoices`
-Cabecalho da fatura do ciclo.
+Cabecalho da fatura interna de excedente do ciclo. A mensalidade base continua sendo cobrada pela assinatura recorrente do Asaas; esta tabela registra apenas o snapshot financeiro do excedente apurado.
 
 Colunas principais:
 - vinculo: `project_id`, `billing_cycle_id`, `subscription_id`
 - status financeiro: `status`, `issued_at`, `due_at`, `paid_at`
 - totais: `subtotal_cents`, `discount_cents`, `tax_cents`, `total_cents`
 - gateway: `gateway_provider`, `gateway_invoice_id`, `gateway_charge_id`
+- coleta: `collection_batch_id`
+
+### `public.billing_invoice_collection_batches`
+Agrupa uma ou mais invoices de excedente que foram anexadas a uma cobranca mensal pendente da assinatura Asaas.
+
+Colunas principais:
+- vinculo: `project_id`, `subscription_id`, `billing_account_id`
+- gateway: `gateway_provider`, `gateway_subscription_id`, `gateway_charge_id`, `gateway_charge_status`
+- modo: `collection_mode = subscription_payment_adjustment`
+- valores: `original_subscription_payment_cents`, `overage_cents`, `updated_payment_cents`
+- estado: `status`, `attempt_count`, `last_attempt_at`, `paid_at`, `failed_at`
+
+Uso esperado:
+- nao cria cobranca avulsa automaticamente;
+- atualiza apenas uma cobranca Asaas especifica (`/payments/{id}`), sem alterar o valor recorrente da assinatura;
+- permite carregar invoices `draft` para a proxima cobranca mensal editavel quando nenhuma cobranca pendente existir no momento do fechamento.
 
 ### `public.billing_invoice_items`
 Detalha como a fatura foi composta.
@@ -177,6 +201,7 @@ Uso esperado:
 - os campos de excedente sao recalculados a partir do uso agregado e da franquia/preco efetivos do ciclo.
 - mudancas em `billing_subscription_changes` disparam recalc imediato dos resumos do ciclo afetado.
 - `billing_invoices` e `billing_invoice_items` continuam sendo snapshot financeiro gerado no fechamento, nao contador vivo.
+- antes de fechar um ciclo, `refresh_billing_cycle_usage_summary_for_cycle(cycle_id)` re-soma os eventos do ciclo e atualiza o summary usado pela invoice.
 
 ## 6) Retroativo e creditos
 
@@ -348,6 +373,29 @@ Resultado pratico: upgrade entrega beneficio cheio no ciclo atual, e o fechament
 
 - `public.get_billing_cycle_entitlements(subscription_id, period_start, period_end)`: retorna a franquia e os precos de excedente efetivos para um ciclo.
 - `public.calculate_billing_cycle_overage(subscription_id, period_start, period_end)`: soma `billing_usage_events`, compara com a franquia efetiva e retorna quantidades/valores de excedente.
+- `public.refresh_billing_cycle_usage_summary_for_cycle(cycle_id)`: reatribui eventos do periodo ao ciclo, re-soma quantidades e recalcula franquia/preco/excedente no summary.
+
+### Funcao `close_billing_cycle_for_overage(cycle_id)`
+Fecha um ciclo de assinatura vencido e gera invoice interna somente quando ha excedente.
+
+Responsabilidades:
+- bloquear o ciclo e a assinatura;
+- atualizar `billing_cycle_usage_summaries` a partir de `billing_usage_events`;
+- criar `billing_invoices` e `billing_invoice_items` apenas para `total_overage_cents > 0`;
+- marcar ciclo sem excedente como `closed` e ciclo com excedente como `invoiced`;
+- aplicar mudancas `next_cycle` pagas depois de fechar o ciclo antigo;
+- avancar `billing_subscriptions.current_period_start/current_period_end`;
+- abrir o proximo `billing_cycles` e precriar summary zerado.
+
+Resultado pratico: downgrades agendados so alteram a assinatura depois que o ciclo anterior foi faturado com franquia/preco antigos.
+
+### Funcao `verify_billing_cron_secret(token)`
+Valida o bearer enviado pelo `pg_cron` para chamar `billing-close-cycles`.
+
+Responsabilidades:
+- comparar o token recebido com o secret `cron_secret` armazenado no Supabase Vault;
+- retornar somente booleano;
+- ficar restrita a `service_role`, sem grant para `anon` ou `authenticated`.
 
 ## E) Rastreio dos free trials (cron que roda a função de 15 em 15 minutos)
 ### Função `expire_trial_subscriptions()`
@@ -390,7 +438,7 @@ Aplica downgrades agendados para o proximo ciclo.
 
 Responsabilidades:
 - buscar sessoes em `billing_plan_change_sessions` com `status = 'paid'` e `effective_mode = 'next_cycle'`;
-- filtrar assinaturas cujo `current_period_end <= now()`;
+- filtrar assinaturas cujo `current_period_end <= now()` e cujo ciclo corrente ja esteja `closed`, `invoiced`, `paid` ou sem ciclo legado;
 - chamar `apply_billing_plan_change(...)` para cada sessao vencida;
 - rodar a cada 15 minutos pelo cron `billing-apply-due-plan-changes`.
 
@@ -412,9 +460,11 @@ Responsabilidades:
 6. Downgrade mantem franquia e preco de excedente do plano atual ate o fim do ciclo ja pago; no ciclo seguinte usa franquia cheia e preco de excedente do novo plano menor.
 7. Apenas uma mudanca `next_cycle` pode ficar ativa por assinatura; novas decisoes substituem a pendente anterior.
 8. Uma sessao antiga nao pode aplicar se `billing_subscriptions.plan_id` for diferente de `billing_plan_change_sessions.previous_plan_id`.
-9. Fatura final combina assinatura base + excedentes + ajustes de plano (quando houver).
+9. Invoice interna de fechamento cobra apenas excedentes; a assinatura base continua recorrente no Asaas.
 10. Mudanca de plano iniciada pelo painel usa `billing_plan_change_sessions`; `signup_checkout_sessions` continua exclusivo do cadastro pago.
 11. `free_trial` pode ser plano de origem, mas nao pode ser destino de mudanca depois que o projeto ja existe.
+12. Excedente e cobrado junto com uma cobranca mensal Asaas editavel; se nao houver cobranca pendente/vencida, a invoice permanece `draft` para carry-forward.
+13. Inadimplência paga usa `past_due` durante 10 dias de grace e `suspended` como primeiro estado que bloqueia acesso; `billing_cycles.period_end` não expira acesso.
 
 ## Fluxo de negocio (fim a fim)
 
@@ -436,11 +486,15 @@ Responsabilidades:
 
 ## Cenario C - Fechamento mensal
 
-1. Sistema define janela em `billing_cycles`.
-2. Soma consumo por recurso em `billing_usage_events`.
-3. Chama `get_billing_cycle_entitlements` para obter a franquia e o preco de excedente efetivos.
-4. Calcula excedentes e cria `billing_invoices`.
-5. Gera `billing_invoice_items` (base + excedente + ajustes).
+1. `billing-close-cycles` localiza `billing_cycles` vencidos.
+2. `close_billing_cycle_for_overage` re-soma `billing_usage_events` no `billing_cycle_usage_summaries`.
+3. Se nao houver excedente, marca o ciclo como `closed` e abre o proximo ciclo.
+4. Se houver excedente, cria `billing_invoices` em `draft` e itens `overage_*`.
+5. Aplica downgrades `next_cycle` pagos somente depois do fechamento do ciclo antigo.
+6. A Edge Function busca uma cobranca mensal Asaas `PENDING`/`OVERDUE` da assinatura e atualiza apenas essa cobranca com mensalidade + excedente.
+7. O webhook `PAYMENT_*` marca o batch e as invoices como `paid`, `past_due`, `failed`, `canceled` ou `refunded`.
+8. Se o pagamento ficar vencido/falhar, o webhook coloca a assinatura em `past_due`; se a cobrança for confirmada/recebida, limpa a inadimplência da assinatura.
+9. O runner `billing-close-cycles` suspende assinaturas `past_due` quando `grace_ends_at <= now()`, sem cancelamento automático.
 
 ## Cenario D - Troca de plano no meio do ciclo
 

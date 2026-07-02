@@ -216,17 +216,17 @@ export default function NotificationsConfigTab({ projectId }) {
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35 }}
-      className="p-6 bg-gradient-to-br from-gray-50 to-slate-50 rounded-lg shadow-inner border"
+      className="rounded-lg border border-border bg-gradient-to-br from-background to-muted p-6 shadow-inner"
     >
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+            <h2 className="text-3xl font-bold text-foreground flex items-center gap-3">
               <Shield className="text-purple-600" />
               Controle de Notificações
             </h2>
-            <p className="text-gray-600 mt-1">
+            <p className="text-muted-foreground mt-1">
               Visualize o uso do projeto e defina o limite mensal.
             </p>
           </div>
@@ -249,69 +249,69 @@ export default function NotificationsConfigTab({ projectId }) {
 
         {/* Body */}
         {loading ? (
-          <div className="rounded-lg border bg-white p-6 shadow-md flex items-center gap-3">
+          <div className="rounded-lg border border-border bg-card p-6 shadow-md flex items-center gap-3">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span className="text-gray-700">Carregando configuração...</span>
+            <span className="text-muted-foreground">Carregando configuração...</span>
           </div>
         ) : !projectId ? (
-          <div className="rounded-lg border bg-white p-6 shadow-md">
-            <p className="text-gray-700">Selecione um projeto para configurar.</p>
+          <div className="rounded-lg border border-border bg-card p-6 shadow-md">
+            <p className="text-muted-foreground">Selecione um projeto para configurar.</p>
           </div>
         ) : (
           <>
             {/* Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="rounded-lg border bg-white p-5 shadow-md">
+              <div className="rounded-lg border border-border bg-card p-5 shadow-md">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">Limite mensal</p>
+                  <p className="text-sm text-muted-foreground">Limite mensal</p>
 
                   {row?.notifications_limit == null ? (
-                    <Infinity className="h-4 w-4 text-gray-400" />
+                    <Infinity className="h-4 w-4 text-muted-foreground" />
                   ) : (
-                    <Lock className="h-4 w-4 text-gray-400" />
+                    <Lock className="h-4 w-4 text-muted-foreground" />
                   )}
                 </div>
-                <p className="text-2xl font-bold text-gray-900 mt-2">{limitDisplay}</p>
-                <p className="text-xs text-gray-500 mt-1">Definido por um administrador</p>
+                <p className="text-2xl font-bold text-foreground mt-2">{limitDisplay}</p>
+                <p className="text-xs text-muted-foreground mt-1">Definido por um administrador</p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-md">
+              <div className="rounded-lg border border-border bg-card p-5 shadow-md">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">Notificações Enviadas</p>
-                  <Bell className="h-4 w-4 text-gray-400" />
+                  <p className="text-sm text-muted-foreground">Notificações Enviadas</p>
+                  <Bell className="h-4 w-4 text-muted-foreground" />
                 </div>
 
-                <p className="text-2xl font-bold text-gray-900 mt-2">
+                <p className="text-2xl font-bold text-foreground mt-2">
                   {row?.recent_notifications_sent ?? 0}{" "}
-                  <span className="text-base font-semibold text-gray-600">
+                  <span className="text-base font-semibold text-muted-foreground">
                     ({remainingLabel} restantes)
                   </span>
                 </p>
 
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Reinicia em: <span className="font-medium">{expLabel}</span>
                 </p>
               </div>
 
-              <div className="rounded-lg border bg-white p-5 shadow-md">
+              <div className="rounded-lg border border-border bg-card p-5 shadow-md">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">Total histórico</p>
-                  <Gauge className="h-4 w-4 text-gray-400" />
+                  <p className="text-sm text-muted-foreground">Total histórico</p>
+                  <Gauge className="h-4 w-4 text-muted-foreground" />
                 </div>
-                <p className="text-2xl font-bold text-gray-900 mt-2">
+                <p className="text-2xl font-bold text-foreground mt-2">
                   {row?.total_notifications_sent ?? 0}
                 </p>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Desde: <span className="font-medium">{createdAtLabel}</span>
                 </p>
               </div>
             </div>
 
             {/* Form */}
-            <div className="rounded-lg border bg-white p-6 shadow-md space-y-4">
+            <div className="rounded-lg border border-border bg-card p-6 shadow-md space-y-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Configurar limite</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="text-lg font-semibold text-foreground">Configurar limite</h3>
+                <p className="text-sm text-muted-foreground">
                   Clique em "Salvar" após estabelecer o limite de notificações.
                 </p>
               </div>
@@ -347,7 +347,7 @@ export default function NotificationsConfigTab({ projectId }) {
                   placeholder={isUnlimited ? "Ilimitado" : "Ex: 500"}
                   className="max-w-sm"
                 />
-                <p className="text-xs text-gray-500">Estabeleça um limite para este projeto.</p>
+                <p className="text-xs text-muted-foreground">Estabeleça um limite para este projeto.</p>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">

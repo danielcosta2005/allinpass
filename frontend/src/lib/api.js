@@ -1,5 +1,10 @@
 
 import { supabase } from '@/lib/supabaseClient';
+import { buildFunctionError } from '@/lib/functionErrors';
+
+async function buildApiFunctionError(error, response, fallback = 'Falha ao chamar edge function') {
+	return buildFunctionError(error, response, fallback);
+}
 
 function unwrapRpcPayload(payload, functionName) {
 	if (Array.isArray(payload)) {
@@ -60,12 +65,12 @@ export async function getProjectDetails(id) {
 	if (error) throw error; return data;
 }
 export async function createProject(payload) {
-	const { data, error: invokeError } = await supabase.functions.invoke('create-project', {
+	const { data, error: invokeError, response } = await supabase.functions.invoke('create-project', {
 		body: payload,
 	});
 
 	if (invokeError) {
-		throw new Error(invokeError.message);
+		throw await buildApiFunctionError(invokeError, response, 'Falha ao criar projeto.');
 	}
 
 	if (data?.error) {
@@ -120,11 +125,11 @@ export async function geocodeAddress(address, limit = 5) {
 	if (!query) return [];
 	const normalizedLimit = Math.min(Math.max(Number(limit) || 5, 1), 5);
 
-	const { data, error } = await supabase.functions.invoke('geocode-search', {
+	const { data, error, response } = await supabase.functions.invoke('geocode-search', {
 		body: { address: query, limit: normalizedLimit },
 	});
 
-	if (error) throw error;
+	if (error) throw await buildApiFunctionError(error, response, 'Falha ao geocodificar endereÃ§o.');
 	if (!data) return [];
 	if (data?.ok === false) {
 		throw new Error(data?.userMessage || data?.error || 'Falha ao geocodificar endereço.');
@@ -284,10 +289,10 @@ export async function listVisits(projectId) {
 
 /* ---------- Scanner & KPIs ---------- */
 export async function scannerVisit(projectId, qrData) {
-	const { data, error } = await supabase.functions.invoke('scanner-visit', {
+	const { data, error, response } = await supabase.functions.invoke('scanner-visit', {
 		body: { projectId, qrData }
 	});
-	if (error) throw new Error(error.message);
+	if (error) throw await buildApiFunctionError(error, response, 'Falha ao registrar visita.');
 	if (data.error) throw new Error(data.error);
 	return data;
 }

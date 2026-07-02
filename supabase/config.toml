@@ -420,6 +420,26 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/billing-finalize-plan-change/index.ts"
 
+[functions.billing-manage-plan-cancellation]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-manage-plan-cancellation/index.ts"
+
+[functions.billing-reactivate-subscription]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-reactivate-subscription/index.ts"
+
+[functions.billing-start-payment-recovery]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/billing-start-payment-recovery/index.ts"
+
+[functions.billing-close-cycles]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/billing-close-cycles/index.ts"
+
 [functions.asaas-webhook]
 enabled = true
 verify_jwt = false
@@ -444,6 +464,16 @@ entrypoint = "./functions/universal-link/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/pass-updates-runner/index.ts"
+
+[functions.affiliate-admin]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/affiliate-admin/index.ts"
+
+[functions.affiliate-public]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/affiliate-public/index.ts"
 
 [functions.teste]
 enabled = true

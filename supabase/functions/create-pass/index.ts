@@ -10,6 +10,7 @@ import {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PUBLIC_APP_URL = Deno.env.get("PUBLIC_APP_URL") || ""; // ex: https://app.suaempresa.com
+const VALID_PASS_TYPES = new Set(["loyalty", "value"]);
 
 const sbAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
@@ -240,6 +241,12 @@ function toCleanText(input: unknown): string {
   return input.trim();
 }
 
+function normalizePassType(input: unknown): string | null {
+  const value = String(input ?? "").trim().toLowerCase();
+  if (!value) return "loyalty";
+  return VALID_PASS_TYPES.has(value) ? value : null;
+}
+
 async function getProjectTemplateDefaults(projectId: string) {
   const { data, error } = await sbAdmin
     .from("wallet_templates")
@@ -304,9 +311,16 @@ serve(async (req) => {
 
     const templateDefaults = await getProjectTemplateDefaults(projectId);
 
-    const type = (body.type ?? templateDefaults.type ?? "loyalty")
-      .toString()
-      .toLowerCase();
+    const type = normalizePassType(body.type ?? templateDefaults.type ?? "loyalty");
+    if (!type) {
+      throw new HttpError(400, {
+        ...errorPayload(
+          "bad_request",
+          "Tipo de passe inválido. Use Fidelidade ou Valor.",
+        ),
+      });
+    }
+
     const title =
       toCleanText(body.title) ||
       toCleanText(templateDefaults.title) ||

@@ -5,6 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2, Wallet } from 'lucide-react';
+import {
+  getFunctionErrorMessage,
+  readFunctionErrorPayload,
+} from '@/lib/functionErrors';
 
 const AddWallet = () => {
   const [loading, setLoading] = useState(false);
@@ -35,7 +39,8 @@ const AddWallet = () => {
       });
 
       if (response.error) {
-        throw new Error(response.error.message);
+        const payload = await readFunctionErrorPayload(response.error, response.response);
+        throw new Error(getFunctionErrorMessage(payload, 'Nao foi possivel adicionar a carteira.'));
       }
       
       if (response.data.error) {

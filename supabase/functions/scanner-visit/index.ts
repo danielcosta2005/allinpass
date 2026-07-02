@@ -101,6 +101,7 @@ type ChallengePayload = {
   v: 1;
   project_id: string;
   user_pass_id: string;
+  amount_cents?: number;
   exp: number; // unix seconds
 };
 
@@ -143,8 +144,55 @@ function formatDateBR(iso: string | null): string | null {
 type AvailableReward = {
   id: string;
   name: string;
-  points_required: number;
+  reward_type: "loyalty" | "value";
+  points_required?: number;
+  value_required_cents?: number;
+  currency?: string;
 };
+
+function parseAmountCents(input: unknown): number | null {
+  if (typeof input === "number" && Number.isInteger(input) && input > 0) {
+    return input;
+  }
+
+  const raw = String(input ?? "").trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const cents = Number(raw);
+    return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+  }
+
+  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const cents = Math.round(amount * 100);
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+function readIntegerFromMetadata(metadata: any, key: string): number {
+  const value = metadata?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(Math.trunc(value), 0);
+  }
+
+  const raw = String(value ?? "").trim();
+  if (!/^-?\d+$/.test(raw)) return 0;
+  return Math.max(Number(raw), 0);
+}
+
+function formatCurrencyBRL(cents: number) {
+  const normalizedCents = Number.isFinite(cents) ? Math.trunc(cents) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
+const VALUE_PASS_AMOUNT_REQUIRED_MESSAGE =
+  "Um passe do tipo Valor foi lido, mas nenhum valor válido foi informado. Ative o modo Valor, informe o valor a creditar e leia o passe novamente.";
 
 function normalizeRewards(rows: unknown): AvailableReward[] {
   if (!Array.isArray(rows)) return [];
@@ -153,13 +201,33 @@ function normalizeRewards(rows: unknown): AvailableReward[] {
     .map((row: any) => {
       const id = cleanString(row?.id);
       const name = cleanString(row?.name);
+      const rewardType = cleanString(row?.reward_type)?.toLowerCase() === "value"
+        ? "value"
+        : "loyalty";
       const pointsRequired = Number(row?.points_required);
+      const valueRequiredCents = Number(row?.value_required_cents);
+      const currency = cleanString(row?.currency) ?? "BRL";
 
-      if (!id || !name || !Number.isFinite(pointsRequired)) return null;
+      if (!id || !name) return null;
+      if (rewardType === "value") {
+        if (!Number.isFinite(valueRequiredCents) || valueRequiredCents <= 0) {
+          return null;
+        }
+        return {
+          id,
+          name,
+          reward_type: "value",
+          value_required_cents: Math.trunc(valueRequiredCents),
+          currency,
+        };
+      }
+
+      if (!Number.isFinite(pointsRequired)) return null;
 
       return {
         id,
         name,
+        reward_type: "loyalty",
         points_required: pointsRequired,
       };
     })
@@ -204,6 +272,23 @@ function buildGooglePointsNotificationMessage(
       ? `Validade renovada${expiresFmt ? ` ate ${expiresFmt}` : ""} e pontos resetados. Pontos atuais: ${points}.`
       : `+1 ponto adicionado! Pontos atuais: ${points}.`,
   );
+}
+
+function buildGoogleValueNotificationMessage(
+  amountCents: number,
+  balanceCents: number,
+  expiresFmt: string | null,
+  rewards: AvailableReward[],
+) {
+  const rewardNames = formatRewardNames(rewards);
+  const base = `${formatCurrencyBRL(amountCents)} creditados. Saldo atual: ${formatCurrencyBRL(balanceCents)}`;
+  const expiresText = expiresFmt ? ` Validade: ${expiresFmt}.` : "";
+
+  if (rewardNames) {
+    return truncateMessage(`${base}.${expiresText} Pode resgatar: ${rewardNames}.`);
+  }
+
+  return truncateMessage(`${base}.${expiresText}`);
 }
 
 Deno.serve(async (req) => {
@@ -252,6 +337,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const projectId = cleanString(body?.projectId);
     const token = extractToken(body?.qrData);
+    const amountCents = parseAmountCents(
+      body?.amount_cents ?? body?.amountCents ?? body?.amount,
+    );
 
     const confirm = !!body?.confirm;
     const challenge = cleanString(body?.challenge);
@@ -320,7 +408,7 @@ Deno.serve(async (req) => {
     // 4) pega project_id real do passe e compara
     const { data: passRow, error: passErr } = await sbAdmin
       .from("passes")
-      .select("id, project_id")
+      .select("id, project_id, type")
       .eq("id", up.pass_id)
       .maybeSingle();
 
@@ -351,17 +439,50 @@ Deno.serve(async (req) => {
       );
     }
 
+    const passMode = cleanString((passRow as any).type)?.toLowerCase() === "value"
+      ? "value"
+      : "loyalty";
+
+    if (passMode === "value" && !amountCents) {
+      return new Response(
+        JSON.stringify({
+          error: "invalid_amount",
+          pass_mode: "value",
+          message: VALUE_PASS_AMOUNT_REQUIRED_MESSAGE,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+      );
+    }
+
     await assertProjectBillingActive(sbAdmin, projectId);
 
     // ---------- Anti-replay gate ----------
     if (!confirm) {
-      const { data: lastRows, error: lastErr } = await sbAdmin
-        .from("visits")
-        .select("created_at")
-        .eq("project_id", projectId)
-        .eq("user_pass_id", up.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
+      let lastRows: any[] | null = null;
+      let lastErr: any = null;
+
+      if (passMode === "value") {
+        const result = await sbAdmin
+          .from("wallet_value_transactions")
+          .select("created_at")
+          .eq("project_id", projectId)
+          .eq("user_pass_id", up.id)
+          .eq("transaction_type", "credit")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        lastRows = result.data;
+        lastErr = result.error;
+      } else {
+        const result = await sbAdmin
+          .from("visits")
+          .select("created_at")
+          .eq("project_id", projectId)
+          .eq("user_pass_id", up.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        lastRows = result.data;
+        lastErr = result.error;
+      }
 
       if (lastErr) {
         return new Response(
@@ -382,6 +503,7 @@ Deno.serve(async (req) => {
             v: 1,
             project_id: String(projectId),
             user_pass_id: String(up.id),
+            ...(passMode === "value" ? { amount_cents: amountCents! } : {}),
             exp,
           });
 
@@ -423,81 +545,207 @@ Deno.serve(async (req) => {
           { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
         );
       }
+
+      if (passMode === "value" && payload.amount_cents !== amountCents) {
+        return new Response(
+          JSON.stringify({ error: "invalid_challenge", message: "Challenge não corresponde ao valor informado." }),
+          { status: 403, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+        );
+      }
     }
 
-    // ---------- Fluxo normal: contabilização de pontos ----------
+    // ---------- Fluxo normal ----------
     const meta = (up.metadata && typeof up.metadata === "object") ? up.metadata : {};
-    const currentPointsRaw = (meta as any)?.points;
-    const currentPoints = Number.isFinite(Number(currentPointsRaw)) ? Number(currentPointsRaw) : 0;
-
     const now = new Date();
     const expiresAt = up.expires_at ? new Date(up.expires_at) : null;
     const isExpired =
       !expiresAt ||
       Number.isNaN(expiresAt.getTime()) ||
       expiresAt.getTime() < now.getTime();
-
-    let newPoints = currentPoints;
     let newExpiresAtISO: string | null = up.expires_at ?? null;
     let reset = false;
-
-    if (isExpired) {
-      reset = true;
-      newPoints = 1;
-      newExpiresAtISO = addDays(now, 30).toISOString();
-    } else {
-      newPoints += 1;
-    }
-
-    const newMeta = { ...(meta as any), points: newPoints };
-
-    const { error: updErr } = await sbAdmin
-      .from("user_passes")
-      .update({
-        metadata: newMeta,
-        expires_at: newExpiresAtISO,
-      })
-      .eq("id", up.id);
-
-    if (updErr) {
-      return new Response(
-        JSON.stringify({ error: "update_failed", message: updErr.message }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
-      );
-    }
 
     // ---------- Recompensas disponiveis ----------
     let rewardsAvailable: AvailableReward[] = [];
     let rewardLookupWarning: string | null = null;
+    let responsePayload: Record<string, unknown>;
+    let googleNotificationMessage = "";
 
-    try {
-      const { data: rewardRows, error: rewardsErr } = await sbAdmin
-        .from("rewards")
-        .select("id, name, points_required")
-        .eq("project_id", projectId)
-        .eq("status", "active")
-        .eq("points_required", newPoints)
-        .order("created_at", { ascending: true });
-
-      if (rewardsErr) {
-        rewardLookupWarning = rewardsErr.message;
-        console.log("[scanner-visit] rewards lookup failed (ignored):", rewardsErr.message);
-      } else {
-        rewardsAvailable = normalizeRewards(rewardRows);
+    if (passMode === "value") {
+      if (isExpired || !newExpiresAtISO) {
+        reset = isExpired;
+        newExpiresAtISO = addDays(now, 30).toISOString();
       }
-    } catch (err) {
-      rewardLookupWarning = String((err as any)?.message ?? err);
-      console.log("[scanner-visit] rewards lookup failed (ignored):", rewardLookupWarning);
+
+      const { data: creditData, error: creditErr } = await sbAdmin.rpc(
+        "credit_wallet_value",
+        {
+          p_project_id: projectId,
+          p_pass_token: token,
+          p_amount_cents: amountCents,
+          p_actor_user_id: userData.user.id,
+        },
+      );
+
+      if (creditErr) {
+        return new Response(
+          JSON.stringify({ error: "credit_failed", message: creditErr.message }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+        );
+      }
+
+      const creditResult = (creditData || {}) as Record<string, any>;
+      if (!creditResult.ok) {
+        const status = creditResult.error === "wrong_project"
+          ? 403
+          : creditResult.error === "not_found"
+          ? 404
+          : creditResult.error === "invalid_amount"
+          ? 400
+          : 409;
+        const errorPayload = creditResult.error === "invalid_amount"
+          ? {
+              ...creditResult,
+              pass_mode: "value",
+              message: VALUE_PASS_AMOUNT_REQUIRED_MESSAGE,
+            }
+          : creditResult;
+        return new Response(
+          JSON.stringify(errorPayload),
+          { status, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+        );
+      }
+
+      if (newExpiresAtISO && newExpiresAtISO !== (up.expires_at ?? null)) {
+        const { error: expiryErr } = await sbAdmin
+          .from("user_passes")
+          .update({ expires_at: newExpiresAtISO })
+          .eq("id", up.id);
+
+        if (expiryErr) {
+          return new Response(
+            JSON.stringify({ error: "update_failed", message: expiryErr.message }),
+            { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+          );
+        }
+      }
+
+      try {
+        const { data: rewardRows, error: rewardsErr } = await sbAdmin
+          .from("rewards")
+          .select("id, name, reward_type, value_required_cents, currency")
+          .eq("project_id", projectId)
+          .eq("status", "active")
+          .eq("reward_type", "value")
+          .lte("value_required_cents", Number(creditResult.balance_cents))
+          .order("value_required_cents", { ascending: true })
+          .order("created_at", { ascending: true });
+
+        if (rewardsErr) {
+          rewardLookupWarning = rewardsErr.message;
+          console.log("[scanner-visit] rewards lookup failed (ignored):", rewardsErr.message);
+        } else {
+          rewardsAvailable = normalizeRewards(rewardRows);
+        }
+      } catch (err) {
+        rewardLookupWarning = String((err as any)?.message ?? err);
+        console.log("[scanner-visit] rewards lookup failed (ignored):", rewardLookupWarning);
+      }
+
+      const expiresFmt = formatDateBR(newExpiresAtISO);
+      googleNotificationMessage = buildGoogleValueNotificationMessage(
+        Number(creditResult.amount_cents),
+        Number(creditResult.balance_cents),
+        expiresFmt,
+        rewardsAvailable,
+      );
+
+      responsePayload = {
+        ok: true,
+        mode: "value",
+        pass_token: token,
+        user_pass_id: up.id,
+        transaction_id: creditResult.transaction_id,
+        amount_cents: Number(creditResult.amount_cents),
+        balance_before_cents: Number(creditResult.balance_before_cents),
+        balance_after_cents: Number(creditResult.balance_after_cents),
+        balance_cents: Number(creditResult.balance_cents),
+        currency: creditResult.currency ?? "BRL",
+        reset,
+        expires_at: newExpiresAtISO,
+        confirmed: confirm ? true : false,
+      };
+    } else {
+      const currentPoints = readIntegerFromMetadata(meta, "points");
+      let newPoints = currentPoints;
+
+      if (isExpired) {
+        reset = true;
+        newPoints = 1;
+        newExpiresAtISO = addDays(now, 30).toISOString();
+      } else {
+        newPoints += 1;
+      }
+
+      const newMeta = { ...(meta as any), points: newPoints };
+
+      const { error: updErr } = await sbAdmin
+        .from("user_passes")
+        .update({
+          metadata: newMeta,
+          expires_at: newExpiresAtISO,
+        })
+        .eq("id", up.id);
+
+      if (updErr) {
+        return new Response(
+          JSON.stringify({ error: "update_failed", message: updErr.message }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders(origin) } },
+        );
+      }
+
+      try {
+        const { data: rewardRows, error: rewardsErr } = await sbAdmin
+          .from("rewards")
+          .select("id, name, reward_type, points_required")
+          .eq("project_id", projectId)
+          .eq("status", "active")
+          .eq("reward_type", "loyalty")
+          .eq("points_required", newPoints)
+          .order("created_at", { ascending: true });
+
+        if (rewardsErr) {
+          rewardLookupWarning = rewardsErr.message;
+          console.log("[scanner-visit] rewards lookup failed (ignored):", rewardsErr.message);
+        } else {
+          rewardsAvailable = normalizeRewards(rewardRows);
+        }
+      } catch (err) {
+        rewardLookupWarning = String((err as any)?.message ?? err);
+        console.log("[scanner-visit] rewards lookup failed (ignored):", rewardLookupWarning);
+      }
+
+      const expiresFmt = formatDateBR(newExpiresAtISO);
+      googleNotificationMessage = buildGooglePointsNotificationMessage(
+        newPoints,
+        reset,
+        expiresFmt,
+        rewardsAvailable,
+      );
+
+      responsePayload = {
+        ok: true,
+        mode: "loyalty",
+        pass_token: token,
+        user_pass_id: up.id,
+        points: newPoints,
+        reset,
+        expires_at: newExpiresAtISO,
+        confirmed: confirm ? true : false,
+      };
     }
 
     const rewardAvailable = rewardsAvailable[0] ?? null;
-    const expiresFmt = formatDateBR(newExpiresAtISO);
-    const googleNotificationMessage = buildGooglePointsNotificationMessage(
-      newPoints,
-      reset,
-      expiresFmt,
-      rewardsAvailable,
-    );
 
     // ---------- Pushes + notificacao (nao bloqueantes) ----------
     try {
@@ -572,13 +820,7 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        ok: true,
-        pass_token: token,
-        user_pass_id: up.id,
-        points: newPoints,
-        reset,
-        expires_at: newExpiresAtISO,
-        confirmed: confirm ? true : false,
+        ...responsePayload,
         reward_available: rewardAvailable,
         rewards_available: rewardsAvailable,
         reward_lookup_warning: rewardLookupWarning,

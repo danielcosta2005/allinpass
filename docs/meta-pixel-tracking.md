@@ -1,6 +1,6 @@
-# Meta Pixel — Tracking de eventos da landing page
+# Meta Pixel — Tracking de eventos da landing page e cadastro
 
-Este documento descreve quais eventos do Meta Pixel são disparados na landing page pública da Allin Pass ([allinpass/frontend/src/pages/LandingPage.jsx](../frontend/src/pages/LandingPage.jsx)), em quais interações cada um dispara, e quais parâmetros são enviados.
+Este documento descreve quais eventos do Meta Pixel são disparados na landing page pública da Allin Pass ([allinpass/frontend/src/pages/LandingPage.jsx](../frontend/src/pages/LandingPage.jsx)) e no fluxo de cadastro/checkout ([allinpass/frontend/src/pages/SignupPage.jsx](../frontend/src/pages/SignupPage.jsx)), em quais interações cada um dispara, e quais parâmetros são enviados.
 
 ## 1. Configuração base
 
@@ -72,6 +72,99 @@ Estes são os nomes oficiais que o algoritmo da Meta entende e usa pra otimizar 
   { "source": "pricing_custom_plan" }
   ```
 - **Uso:** lead qualificado de plano customizado. Audiência separada de leads genéricos.
+
+### 2.6 `AddPaymentInfo`
+
+- **Quando dispara:** depois que o backend cria ou reutiliza uma sessão de checkout paga com sucesso, imediatamente antes do redirect para o checkout seguro do Asaas. Cobre o fluxo de pagamento em `/cadastro` e a recuperação de pagamento pelo `/org`.
+- **Dedup:** chave local por sessão de checkout, armazenada no navegador por 30 dias. A chave não é enviada para a Meta.
+- **Parâmetros:**
+  ```json
+  {
+    "value": 297.7,
+    "currency": "BRL",
+    "content_name": "Pro",
+    "content_ids": ["pro"],
+    "content_type": "product",
+    "contents": [
+      {
+        "id": "pro",
+        "quantity": 1,
+        "item_price": 297.7
+      }
+    ],
+    "plan_code": "pro",
+    "plan_name": "Pro",
+    "payment_provider": "asaas",
+    "source": "signup_payment_step"
+  }
+  ```
+- **Uso:** sinal intermediário de checkout pago aberto com sucesso. Bom para remarketing de pessoas que chegaram ao Asaas mas não tiveram pagamento confirmado.
+
+### 2.7 `CompleteRegistration`
+
+- **Quando dispara:** depois que `signup-finalize` confirma a criação/ativação do projeto. Cobre Free Trial, retorno de magic link, retorno de checkout pago e recuperação de ativação no `/org`.
+- **Dedup:** chave local por projeto/assinatura/checkout, armazenada no navegador por 30 dias. A chave não é enviada para a Meta.
+- **Parâmetros:**
+  ```json
+  {
+    "value": 0,
+    "currency": "BRL",
+    "content_name": "Free Trial",
+    "content_ids": ["free_trial"],
+    "plan_code": "free_trial",
+    "plan_name": "Free Trial",
+    "registration_method": "email",
+    "signup_flow": "free_trial",
+    "source": "signup_email_confirmation"
+  }
+  ```
+- **Uso:** conversão de finalização de cadastro. É o evento principal para medir quantos cadastros chegaram ao ponto em que o projeto existe de fato.
+
+### 2.8 `StartTrial`
+
+- **Quando dispara:** junto da finalização real do Free Trial, depois que `signup-finalize` cria/ativa o projeto com plano `free_trial`.
+- **Dedup:** chave local por projeto/assinatura, armazenada no navegador por 30 dias. A chave não é enviada para a Meta.
+- **Parâmetros:**
+  ```json
+  {
+    "value": 0,
+    "currency": "BRL",
+    "content_name": "Free Trial",
+    "content_ids": ["free_trial"],
+    "plan_code": "free_trial",
+    "plan_name": "Free Trial",
+    "source": "signup_email_confirmation"
+  }
+  ```
+- **Uso:** conversão específica de início de trial. Mantemos `CompleteRegistration` para medir cadastro finalizado e `StartTrial` para medir o início do teste gratuito.
+
+### 2.9 `Purchase`
+
+- **Quando dispara:** depois que um plano pago é confirmado e `signup-finalize` conclui a ativação. Cobre retorno `/cadastro?checkout=success` e recuperação de ativação no `/org`.
+- **Dedup:** chave local por checkout/projeto/assinatura, armazenada no navegador por 30 dias. A chave não é enviada para a Meta.
+- **Separação por plano:** o evento continua sendo o padrão `Purchase`; Starter/Pro/Premium são identificados por `content_ids`, `plan_code` e `plan_name`. Isso preserva otimização/ROAS da Meta e permite criar conversões ou audiências filtradas por plano.
+- **Parâmetros:**
+  ```json
+  {
+    "value": 297.7,
+    "currency": "BRL",
+    "content_name": "Pro",
+    "content_ids": ["pro"],
+    "content_type": "product",
+    "contents": [
+      {
+        "id": "pro",
+        "quantity": 1,
+        "item_price": 297.7
+      }
+    ],
+    "num_items": 1,
+    "plan_code": "pro",
+    "plan_name": "Pro",
+    "source": "signup_paid_checkout_return"
+  }
+  ```
+- **Uso:** conversão de compra e cálculo de ROAS. Este é o evento de maior valor para campanhas otimizadas para receita.
 
 ## 3. Eventos customizados (camada de analytics interno)
 
@@ -154,6 +247,9 @@ Prefixo `LP_` pra todos os customizados. Usar pra dashboards internos no Ads Man
 | Clica "Começar agora" (Hero, Header, FinalCTA) | `Lead` | — |
 | Clica no card de um plano | `InitiateCheckout` | `LP_PlanCardCTA` |
 | Clica "Fale com a gente" | `Contact` | — |
+| Abre checkout pago no Asaas | `AddPaymentInfo` | — |
+| Finaliza cadastro Free Trial | `CompleteRegistration`, `StartTrial` | — |
+| Finaliza ativação de plano pago | `CompleteRegistration`, `Purchase` | — |
 | Abre uma pergunta no FAQ | — | `LP_FAQOpen` |
 | Clica "Entrar" (visitante anônimo) | — | `LP_LoginClick` |
 | Clica "Acessar painel" (usuário logado) | — | `LP_DashboardAccess` |

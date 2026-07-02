@@ -65,14 +65,14 @@ Inventario por dominio, conforme migrations:
 | Wallet e passes | `passes`, `user_passes`, `wallet_templates`, `wallet_configs`, `wallet_configs_history`, `wallet_links`, `project_wallets`, `locations`, `pass_locations`, `passkit_events`, `passkit_registrations`, `user_wallets`, `wallet.issued_passes`, `wallet.projects`, `wallet.templates` |
 | Clientes, visitas e fidelidade | `customers`, `visits`, `events`, `loyalty_states`, `rewards`, `reward_redemptions` |
 | Notificacoes e automacoes | `notifications`, `notification_jobs`, `projects_notifications`, `automations`, `automation_dispatches` |
-| Billing | `billing_plans`, `billing_accounts`, `billing_payment_methods`, `billing_subscriptions`, `billing_subscription_changes`, `billing_cycles`, `billing_invoices`, `billing_invoice_items`, `billing_usage_events`, `billing_credit_wallets`, `billing_credit_transactions`, `billing_notification_rules`, `billing_notification_deliveries`, `billing_reprocessing_batches`, `billing_plan_change_sessions`, `project_billing_audit_logs` |
+| Billing | `billing_plans`, `billing_accounts`, `billing_payment_methods`, `billing_subscriptions`, `billing_subscription_changes`, `billing_cycles`, `billing_invoices`, `billing_invoice_items`, `billing_invoice_collection_batches`, `billing_usage_events`, `billing_credit_wallets`, `billing_credit_transactions`, `billing_notification_rules`, `billing_notification_deliveries`, `billing_reprocessing_batches`, `billing_plan_change_sessions`, `project_billing_audit_logs` |
 | Signup e controles operacionais | `signup_precheck_rate_limits`, `signup_finalizations`, `signup_existing_customer_intents`, `signup_checkout_sessions`, `function_logs`, `secrets` |
 
 Status RLS inferido:
 
 | Status | Tabelas |
 |---|---|
-| RLS ativa com policies efetivas inferidas | `automation_dispatches`, `automations`, `billing_accounts`, `billing_credit_transactions`, `billing_credit_wallets`, `billing_cycles`, `billing_invoice_items`, `billing_invoices`, `billing_notification_deliveries`, `billing_notification_rules`, `billing_payment_methods`, `billing_plans`, `billing_reprocessing_batches`, `billing_subscription_changes`, `billing_subscriptions`, `billing_usage_events`, `customers`, `events`, `locations`, `loyalty_states`, `notification_jobs`, `notifications`, `org_members`, `orgs`, `passes`, `profiles`, `project_billing_audit_logs`, `project_members`, `project_wallets`, `projects`, `projects_notifications`, `reward_redemptions`, `rewards`, `signup_precheck_rate_limits`, `user_wallets`, `visits`, `wallet_configs`, `wallet_configs_history`, `wallet_links`, `wallet_templates`, `wallet.templates` |
+| RLS ativa com policies efetivas inferidas | `automation_dispatches`, `automations`, `billing_accounts`, `billing_credit_transactions`, `billing_credit_wallets`, `billing_cycles`, `billing_invoice_collection_batches`, `billing_invoice_items`, `billing_invoices`, `billing_notification_deliveries`, `billing_notification_rules`, `billing_payment_methods`, `billing_plans`, `billing_reprocessing_batches`, `billing_subscription_changes`, `billing_subscriptions`, `billing_usage_events`, `customers`, `events`, `locations`, `loyalty_states`, `notification_jobs`, `notifications`, `org_members`, `orgs`, `passes`, `profiles`, `project_billing_audit_logs`, `project_members`, `project_wallets`, `projects`, `projects_notifications`, `reward_redemptions`, `rewards`, `signup_precheck_rate_limits`, `user_wallets`, `visits`, `wallet_configs`, `wallet_configs_history`, `wallet_links`, `wallet_templates`, `wallet.templates` |
 | RLS ativa sem policy efetiva inferida | `billing_plan_change_sessions`, `clients`, `secrets`, `signup_checkout_sessions`, `signup_existing_customer_intents`, `signup_finalizations`, `wallet.issued_passes` |
 | Sem `enable row level security` identificado nas migrations | `function_logs`, `pass_locations`, `passkit_events`, `passkit_registrations`, `user_passes`, `wallet.projects` |
 
@@ -99,7 +99,7 @@ Mapa de FKs principais por destino:
 
 | Destino | Origens |
 |---|---|
-| `projects.id` | `automations.project_id`, `billing_accounts.project_id`, `billing_cycles.project_id`, `billing_credit_transactions.project_id`, `billing_credit_wallets.project_id`, `billing_invoice_items.project_id`, `billing_invoices.project_id`, `billing_notification_deliveries.project_id`, `billing_notification_rules.project_id`, `billing_payment_methods.project_id`, `billing_reprocessing_batches.project_id`, `billing_subscription_changes.project_id`, `billing_subscriptions.project_id`, `billing_usage_events.project_id`, `customers.project_id`, `events.project_id`, `locations.project_id`, `loyalty_states.project_id`, `notification_jobs.project_id`, `notifications.project_id`, `pass_locations.project_id`, `passes.project_id`, `project_billing_audit_logs.project_id`, `project_members.project_id`, `project_wallets.project_id`, `projects_notifications.project_id`, `visits.project_id`, `wallet_configs.project_id`, `wallet_configs_history.project_id`, `wallet_links.project_id`, `wallet_templates.project_id`, `rewards.project_id`, `reward_redemptions.project_id`, `billing_plan_change_sessions.project_id`, `signup_finalizations.project_id` |
+| `projects.id` | `automations.project_id`, `billing_accounts.project_id`, `billing_cycles.project_id`, `billing_credit_transactions.project_id`, `billing_credit_wallets.project_id`, `billing_invoice_collection_batches.project_id`, `billing_invoice_items.project_id`, `billing_invoices.project_id`, `billing_notification_deliveries.project_id`, `billing_notification_rules.project_id`, `billing_payment_methods.project_id`, `billing_reprocessing_batches.project_id`, `billing_subscription_changes.project_id`, `billing_subscriptions.project_id`, `billing_usage_events.project_id`, `customers.project_id`, `events.project_id`, `locations.project_id`, `loyalty_states.project_id`, `notification_jobs.project_id`, `notifications.project_id`, `pass_locations.project_id`, `passes.project_id`, `project_billing_audit_logs.project_id`, `project_members.project_id`, `project_wallets.project_id`, `projects_notifications.project_id`, `visits.project_id`, `wallet_configs.project_id`, `wallet_configs_history.project_id`, `wallet_links.project_id`, `wallet_templates.project_id`, `rewards.project_id`, `reward_redemptions.project_id`, `billing_plan_change_sessions.project_id`, `signup_finalizations.project_id` |
 | `profiles.id` | `projects.created_by`, `billing_credit_transactions.created_by`, `billing_reprocessing_batches.created_by`, `billing_subscription_changes.requested_by`, `project_billing_audit_logs.actor_user_id`, `billing_plan_change_sessions.requested_by` |
 | `auth.users.id` | `signup_finalizations.user_id`, `signup_existing_customer_intents.user_id`, `signup_checkout_sessions.user_id`; `auth.users` tambem dispara `handle_new_user()` para sincronizar `profiles` |
 | `project_members` | Nao e destino comum; e a fonte das checagens de membership em RLS, RPCs e Edge Functions |
@@ -113,9 +113,10 @@ Mapa de FKs principais por destino:
 | `orgs` | `org_members.org_id` |
 | `billing_plans` | `billing_plans.auto_upgrade_to_plan_id`, `billing_subscription_changes.previous_plan_id`, `billing_subscription_changes.new_plan_id`, `billing_subscriptions.plan_id`, `signup_checkout_sessions.plan_id`, `billing_plan_change_sessions.previous_plan_id`, `billing_plan_change_sessions.new_plan_id` |
 | `billing_accounts` | `billing_invoices.billing_account_id`, `billing_payment_methods.billing_account_id`, `billing_subscriptions.billing_account_id` |
-| `billing_subscriptions` | `billing_cycles.subscription_id`, `billing_invoices.subscription_id`, `billing_notification_deliveries.subscription_id`, `billing_subscription_changes.subscription_id`, `billing_usage_events.subscription_id`, `billing_plan_change_sessions.subscription_id` |
+| `billing_subscriptions` | `billing_cycles.subscription_id`, `billing_invoice_collection_batches.subscription_id`, `billing_invoices.subscription_id`, `billing_notification_deliveries.subscription_id`, `billing_subscription_changes.subscription_id`, `billing_usage_events.subscription_id`, `billing_plan_change_sessions.subscription_id` |
 | `billing_cycles` | `billing_invoices.billing_cycle_id`, `billing_usage_events.billing_cycle_id` |
 | `billing_invoices` | `billing_invoice_items.invoice_id`, `billing_notification_deliveries.invoice_id` |
+| `billing_invoice_collection_batches` | `billing_invoices.collection_batch_id` |
 | `billing_invoice_items` | `billing_credit_transactions.invoice_item_id`, `billing_usage_events.invoice_item_id` |
 | `billing_usage_events` | `billing_credit_transactions.usage_event_id` |
 | `billing_notification_rules` | `billing_notification_deliveries.rule_id` |
@@ -154,6 +155,7 @@ Resumo de policies efetivas inferidas por tabela:
 | `billing_credit_transactions` | `billing_credit_transactions_member_select`, `billing_credit_transactions_superadmin_write` |
 | `billing_credit_wallets` | `billing_credit_wallets_member_select`, `billing_credit_wallets_superadmin_write` |
 | `billing_cycles` | `billing_cycles_member_select`, `billing_cycles_superadmin_write` |
+| `billing_invoice_collection_batches` | `billing_invoice_collection_batches_member_select`, `billing_invoice_collection_batches_superadmin_write` |
 | `billing_invoice_items` | `billing_invoice_items_member_select`, `billing_invoice_items_superadmin_write` |
 | `billing_invoices` | `billing_invoices_member_select`, `billing_invoices_superadmin_write` |
 | `billing_notification_deliveries` | `billing_notification_deliveries_member_select`, `billing_notification_deliveries_superadmin_write` |
@@ -295,6 +297,7 @@ Triggers identificados:
 | `trg_billing_subscriptions_updated_at` | `billing_subscriptions` | `set_updated_at()` |
 | `trg_billing_cycles_updated_at` | `billing_cycles` | `set_updated_at()` |
 | `trg_billing_invoices_updated_at` | `billing_invoices` | `set_updated_at()` |
+| `trg_billing_invoice_collection_batches_updated_at` | `billing_invoice_collection_batches` | `set_updated_at()` |
 | `trg_billing_credit_wallets_updated_at` | `billing_credit_wallets` | `set_updated_at()` |
 | `trg_billing_notification_rules_updated_at` | `billing_notification_rules` | `set_updated_at()` |
 | `trg_billing_credit_transactions_apply` | `billing_credit_transactions` | `trg_sync_credit_wallet_balance()` |
@@ -339,9 +342,10 @@ Inventario estatico:
 | `signup-finalize` | Exige `Authorization`; valida usuario por `auth.getUser`; usa service role para provisionar perfil/projeto/billing. | Sim | `profiles`, `project_members`, `projects`, `wallet_templates`, `projects_notifications`, billing, signup tables |
 | `signup-start-checkout` | Exige `Authorization`; valida usuario; usa service role e Asaas. | Sim | `billing_plans`, `signup_checkout_sessions` |
 | `signup-status` | Exige `Authorization`; valida usuario; usa service role para consultar estado de cadastro. | Sim | `project_members`, `signup_checkout_sessions`, `signup_existing_customer_intents` |
-| `asaas-webhook` | Sem JWT; valida `ASAAS_WEBHOOK_TOKEN` quando configurado; usa service role. | Sim | `signup_checkout_sessions`, `billing_plan_change_sessions`, `billing_subscriptions` |
+| `asaas-webhook` | Sem JWT; valida `ASAAS_WEBHOOK_TOKEN` quando configurado; usa service role. | Sim | `signup_checkout_sessions`, `billing_plan_change_sessions`, `billing_subscriptions`, `billing_invoice_collection_batches`, `billing_invoices` |
 | `billing-start-plan-change` | Exige `Authorization`; valida usuario; exige `project_members.role = owner`; usa service role e Asaas. | Sim | billing plan/subscription/change session |
 | `billing-finalize-plan-change` | Exige `Authorization`; valida usuario; exige `project_members.role = owner`; chama `apply_billing_plan_change`. | Sim | `billing_plan_change_sessions`, `project_members` |
+| `billing-close-cycles` | Sem JWT; valida `CRON_SECRET`/`BILLING_CRON_SECRET`, bearer service role ou `cron_secret` do Vault via RPC service-role; chama fechamento de ciclo e Asaas. | Sim | `billing_cycles`, `billing_invoices`, `billing_invoice_collection_batches`, `billing_subscriptions` |
 | `apple-pass` | Usa service role; opera por token/assinatura conforme codigo; gera pass Apple. | Sim | `user_passes`, `passes`, `projects`, `locations`, `pass_locations`, `wallet_templates`, `rewards` |
 | `google-pass` | Usa service role; gera objeto Google Wallet. | Sim | `passes`, `projects`, `locations`, `pass_locations`, `wallet_templates` |
 | `universal-link` | Usa service role; pode ler usuario via `Authorization`; cria/reaproveita `user_passes`. | Sim | `passes`, `user_passes`, `pass-assets` |
@@ -355,7 +359,7 @@ Inventario estatico:
 Configuracao local de functions em `supabase/config.toml`:
 
 - `verify_jwt = true`: `signup-finalize`, `signup-start-checkout`, `signup-status`, `billing-start-plan-change`, `billing-finalize-plan-change`.
-- `verify_jwt = false`: `asaas-webhook`.
+- `verify_jwt = false`: `asaas-webhook`, `billing-close-cycles`.
 - Functions nao listadas dependem do default/deploy e precisam de verificacao posterior.
 
 ## Uso de service role
