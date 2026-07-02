@@ -24,15 +24,18 @@ Principais mudancas:
 - convites podem ser reenviados enquanto nao foram aceitos;
 - convites expirados continuam visiveis para reenvio;
 - o mesmo email nao pode ser convidado simultaneamente como login admin e login restaurante;
+- convite de membro de projeto exige que o email nao esteja vinculado a nenhum outro projeto;
+- o mesmo email nao pode manter convites de membro pendentes/expirados em projetos diferentes;
 - emails existentes apenas em `customers` continuam elegiveis para convite;
 - links reenviados invalidam links anteriores por meio de `metadata.nonce`.
 
 ## Banco de Dados e RLS
 
-A migration adicionada foi:
+As migrations adicionadas foram:
 
 ```text
 supabase/migrations/20260702145149_invitations_rbac_rewards.sql
+supabase/migrations/20260702181202_enforce_single_project_member_account.sql
 ```
 
 Ela cria a tabela `public.user_invitations` com os campos principais:
@@ -47,7 +50,7 @@ Ela cria a tabela `public.user_invitations` com os campos principais:
 - `expires_at`, `last_sent_at`, `accepted_at`;
 - `metadata`, usado atualmente para guardar o `nonce` do link vigente.
 
-Tambem foram adicionados indices para evitar duplicidade logica de convites pendentes por email e escopo.
+Tambem foram adicionados indices para evitar duplicidade logica de convites pendentes por email e escopo. A migration complementar reforca que um mesmo `user_id` nao pode receber novos vinculos duplicados em `project_members`, impedindo que um login de restaurante seja vinculado a mais de um projeto. Ela aplica essa trava por trigger e cria o indice unico `project_members_single_project_per_user_idx` apenas em ambientes que nao tenham duplicidades legadas. Ela tambem troca a unicidade de convite de membro para ser global por email enquanto o convite estiver `invited` ou `expired`.
 
 ### `fn_list_members`
 
@@ -173,9 +176,10 @@ Responsabilidades atuais:
 - autoriza `owner` apenas no proprio projeto;
 - bloqueia email que ja seja login administrativo;
 - bloqueia email que tenha convite administrativo pendente/expirado;
+- bloqueia email que ja tenha login de restaurante ou membership em qualquer projeto;
+- bloqueia email que tenha convite de membro pendente/expirado em outro projeto;
 - permite email que exista apenas em `customers`;
-- se o email ja for usuario `establishment`, faz upsert direto em `project_members`;
-- caso contrario, cria/reaproveita convite pendente/expirado;
+- cria/reaproveita convite pendente/expirado apenas quando o email nao possui conta operacional na Allin Pass;
 - gera `nonce`, validade de 24h e envia email;
 - preserva a logica legada de provisionamento de billing free trial do projeto.
 
@@ -232,7 +236,7 @@ Responsabilidades:
 - no modo `validateOnly`, apenas confirma que o convite ainda e valido;
 - no aceite real, cria/atualiza `profiles`;
 - em convite admin, ativa `profiles.role = admin` ou `superadmin`;
-- em convite de membro, ativa `profiles.role = establishment` e faz upsert em `project_members`;
+- em convite de membro, revalida que o usuario ainda nao pertence a nenhum projeto, ativa `profiles.role = establishment` e faz upsert em `project_members`;
 - marca o convite como `active`;
 - retorna o destino final: `/admin` ou `/org`;
 - trata aceite repetido pelo mesmo usuario como sucesso idempotente.
@@ -388,6 +392,8 @@ O helper `_shared/adminAccess.ts` nao e deployado como function independente; el
 ## Pontos de Atencao
 
 - A migration precisa estar aplicada no banco remoto para o fluxo funcionar, porque as functions dependem de `user_invitations` e da nova assinatura de `fn_list_members`.
+- A migration complementar `20260702181202_enforce_single_project_member_account.sql` precisa estar aplicada para o banco tambem impedir novos memberships duplicados entre projetos.
+- No banco remoto atual foram encontrados dois usuarios com memberships legados em mais de um projeto; enquanto esses dados nao forem consolidados, a migration aplica a trava por trigger, mas pula o indice unico definitivo em `project_members(user_id)`.
 - O envio de email depende do Supabase Auth estar com redirect URLs permitindo a base usada em `APP_BASE_URL` ou `SITE_URL`.
 - Convites enviados para usuarios ja existentes no Auth usam fallback por magic link.
 - O fluxo nao usa `user_metadata` para autorizacao; as permissoes efetivas continuam em `profiles` e `project_members`.
@@ -408,3 +414,7 @@ Resultado:
 - build do frontend passou;
 - typecheck das Edge Functions alteradas passou;
 - checagem de whitespace passou.
+- `supabase db push --linked --dry-run` indicou apenas a migration complementar pendente;
+- `supabase db push --linked` aplicou a migration complementar no remoto;
+- consultas remotas confirmaram a trigger `trg_project_members_single_project_per_user` e o indice `user_invitations_pending_project_member_email_idx`;
+- o indice unico `project_members_single_project_per_user_idx` foi pulado no remoto porque existem dois usuarios com memberships legados em multiplos projetos.

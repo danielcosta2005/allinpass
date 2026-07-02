@@ -5,6 +5,7 @@ import {
   getCallerProfile,
   getProfileForUser,
   getServiceClient,
+  hasAnyProjectMembership,
   HttpError,
   jsonResponse,
   markInvitationSendFailure,
@@ -268,38 +269,71 @@ Deno.serve(async (req) => {
     if (projectError) throw projectError;
     if (!project?.id) throw new HttpError(404, "Projeto nao encontrado.", "project_not_found");
 
+    const { data: pendingInvitation, error: pendingError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id, invited_user_id")
+      .eq("invite_type", "project_member")
+      .eq("project_id", normalizedProjectId)
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingError) throw pendingError;
+
+    const { data: otherProjectInvitation, error: otherProjectInvitationError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id")
+      .eq("invite_type", "project_member")
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .neq("project_id", normalizedProjectId)
+      .limit(1)
+      .maybeSingle();
+
+    if (otherProjectInvitationError) throw otherProjectInvitationError;
+    if (otherProjectInvitation?.id) {
+      throw new HttpError(
+        409,
+        "Este email ja possui convite para outro projeto.",
+        "project_member_invitation_conflict",
+      );
+    }
+
     const existingUser = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
 
     if (existingUser?.id) {
       const currentProfile = await getProfileForUser(supabaseAdmin, existingUser.id);
+      const hasExistingMembership = await hasAnyProjectMembership(supabaseAdmin, existingUser.id);
+      const isSamePendingInviteUser = pendingInvitation?.invited_user_id === existingUser.id;
+
+      if (hasExistingMembership) {
+        throw new HttpError(
+          409,
+          "Este email ja esta vinculado a um projeto. Um login de restaurante nao pode pertencer a mais de um projeto.",
+          "project_member_account_conflict",
+        );
+      }
+
       if (currentProfile?.role === "admin" || currentProfile?.role === "superadmin") {
         throw new HttpError(409, "Este email ja esta cadastrado como login administrativo.", "admin_login_conflict");
       }
 
       if (currentProfile?.role === "establishment") {
-        const { error: memberError } = await supabaseAdmin
-          .from("project_members")
-          .upsert(
-            {
-              project_id: normalizedProjectId,
-              user_id: existingUser.id,
-              role: requestedRole,
-            },
-            { onConflict: "project_id,user_id" },
-          );
+        throw new HttpError(
+          409,
+          "Este email ja possui uma conta de restaurante na Allinpass.",
+          "restaurant_login_conflict",
+        );
+      }
 
-        if (memberError) throw memberError;
-
-        await ensureProjectFreeTrialBilling(supabaseAdmin, normalizedProjectId, normalizedEmail);
-
-        return jsonResponse({
-          success: true,
-          userId: existingUser.id,
-          inviteSent: false,
-          status: "active",
-          role: requestedRole,
-          updated: true,
-        });
+      if (currentProfile?.role !== "customer" && !isSamePendingInviteUser) {
+        throw new HttpError(
+          409,
+          "Este email ja possui uma conta na Allinpass. Convites de membro devem ser enviados apenas para emails sem conta.",
+          "existing_account_conflict",
+        );
       }
     }
 
@@ -320,19 +354,6 @@ Deno.serve(async (req) => {
     const now = new Date();
     const expiresAt = addHours(now, 24).toISOString();
     const inviteNonce = crypto.randomUUID();
-
-    const { data: pendingInvitation, error: pendingError } = await supabaseAdmin
-      .from("user_invitations")
-      .select("id")
-      .eq("invite_type", "project_member")
-      .eq("project_id", normalizedProjectId)
-      .eq("email", normalizedEmail)
-      .in("status", ["invited", "expired"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (pendingError) throw pendingError;
 
     let invitationId = pendingInvitation?.id as string | undefined;
 

@@ -138,6 +138,23 @@ Deno.serve(async (req) => {
         throw new HttpError(409, "Este email ja esta cadastrado como login administrativo.", "admin_login_conflict");
       }
 
+      const hasMembership = await hasAnyProjectMembership(supabaseAdmin, caller.user.id);
+      if (hasMembership) {
+        throw new HttpError(
+          409,
+          "Este email ja esta vinculado a um projeto. Um login de restaurante nao pode pertencer a mais de um projeto.",
+          "project_member_account_conflict",
+        );
+      }
+
+      if (currentProfile?.role === "establishment") {
+        throw new HttpError(
+          409,
+          "Este email ja possui uma conta de restaurante na Allinpass.",
+          "restaurant_login_conflict",
+        );
+      }
+
       const { error: profileError } = await supabaseAdmin
         .from("profiles")
         .upsert(
