@@ -148,11 +148,13 @@ export async function hasAnyProjectMembership(supabaseAdmin: SupabaseAdminClient
 }
 
 export function getAppBaseUrl(req: Request) {
-  const configured = Deno.env.get("APP_BASE_URL") || Deno.env.get("SITE_URL");
-  if (configured) return configured.replace(/\/$/, "");
-
+  // Browser calls should return to the same environment that sent the invite
+  // request, e.g. an ngrok preview during testing.
   const origin = req.headers.get("Origin") || req.headers.get("origin");
   if (origin) return origin.replace(/\/$/, "");
+
+  const configured = Deno.env.get("APP_BASE_URL") || Deno.env.get("SITE_URL");
+  if (configured) return configured.replace(/\/$/, "");
 
   return "http://localhost:3000";
 }
