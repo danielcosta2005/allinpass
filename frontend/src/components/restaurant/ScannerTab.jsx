@@ -11,6 +11,7 @@ import {
   Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import IosToggleGroup from "@/components/ui/ios-toggle-group";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import {
@@ -394,6 +395,10 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const scannerControlsDisabled = isScanning || isProcessing || confirmOpen;
   const valueAmountCents = isValueMode ? parseCurrencyToCents(amountInput) : null;
   const valueAmountInvalid = isValueMode && amountInput.trim() !== "" && !valueAmountCents;
+  const scannerModeOptions = [
+    { value: "loyalty", label: "Fidelidade", icon: Gift },
+    { value: "value", label: "Valor", icon: ScanLine },
+  ];
 
   return (
     <div className="space-y-6">
@@ -520,36 +525,14 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         </div>
 
         <div className="mx-auto mt-5 w-full max-w-md rounded-xl border border-border bg-muted/30 p-4">
-          <div
-            role="radiogroup"
-            aria-label="Modo do scanner"
-            className="grid grid-cols-2 rounded-full bg-secondary p-1"
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={!isValueMode}
-              onClick={() => selectScannerMode("loyalty")}
-              disabled={scannerControlsDisabled}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-                isValueMode ? "text-muted-foreground" : "bg-purple-600 text-white shadow"
-              }`}
-            >
-              Fidelidade
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={isValueMode}
-              onClick={() => selectScannerMode("value")}
-              disabled={scannerControlsDisabled}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
-                isValueMode ? "bg-purple-600 text-white shadow" : "text-muted-foreground"
-              }`}
-            >
-              Valor
-            </button>
-          </div>
+          <IosToggleGroup
+            value={scannerMode}
+            options={scannerModeOptions}
+            onValueChange={selectScannerMode}
+            disabled={scannerControlsDisabled}
+            ariaLabel="Modo do scanner"
+            className="w-full"
+          />
 
           {isValueMode ? (
             <div className="mt-4">

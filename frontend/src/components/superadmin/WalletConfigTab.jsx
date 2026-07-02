@@ -43,6 +43,7 @@ import {
 import { QRCode } from 'react-qrcode-logo';
 import GenerationResultModal from '@/components/superadmin/wallet/GenerationResultModal';
 import LocationsTab from '@/components/superadmin/LocationsTab';
+import IosToggleGroup from '@/components/ui/ios-toggle-group';
 import { listPassLocationIds } from '@/lib/api';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import {
@@ -598,6 +599,15 @@ function getPreviewColor(value, fallback) {
   return isValidHexColor(normalized) ? normalized : fallback;
 }
 
+function getColorPickerValue(value, fallback) {
+  const normalized = String(value ?? '').trim();
+  if (!isValidHexColor(normalized)) return fallback;
+  if (normalized.length === 4) {
+    return `#${normalized[1]}${normalized[1]}${normalized[2]}${normalized[2]}${normalized[3]}${normalized[3]}`;
+  }
+  return normalized;
+}
+
 function validateEditorForm(values = {}) {
   const errors = {};
   const expirationRaw = String(values.expiration_months ?? '').trim();
@@ -644,6 +654,7 @@ const ColorInput = ({ label, value, onChange, disabled }) => {
   const currentValue = value ?? '';
   const hasInvalidValue = Boolean(String(currentValue).trim()) && !isValidHexColor(currentValue);
   const swatchColor = getPreviewColor(currentValue, '#f8fafc');
+  const pickerValue = getColorPickerValue(currentValue, swatchColor);
 
   return (
     <div className="flex flex-col gap-1">
@@ -651,11 +662,21 @@ const ColorInput = ({ label, value, onChange, disabled }) => {
       <div
         className={`flex h-8 items-center gap-2 rounded-md border bg-white px-2 transition ${hasInvalidValue ? 'border-red-300' : 'border-slate-200 focus-within:border-[#534AB7] focus-within:ring-1 focus-within:ring-[#534AB7]/30'}`}
       >
-        <div
-          className="h-4 w-4 shrink-0 rounded border border-slate-200 shadow-inner"
+        <label
+          className={`relative h-5 w-5 shrink-0 overflow-hidden rounded border border-slate-200 shadow-inner ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
           style={{ backgroundColor: swatchColor }}
-          aria-hidden="true"
-        />
+          title={`Selecionar cor de ${label}`}
+        >
+          <span className="sr-only">Selecionar cor de {label}</span>
+          <input
+            type="color"
+            value={pickerValue}
+            onChange={onChange}
+            disabled={disabled}
+            aria-label={`Selecionar cor de ${label}`}
+            className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+          />
+        </label>
         <Input
           type="text"
           value={currentValue}
@@ -745,40 +766,25 @@ const PassPreview = ({
   const expText = `EXPIRA EM ${formatExpPreview(displayExpDate)}`;
   const uniqueLink = qrPreviewUrl || formState.qr_url || '';
   const qrValue = uniqueLink || 'https://example.com';
-
-  const platformButtonClass = (targetPlatform) => (
-    `h-auto gap-1.5 px-[14px] py-[6px] text-[12px] font-medium ${platform === targetPlatform ? 'bg-[#534AB7] text-white hover:bg-[#463e9f]' : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'}`
-  );
+  const platformOptions = [
+    { value: 'apple', label: 'Apple', icon: Apple },
+    { value: 'google', label: 'Google', icon: Smartphone },
+  ];
 
   return (
     <div className={`${sticky ? 'sticky top-0' : ''} ${className}`.trim()}>
       <div className="mx-auto mb-3 flex w-full max-w-[330px] items-center justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase text-slate-400">Pré-visualização</p>
         {showPlatformControls && (
-          <div className="inline-flex items-center rounded-md bg-slate-100 p-1">
-            <Button
-              type="button"
-              variant="ghost"
-              style={ACTION_BUTTON_STYLE}
-              className={platformButtonClass('apple')}
-              onClick={() => setPlatform('apple')}
-              aria-pressed={platform === 'apple'}
-            >
-              <Apple className="h-3.5 w-3.5" />
-              Apple
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              style={ACTION_BUTTON_STYLE}
-              className={platformButtonClass('google')}
-              onClick={() => setPlatform('google')}
-              aria-pressed={platform === 'google'}
-            >
-              <Smartphone className="h-3.5 w-3.5" />
-              Google
-            </Button>
-          </div>
+          <IosToggleGroup
+            value={platform}
+            options={platformOptions}
+            onValueChange={setPlatform}
+            ariaLabel="Pré-visualização da plataforma"
+            className="w-[178px]"
+            itemClassName="h-8 px-2 text-[12px]"
+            iconClassName="h-3.5 w-3.5"
+          />
         )}
       </div>
 
