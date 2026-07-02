@@ -51,6 +51,29 @@ const CustomersTab = ({ projectId }) => {
     return Number(raw);
   };
 
+  const extractBalanceCents = (metadata) => {
+    const raw = String(metadata?.balance_cents ?? "").trim();
+    if (!raw) return 0;
+    if (!/^-?\d+$/.test(raw)) return 0;
+    return Math.max(Number(raw), 0);
+  };
+
+  const formatCurrencyCents = (cents) => {
+    const parsed = Number(cents);
+    const normalizedCents = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(normalizedCents / 100);
+  };
+
+  const formatPassMetric = (pass) => {
+    if (String(pass?.pass_type ?? "").toLowerCase() === "value") {
+      return formatCurrencyCents(extractBalanceCents(pass?.metadata));
+    }
+    return extractPoints(pass?.metadata);
+  };
+
   const formatDate = (iso) => {
     if (!iso) return "-";
     const d = new Date(iso);
@@ -278,14 +301,14 @@ const CustomersTab = ({ projectId }) => {
                                           <th className="px-4 py-3">Pass type</th>
                                           <th className="px-4 py-3">Status</th>
                                           <th className="px-4 py-3">Platform</th>
-                                          <th className="px-4 py-3 text-center">Pontos</th>
+                                          <th className="px-4 py-3 text-center">Saldo/Pontos</th>
                                           <th className="px-4 py-3">Emissão</th>
                                           <th className="px-4 py-3">Expiração</th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {passes.map((p) => {
-                                          const points = extractPoints(p.metadata);
+                                          const metric = formatPassMetric(p);
                                           const status = p.install_status || "-";
                                           const platform = p.install_platform || "-";
                                           const passType = p.pass_type || "-";
@@ -310,7 +333,7 @@ const CustomersTab = ({ projectId }) => {
                                               <td className="px-4 py-3">{platform}</td>
 
                                               <td className="px-4 py-3 text-center">
-                                                <span className="font-semibold">{points}</span>
+                                                <span className="font-semibold">{metric}</span>
                                               </td>
 
                                               <td className="px-4 py-3">{formatDateTime(p.issued_at || p.created_at)}</td>

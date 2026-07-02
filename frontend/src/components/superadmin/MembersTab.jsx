@@ -4,6 +4,7 @@ import { Edit, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
@@ -102,11 +103,6 @@ const MembersTab = ({ projectId, canManageMembers = true }) => {
   const handleCreateFormChange = (event) => {
     const { id, value } = event.target;
     setCreateForm((prev) => ({ ...prev, [id]: value }));
-  };
-
-  const handleEditFormChange = (event) => {
-    const { id, value } = event.target;
-    setEditForm((prev) => ({ ...prev, [id]: value }));
   };
 
   const handleCreateMember = async (event) => {
@@ -316,17 +312,20 @@ const MembersTab = ({ projectId, canManageMembers = true }) => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">Papel</Label>
-              <select
-                id="role"
+              <Label htmlFor="create-role">Papel</Label>
+              <Select
                 value={createForm.role}
-                onChange={handleCreateFormChange}
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onValueChange={(value) => setCreateForm((prev) => ({ ...prev, role: value }))}
                 disabled={isSubmitting}
               >
-                <option value="owner">Gestor</option>
-                <option value="staff">Funcionario</option>
-              </select>
+                <SelectTrigger id="create-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner">Gestor</SelectItem>
+                  <SelectItem value="staff">Funcionario</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)} disabled={isSubmitting}>
@@ -349,17 +348,20 @@ const MembersTab = ({ projectId, canManageMembers = true }) => {
           </DialogHeader>
           <form onSubmit={handleUpdateMember} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="role">Papel</Label>
-              <select
-                id="role"
+              <Label htmlFor="edit-role">Papel</Label>
+              <Select
                 value={editForm.role}
-                onChange={handleEditFormChange}
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                onValueChange={(value) => setEditForm((prev) => ({ ...prev, role: value }))}
                 disabled={isSubmitting}
               >
-                <option value="owner">Gestor</option>
-                <option value="staff">Funcionario</option>
-              </select>
+                <SelectTrigger id="edit-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="owner">Gestor</SelectItem>
+                  <SelectItem value="staff">Funcionario</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setShowEditModal(false)} disabled={isSubmitting}>

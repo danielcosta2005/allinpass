@@ -147,6 +147,42 @@ function getPointsFromFields(fields: any): number {
   return 0;
 }
 
+function getBalanceCentsFromMetadata(meta: any): number | null {
+  const m = meta && typeof meta === "object" ? meta : {};
+  const raw = (m as any)?.balance_cents;
+  if (raw === undefined || raw === null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(Math.trunc(n), 0) : null;
+}
+
+function getBalanceCentsFromFields(fields: any): number {
+  const f = toObject(fields);
+  const direct = f.balance_cents;
+  if (direct !== undefined && direct !== null && direct !== "") {
+    const n = Number(direct);
+    if (Number.isFinite(n)) return Math.max(Math.trunc(n), 0);
+  }
+
+  for (const key of Object.keys(f)) {
+    const normalizedKey = key.toLowerCase();
+    if (!normalizedKey.includes("balance") && !normalizedKey.includes("saldo")) {
+      continue;
+    }
+    const n = Number(f[key]);
+    if (Number.isFinite(n)) return Math.max(Math.trunc(n), 0);
+  }
+
+  return 0;
+}
+
+function formatCurrencyBRL(cents: number) {
+  const normalizedCents = Number.isFinite(cents) ? Math.trunc(cents) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
 function toNumber(v: unknown): number | null {
   if (typeof v === "number" && Number.isFinite(v)) return v;
   if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) {
@@ -325,6 +361,10 @@ function buildGooglePatchPayloads(args: {
     ? getPointsFromMetadata((up as any).metadata)
     : null;
   const points = metadataPoints ?? getPointsFromFields(mergedFields);
+  const metadataBalanceCents = up
+    ? getBalanceCentsFromMetadata((up as any).metadata)
+    : null;
+  const balanceCents = metadataBalanceCents ?? getBalanceCentsFromFields(mergedFields);
 
   const expSource = cleanString((mergedFields as any).exp_date) ??
     cleanString((up as any)?.expires_at);
@@ -333,9 +373,12 @@ function buildGooglePatchPayloads(args: {
 
   const passTypeFromPass = cleanString((passRow as any).type)?.toLowerCase();
   const inferFromIds = `${classId ?? ""} ${objectId ?? ""}`.toLowerCase();
+  const isValue = passTypeFromPass === "value" || inferFromIds.includes("value");
   const isLoyalty = passTypeFromPass
-    ? passTypeFromPass === "loyalty"
+    ? passTypeFromPass === "loyalty" || passTypeFromPass === "value"
     : inferFromIds.includes("loyalty");
+  const metricLabel = isValue ? "SALDO" : "PONTOS";
+  const metricValue = isValue ? formatCurrencyBRL(balanceCents) : String(points);
 
   const bgColor = mapBgColor(mergedColors);
 
@@ -393,7 +436,7 @@ function buildGooglePatchPayloads(args: {
     ? {
       state: "ACTIVE",
       ...objectGlobalFields,
-      loyaltyPoints: { label: "PONTOS", balance: { string: String(points) } },
+      loyaltyPoints: { label: metricLabel, balance: { string: metricValue } },
       barcode: { type: "QR_CODE", value: qrMessage },
       textModulesData: [{ header: "EXPIRA EM", body: expText ?? "--/--/----" }],
     }
@@ -404,7 +447,7 @@ function buildGooglePatchPayloads(args: {
       header: { defaultValue: { language: "pt-BR", value: header } },
       subheader: { defaultValue: { language: "pt-BR", value: expLabel } },
       textModulesData: [
-        { header: "PONTOS", body: String(points) },
+        { header: metricLabel, body: String(metricValue) },
         { header: "EXPIRA EM", body: expText ?? "--/--/----" },
       ],
       barcode: { type: "QR_CODE", value: qrMessage },
@@ -420,6 +463,9 @@ function buildGooglePatchPayloads(args: {
       title,
       header,
       points,
+      balance_cents: balanceCents,
+      metric_label: metricLabel,
+      metric_value: metricValue,
       exp_source: expSource,
       expText,
       has_logo: !!logoUrl,

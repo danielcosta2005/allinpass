@@ -11,6 +11,7 @@ import {
   Gift,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import {
   getFunctionErrorMessage,
@@ -56,6 +57,29 @@ function formatBRDateShort(iso) {
   return `${dd}/${mm}/${yyyy}`;
 }
 
+function parseCurrencyToCents(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(normalized)) return null;
+
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const cents = Math.round(amount * 100);
+  return Number.isSafeInteger(cents) && cents > 0 ? cents : null;
+}
+
+function formatCurrencyCents(cents) {
+  const parsed = Number(cents);
+  const normalizedCents = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
 function normalizeScanResult(result) {
   if (!result) return "";
   if (typeof result === "string") return result;
@@ -77,9 +101,16 @@ function formatRewardNames(rewards) {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
+const VALUE_PASS_AMOUNT_REQUIRED_MESSAGE =
+  "Um passe do tipo Valor foi lido, mas nenhum valor válido foi informado. Ative o modo Valor, informe o valor a creditar e leia o passe novamente.";
+
 function formatScannerVisitError(payload, fallback) {
   if (payload?.error === "wrong_project") {
     return `${payload.message}\n\nEsperado: ${payload.expected_project_id}\nRecebido: ${payload.received_project_id}`;
+  }
+
+  if (payload?.error === "invalid_amount") {
+    return VALUE_PASS_AMOUNT_REQUIRED_MESSAGE;
   }
 
   return getFunctionErrorMessage(payload, fallback?.message || "Nao foi possivel registrar a visita.");
@@ -93,6 +124,8 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [scannerMode, setScannerMode] = useState("loyalty");
+  const [amountInput, setAmountInput] = useState("");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmPayload, setConfirmPayload] = useState(null);
@@ -135,12 +168,18 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     }
   }, []);
 
-  const callScannerVisit = useCallback(async ({ projectId, passToken, confirm, challenge }) => {
+  const callScannerVisit = useCallback(async ({ projectId, passToken, confirm, challenge, amountCents }) => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) throw new Error("Sessão expirada. Faça login novamente.");
 
     const { data, error, response } = await supabase.functions.invoke("scanner-visit", {
-      body: { projectId, qrData: passToken, confirm: !!confirm, challenge: challenge || null },
+      body: {
+        projectId,
+        qrData: passToken,
+        confirm: !!confirm,
+        challenge: challenge || null,
+        ...(amountCents ? { amount_cents: amountCents } : {}),
+      },
       headers: { Authorization: `Bearer ${session.access_token}` },
     });
 
@@ -151,12 +190,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     if (!data) throw new Error("Resposta vazia da Edge Function.");
 
     if (data.error) {
-      if (data.error === "wrong_project") {
-        throw new Error(
-          `${data.message}\n\nEsperado: ${data.expected_project_id}\nRecebido: ${data.received_project_id}`
-        );
-      }
-      throw new Error(data.message || data.error);
+      throw new Error(formatScannerVisitError(data, { message: data.message || data.error }));
     }
 
     return data;
@@ -165,6 +199,14 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const showVisitSuccessToast = useCallback((data, confirmed = false) => {
     const rewards = getAvailableRewards(data);
     const rewardNames = formatRewardNames(rewards);
+
+    if (data.mode === "value") {
+      toast({
+        title: confirmed ? "Saldo creditado (confirmado)" : "Saldo creditado",
+        description: `${formatCurrencyCents(data.amount_cents)} adicionados. Saldo atual: ${formatCurrencyCents(data.balance_cents)}${rewardNames ? `. Pode resgatar: ${rewardNames}.` : "."}`,
+      });
+      return;
+    }
 
     if (rewardNames) {
       toast({
@@ -192,6 +234,11 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
     try {
       const txt = normalizeScanResult(result);
       const passToken = extractPassToken(txt);
+      const amountCents = scannerMode === "value" ? parseCurrencyToCents(amountInput) : null;
+
+      if (scannerMode === "value" && !amountCents) {
+        throw new Error("Informe um valor maior que zero para creditar passes Valor.");
+      }
 
       if (!passToken) throw new Error("QR Code inválido: não encontrei o token do passe.");
       if (!establishmentProjectId) throw new Error("ProjectId do estabelecimento não encontrado no painel.");
@@ -200,11 +247,13 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         projectId: establishmentProjectId,
         passToken,
         confirm: false,
+        amountCents,
       });
 
       if (data.requires_confirmation) {
         setConfirmPayload({
           passToken,
+          amountCents,
           challenge: data.challenge,
           seconds_since_last_scan: data.seconds_since_last_scan,
           last_scan_at: data.last_scan_at,
@@ -239,7 +288,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         setScanResult(null);
       }, 5000);
     }
-  }, [isProcessing, stopScan, establishmentProjectId, callScannerVisit, clearResetTimer, showVisitSuccessToast]);
+  }, [isProcessing, stopScan, establishmentProjectId, scannerMode, amountInput, callScannerVisit, clearResetTimer, showVisitSuccessToast]);
 
   // ✅ guarda sempre a versão mais recente do handler
   const onScanRef = useRef(onScan);
@@ -270,7 +319,25 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
   const toggleScan = async () => {
     if (confirmOpen) return;
     if (isScanning) await stopScan();
-    else await startScan();
+    else {
+      const amountCents = scannerMode === "value" ? parseCurrencyToCents(amountInput) : null;
+
+      if (scannerMode === "value" && !amountCents) {
+        toast({
+          title: "Informe o valor",
+          description: "Digite um valor maior que zero antes de iniciar o scanner.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      await startScan();
+    }
+  };
+
+  const selectScannerMode = (nextMode) => {
+    if (isScanning || isProcessing || confirmOpen) return;
+    setScannerMode(nextMode);
   };
 
   // ✅ Ação do modal
@@ -297,6 +364,7 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
         passToken: payload?.passToken,
         confirm: true,
         challenge: payload?.challenge,
+        amountCents: payload?.amountCents,
       });
 
       setScanResult({ success: true, data });
@@ -321,6 +389,11 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
 
   const successRewards = scanResult?.success === true ? getAvailableRewards(scanResult.data) : [];
   const successRewardNames = formatRewardNames(successRewards);
+  const successIsValue = scanResult?.success === true && scanResult.data?.mode === "value";
+  const isValueMode = scannerMode === "value";
+  const scannerControlsDisabled = isScanning || isProcessing || confirmOpen;
+  const valueAmountCents = isValueMode ? parseCurrencyToCents(amountInput) : null;
+  const valueAmountInvalid = isValueMode && amountInput.trim() !== "" && !valueAmountCents;
 
   return (
     <div className="space-y-6">
@@ -347,7 +420,18 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
                 animate={{ scale: 1, opacity: 1 }}
                 className="w-full text-center"
               >
-                {successRewardNames ? (
+                {successIsValue ? (
+                  <div className="mx-auto flex max-w-xs flex-col items-center">
+                    <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+                    <h3 className="text-2xl font-bold">Saldo creditado!</h3>
+                    <p className="text-lg">{formatCurrencyCents(scanResult.data.balance_cents)} no cartão.</p>
+                    {successRewardNames ? (
+                      <p className="mt-2 text-sm text-white/85">
+                        Pode resgatar: {successRewardNames}.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : successRewardNames ? (
                   <div className="mx-auto flex max-w-xs flex-col items-center">
                     <motion.div
                       initial={{ rotate: -8, scale: 0.8 }}
@@ -435,10 +519,68 @@ const ScannerTab = ({ projectId: establishmentProjectId }) => {
           )}
         </div>
 
+        <div className="mx-auto mt-5 w-full max-w-md rounded-xl border border-border bg-muted/30 p-4">
+          <div
+            role="radiogroup"
+            aria-label="Modo do scanner"
+            className="grid grid-cols-2 rounded-full bg-secondary p-1"
+          >
+            <button
+              type="button"
+              role="radio"
+              aria-checked={!isValueMode}
+              onClick={() => selectScannerMode("loyalty")}
+              disabled={scannerControlsDisabled}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                isValueMode ? "text-muted-foreground" : "bg-purple-600 text-white shadow"
+              }`}
+            >
+              Fidelidade
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={isValueMode}
+              onClick={() => selectScannerMode("value")}
+              disabled={scannerControlsDisabled}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+                isValueMode ? "bg-purple-600 text-white shadow" : "text-muted-foreground"
+              }`}
+            >
+              Valor
+            </button>
+          </div>
+
+          {isValueMode ? (
+            <div className="mt-4">
+              <label
+                htmlFor="scanner-amount-input"
+                className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Valor a creditar
+              </label>
+              <Input
+                id="scanner-amount-input"
+                inputMode="decimal"
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
+                placeholder="0,00"
+                disabled={scannerControlsDisabled}
+                aria-invalid={valueAmountInvalid}
+              />
+              <p className={`mt-1 text-xs ${valueAmountInvalid ? "text-destructive" : "text-muted-foreground"}`}>
+                {valueAmountInvalid
+                  ? "Use um valor maior que zero no formato 12,34."
+                  : "Informe o valor antes de iniciar o scanner."}
+              </p>
+            </div>
+          ) : null}
+        </div>
+
         <div className="mt-6 flex justify-center">
           <Button
             onClick={toggleScan}
-            disabled={isProcessing || confirmOpen}
+            disabled={isProcessing || confirmOpen || (!isScanning && isValueMode && !valueAmountCents)}
             className={`w-full max-w-md gap-2 text-lg py-6 transition-all duration-300 ${
               isScanning ? "bg-red-600 hover:bg-red-700" : "bg-gradient-to-r from-purple-600 to-indigo-600"
             }`}

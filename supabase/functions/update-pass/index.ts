@@ -11,6 +11,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const JOB_INSERT_CHUNK_SIZE = 500;
+const VALID_PASS_TYPES = new Set(["loyalty", "value"]);
 
 class HttpError extends Error {
   status: number;
@@ -49,6 +50,12 @@ function cleanString(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const s = v.trim();
   return s.length ? s : null;
+}
+
+function normalizePassType(input: unknown): string | null {
+  const value = cleanString(input)?.toLowerCase();
+  if (!value) return null;
+  return VALID_PASS_TYPES.has(value) ? value : null;
 }
 
 function isObject(value: unknown): value is Record<string, any> {
@@ -185,11 +192,12 @@ function isGoogleObjectPatchRequiredForGlobalEdit(args: {
   expDate: string | null;
 }) {
   const passType = args.passType?.toLowerCase() ?? "";
+  const loyaltyLikePass = passType === "loyalty" || passType === "value";
 
   // Non-loyalty Google passes keep their visible title/header on the Object.
-  // Loyalty passes can usually rely on the Class for global visual/brand edits,
+  // Loyalty-like passes can usually rely on the Class for global visual/brand edits,
   // but field/date edits still need Object patches because they render per pass.
-  if (passType && passType !== "loyalty") return true;
+  if (passType && !loyaltyLikePass) return true;
   if (args.expDate) return true;
   return Object.keys(args.incomingFields ?? {}).length > 0;
 }
@@ -484,7 +492,52 @@ serve(async (req: Request) => {
     const description = cleanString(passData?.description) ??
       cleanString(body?.description);
 
-    if (type) updatePayload.type = type.toLowerCase();
+    if (type) {
+      const normalizedType = normalizePassType(type);
+      if (!normalizedType) {
+        return jsonResponse(
+          {
+            ...errorPayload(
+              "bad_request",
+              "Tipo de passe inválido. Use Fidelidade ou Valor.",
+            ),
+          },
+          400,
+          origin,
+        );
+      }
+
+      const existingType = cleanString(existingPass.type)?.toLowerCase() ??
+        "loyalty";
+      if (normalizedType !== existingType) {
+        const { data: issuedRows, error: issuedLookupError } = await sbAdmin
+          .from("user_passes")
+          .select("id")
+          .eq("pass_id", passId)
+          .limit(1);
+
+        if (issuedLookupError) {
+          throw new Error(
+            `Erro ao validar emissões do passe: ${issuedLookupError.message}`,
+          );
+        }
+
+        if ((issuedRows ?? []).length > 0) {
+          return jsonResponse(
+            {
+              ...errorPayload(
+                "pass_type_locked",
+                "Não é possível alterar o tipo de um cartão que já foi emitido.",
+              ),
+            },
+            409,
+            origin,
+          );
+        }
+      }
+
+      updatePayload.type = normalizedType;
+    }
     if (title) updatePayload.title = title;
     if (description) updatePayload.description = description;
 
