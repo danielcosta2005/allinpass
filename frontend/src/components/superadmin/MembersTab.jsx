@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Plus, Loader2, Edit, Trash2 } from 'lucide-react';
+import { Edit, Loader2, Plus, RefreshCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,7 +14,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from '@/components/ui/alert-dialog';
 import {
   Dialog,
   DialogContent,
@@ -22,26 +22,63 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog';
 import { listMembers } from '@/lib/api';
-import { adminCreateMember, adminUpdateMember, adminRemoveMember } from '@/lib/admin';
+import {
+  adminCreateMember,
+  adminRemoveMember,
+  adminResendInvitation,
+  adminUpdateMember,
+} from '@/lib/admin';
 
 const memberRoleLabels = {
   owner: 'Gestor',
-  staff: 'Funcionário',
+  staff: 'Funcionario',
 };
 
-const MembersTab = ({ projectId }) => {
+const statusLabels = {
+  active: 'Ativo',
+  invited: 'Convidado',
+  expired: 'Expirado',
+};
+
+function formatDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('pt-BR');
+}
+
+function getMemberKey(member) {
+  return member.user_id || member.invitation_id || member.email;
+}
+
+function StatusPill({ status }) {
+  const styleByStatus = {
+    active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    invited: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    expired: 'border-amber-200 bg-amber-50 text-amber-800',
+  };
+
+  return (
+    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${styleByStatus[status] || 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+      {statusLabels[status] || status || '-'}
+    </span>
+  );
+}
+
+const MembersTab = ({ projectId, canManageMembers = true }) => {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+  const [resendingInvitationId, setResendingInvitationId] = useState(null);
+
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: '', password: '', role: 'staff' });
+  const [createForm, setCreateForm] = useState({ email: '', role: 'staff' });
 
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ newPassword: '', role: 'staff' });
-  
+  const [editForm, setEditForm] = useState({ role: 'staff' });
+
   const [memberToEdit, setMemberToEdit] = useState(null);
   const [memberToRemove, setMemberToRemove] = useState(null);
 
@@ -52,7 +89,7 @@ const MembersTab = ({ projectId }) => {
       const data = await listMembers(projectId);
       setMembers(data);
     } catch (error) {
-      toast({ title: "Erro ao carregar membros", description: error.message, variant: "destructive" });
+      toast({ title: 'Erro ao carregar membros', description: error.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -61,95 +98,118 @@ const MembersTab = ({ projectId }) => {
   useEffect(() => {
     fetchMembers();
   }, [fetchMembers]);
-  
-  const handleCreateFormChange = (e) => {
-    const { id, value } = e.target;
-    setCreateForm(prev => ({ ...prev, [id]: value }));
+
+  const handleCreateFormChange = (event) => {
+    const { id, value } = event.target;
+    setCreateForm((prev) => ({ ...prev, [id]: value }));
   };
 
-  const handleEditFormChange = (e) => {
-    const { id, value } = e.target;
-    setEditForm(prev => ({ ...prev, [id]: value }));
+  const handleEditFormChange = (event) => {
+    const { id, value } = event.target;
+    setEditForm((prev) => ({ ...prev, [id]: value }));
   };
 
-  const validatePassword = (password) => {
-    if (!password) return true;
-    if (password.length < 6) return false;
-    return true;
-  };
+  const handleCreateMember = async (event) => {
+    event.preventDefault();
+    if (!canManageMembers) return;
 
-  const handleCreateMember = async (e) => {
-    e.preventDefault();
-    if (createForm.password && !validatePassword(createForm.password)) {
-      toast({ title: "Senha inválida", description: "A senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
+    const email = createForm.email.trim().toLowerCase();
+    if (!email) {
+      toast({ title: 'Email obrigatorio', variant: 'destructive' });
       return;
     }
+
     setIsSubmitting(true);
     try {
       const result = await adminCreateMember({
         projectId,
-        email: createForm.email.trim(),
-        password: createForm.password || undefined,
+        email,
         role: createForm.role,
       });
-      
-      if (result.inviteSent) {
-        toast({ title: "Convite enviado!", description: `Um convite foi enviado para ${createForm.email}.` });
-      } else {
-        toast({ title: "Membro adicionado!", description: `${createForm.email} foi criado e adicionado ao projeto.` });
-      }
 
-      setCreateForm({ email: '', password: '', role: 'staff' });
+      toast({
+        title: result.inviteSent ? 'Convite enviado' : 'Membro adicionado',
+        description: result.inviteSent
+          ? `Um convite foi enviado para ${email}.`
+          : `${email} foi adicionado ao projeto.`,
+      });
+
+      setCreateForm({ email: '', role: 'staff' });
       setShowCreateModal(false);
       await fetchMembers();
     } catch (error) {
-      toast({ title: "Erro ao adicionar membro", description: error.message, variant: "destructive" });
+      toast({ title: 'Erro ao adicionar membro', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const openEditModal = (member) => {
+    if (!canManageMembers) return;
     setMemberToEdit(member);
-    setEditForm({ newPassword: '', role: member.role });
+    setEditForm({ role: member.role || 'staff' });
     setShowEditModal(true);
   };
-  
-  const handleUpdateMember = async (e) => {
-    e.preventDefault();
-    if (editForm.newPassword && !validatePassword(editForm.newPassword)) {
-      toast({ title: "Senha inválida", description: "A nova senha deve ter no mínimo 6 caracteres.", variant: "destructive" });
-      return;
-    }
+
+  const handleUpdateMember = async (event) => {
+    event.preventDefault();
+    if (!canManageMembers || !memberToEdit) return;
+
     setIsSubmitting(true);
     try {
       await adminUpdateMember({
-        memberId: memberToEdit.user_id,
+        memberId: memberToEdit.user_id || undefined,
+        invitationId: memberToEdit.invitation_id || undefined,
         projectId,
         role: editForm.role,
-        password: editForm.newPassword || undefined,
       });
-      toast({ title: "Membro atualizado!", description: "As informações do membro foram salvas." });
+      toast({ title: 'Membro atualizado', description: 'As permissoes do membro foram salvas.' });
       setShowEditModal(false);
       setMemberToEdit(null);
       await fetchMembers();
     } catch (error) {
-      toast({ title: "Erro ao atualizar membro", description: error.message, variant: "destructive" });
+      toast({ title: 'Erro ao atualizar membro', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleResendInvitation = async (member) => {
+    if (!canManageMembers || !member?.invitation_id) return;
+
+    setResendingInvitationId(member.invitation_id);
+    try {
+      await adminResendInvitation({ invitationId: member.invitation_id });
+      toast({
+        title: 'Convite reenviado',
+        description: `Um novo link foi enviado para ${member.email}.`,
+      });
+      await fetchMembers();
+    } catch (error) {
+      toast({ title: 'Erro ao reenviar convite', description: error.message, variant: 'destructive' });
+    } finally {
+      setResendingInvitationId(null);
+    }
+  };
+
   const handleRemoveMember = async () => {
-    if (!memberToRemove) return;
+    if (!canManageMembers || !memberToRemove) return;
+
     setIsSubmitting(true);
     try {
-      await adminRemoveMember({ projectId, memberId: memberToRemove.user_id });
-      toast({ title: "Membro removido", description: `${memberToRemove.email} foi removido do projeto.` });
+      await adminRemoveMember({
+        projectId,
+        memberId: memberToRemove.user_id || undefined,
+        invitationId: memberToRemove.invitation_id || undefined,
+      });
+      toast({
+        title: memberToRemove.invitation_id ? 'Convite cancelado' : 'Membro removido',
+        description: `${memberToRemove.email} nao tera mais esse acesso.`,
+      });
       setMemberToRemove(null);
       await fetchMembers();
     } catch (error) {
-      toast({ title: "Erro ao remover membro", description: error.message, variant: "destructive" });
+      toast({ title: 'Erro ao remover membro', description: error.message, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -157,87 +217,177 @@ const MembersTab = ({ projectId }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between gap-3">
         <h2 className="text-2xl font-bold">Membros</h2>
-        <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
-          <Plus className="w-4 h-4" /> Novo Membro
-        </Button>
+        {canManageMembers && (
+          <Button onClick={() => setShowCreateModal(true)} className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600">
+            <Plus className="w-4 h-4" /> Novo Membro
+          </Button>
+        )}
       </div>
-      
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
-        <h3 className="text-lg font-bold mb-4">Membros do Projeto</h3>
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20"
+      >
+        <h3 className="mb-4 text-lg font-bold">Membros do Projeto</h3>
         {loading ? (
-          <div className="flex justify-center py-4"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
         ) : members.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-left text-sm">
               <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th scope="col" className="px-6 py-3">Email</th>
                   <th scope="col" className="px-6 py-3">Papel</th>
-                  <th scope="col" className="px-6 py-3">Criação</th>
-                  <th scope="col" className="px-6 py-3 text-right">Ações</th>
+                  <th scope="col" className="px-6 py-3">Status</th>
+                  <th scope="col" className="px-6 py-3">Criacao</th>
+                  {canManageMembers && <th scope="col" className="px-6 py-3 text-right">Acoes</th>}
                 </tr>
               </thead>
               <tbody>
-                {members.map(member => (
-                    
-                    <tr key={member.user_id} className="border-b border-border bg-card">
-                    <td className="px-6 py-4 font-semibold">{member.email || '—'}</td>
-                    <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
-                    <td className="px-6 py-4">{new Date(member.created_at).toLocaleDateString()}</td>
-                    <td className="px-6 py-4 text-right">
-                      <Button variant="ghost" size="icon" onClick={() => openEditModal(member)}><Edit className="h-4 w-4 text-blue-500" /></Button>
-                      <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)}><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                    </td>
-                  </tr>
-                ))}
+                {members.map((member) => {
+                  const memberStatus = member.status || 'active';
+                  const isPending = Boolean(member.invitation_id);
+
+                  return (
+                    <tr key={getMemberKey(member)} className="border-b border-border bg-card">
+                      <td className="px-6 py-4 font-semibold">{member.email || '-'}</td>
+                      <td className="px-6 py-4">{memberRoleLabels[member.role] || member.role}</td>
+                      <td className="px-6 py-4"><StatusPill status={memberStatus} /></td>
+                      <td className="px-6 py-4">{formatDate(member.created_at)}</td>
+                      {canManageMembers && (
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-1">
+                            {isPending && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleResendInvitation(member)}
+                                disabled={resendingInvitationId === member.invitation_id}
+                                aria-label="Reenviar convite"
+                              >
+                                {resendingInvitationId === member.invitation_id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                                ) : (
+                                  <RefreshCcw className="h-4 w-4 text-indigo-500" />
+                                )}
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" onClick={() => openEditModal(member)} aria-label="Editar membro">
+                              <Edit className="h-4 w-4 text-blue-500" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => setMemberToRemove(member)} aria-label={isPending ? 'Cancelar convite' : 'Remover membro'}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="text-muted-foreground text-center mt-4">Nenhum membro neste projeto.</p>
+          <p className="mt-4 text-center text-muted-foreground">Nenhum membro neste projeto.</p>
         )}
       </motion.div>
 
       <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Criar Novo Membro</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Novo Membro</DialogTitle>
+            <DialogDescription>O convidado recebera um link para criar a senha.</DialogDescription>
+          </DialogHeader>
           <form onSubmit={handleCreateMember} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={createForm.email} onChange={handleCreateFormChange} required disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="password">Senha (Opcional)</Label><Input id="password" type="password" placeholder="Deixe em branco para enviar convite" value={createForm.password} onChange={handleCreateFormChange} disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
-              <select id="role" value={createForm.role} onChange={handleCreateFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={createForm.email}
+                onChange={handleCreateFormChange}
+                required
+                disabled={isSubmitting}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Papel</Label>
+              <select
+                id="role"
+                value={createForm.role}
+                onChange={handleCreateFormChange}
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isSubmitting}
+              >
+                <option value="owner">Gestor</option>
+                <option value="staff">Funcionario</option>
               </select>
             </div>
-            <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Criar</Button></DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowCreateModal(false)} disabled={isSubmitting}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Enviar convite
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-      
+
       <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar Membro</DialogTitle><DialogDescription>{memberToEdit?.email}</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar Membro</DialogTitle>
+            <DialogDescription>{memberToEdit?.email}</DialogDescription>
+          </DialogHeader>
           <form onSubmit={handleUpdateMember} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="newPassword">Nova Senha (opcional)</Label><Input id="newPassword" type="password" placeholder="Deixe em branco para não alterar" value={editForm.newPassword} onChange={handleEditFormChange} disabled={isSubmitting}/></div>
-            <div className="space-y-2"><Label htmlFor="role">Papel</Label>
-              <select id="role" value={editForm.role} onChange={handleEditFormChange} className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" disabled={isSubmitting}>
-                <option value="owner">Gestor</option><option value="staff">Funcionário</option>
+            <div className="space-y-2">
+              <Label htmlFor="role">Papel</Label>
+              <select
+                id="role"
+                value={editForm.role}
+                onChange={handleEditFormChange}
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={isSubmitting}
+              >
+                <option value="owner">Gestor</option>
+                <option value="staff">Funcionario</option>
               </select>
             </div>
-            <DialogFooter><Button type="submit" disabled={isSubmitting}>{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Salvar</Button></DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowEditModal(false)} disabled={isSubmitting}>
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>Confirmar Remoção</AlertDialogTitle></AlertDialogHeader>
-          <AlertDialogDescription>Tem certeza que deseja remover {memberToRemove?.email} deste projeto? Esta ação não pode ser desfeita.</AlertDialogDescription>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{memberToRemove?.invitation_id ? 'Cancelar convite' : 'Remover membro'}</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogDescription>
+            Tem certeza que deseja remover {memberToRemove?.email} deste projeto?
+          </AlertDialogDescription>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setMemberToRemove(null)} disabled={isSubmitting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRemoveMember} disabled={isSubmitting} className="bg-red-600 hover:bg-red-700">{isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Remover</AlertDialogAction>
+            <AlertDialogAction onClick={handleRemoveMember} disabled={isSubmitting} className="bg-red-600 hover:bg-red-700">
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Confirmar
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

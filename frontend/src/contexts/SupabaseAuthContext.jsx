@@ -110,7 +110,10 @@ function canProbeSignupIntentOnPath(pathname) {
 
   if (p === '/auth/callback') {
     const params = new URLSearchParams(window.location.search || '');
-    return !params.get('projectId');
+    const hashParams = new URLSearchParams(String(window.location.hash || '').replace(/^#/, ''));
+    const type = params.get('type') || hashParams.get('type');
+    const flow = params.get('flow') || hashParams.get('flow');
+    return !params.get('projectId') && type !== 'invite' && flow !== 'invite';
   }
 
   return false;
@@ -228,6 +231,7 @@ export const AuthProvider = ({ children }) => {
     return p.startsWith('/claim')
       || p.startsWith('/auth/callback')
       || p === '/cadastro'
+      || p === '/convite'
       || p === '/reset-password'
       || p === '/thanks';
   }, []);

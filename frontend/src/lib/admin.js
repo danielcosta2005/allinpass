@@ -1,104 +1,55 @@
-import { invokeAdmin } from './invokeAdmin';
-
 import { supabase } from '@/lib/supabaseClient';
 import { buildFunctionError } from '@/lib/functionErrors';
 
-async function buildAdminFunctionError(error, response) {
-    return buildFunctionError(error, response, 'Falha ao chamar edge function');
-}
-
-export async function adminCreateMember({ projectId, email, password, role }) {
-    const { data, error, response } = await supabase.functions.invoke('admin-create-member', {
-        body: { projectId, email, password, role },
-    });
-
-    // ERRO DE INVOKE (401/403/404/500 etc)
-    if (error) {
-        console.error('invoke admin-create-member error:', error);
-        throw await buildAdminFunctionError(error, response);
-    }
-
-    // ERRO RETORNADO NO JSON (você retorna { error: ... } em status 400)
-    if (!data || data.error) {
-        console.error('edge returned error payload:', data);
-        throw new Error(data?.error || 'Edge function retornou resposta inválida');
-    }
-
-    return data; // { success: true, userId, inviteSent }
-}
-
-export async function adminUpdateMember({ memberId, password, projectId, role }) {
-    return invokeAdmin('admin-update-member', { memberId, password, projectId, role });
-}
-
-export async function adminRemoveMember({ memberId, projectId }) {
-    const { data, error, response } = await supabase.functions.invoke('admin-remove-member', {
-        body: { memberId, projectId },
+async function invokeAndThrow(functionName, payload, fallback = 'Falha ao chamar edge function') {
+    const { data, error, response } = await supabase.functions.invoke(functionName, {
+        body: payload,
     });
 
     if (error) {
-        console.error('invoke admin-remove-member error:', error);
-        throw await buildAdminFunctionError(error, response);
+        throw await buildFunctionError(error, response, fallback);
     }
 
     if (!data || data.error) {
-        console.error('edge returned error payload:', data);
-        throw new Error(data?.error || 'Edge function retornou resposta inválida');
+        throw new Error(data?.error || 'Edge function retornou resposta invalida');
     }
 
     return data;
+}
+
+export async function adminCreateMember({ projectId, email, role }) {
+    return invokeAndThrow('admin-create-member', { projectId, email, role });
+}
+
+export async function adminUpdateMember({ memberId, invitationId, projectId, role }) {
+    return invokeAndThrow('admin-update-member', { memberId, invitationId, projectId, role });
+}
+
+export async function adminRemoveMember({ memberId, invitationId, projectId }) {
+    return invokeAndThrow('admin-remove-member', { memberId, invitationId, projectId });
 }
 
 export async function adminListAdmins() {
-    const { data, error, response } = await supabase.functions.invoke('superadmin-list-admins', {
-        body: {},
-    });
-
-    if (error) {
-        console.error('invoke superadmin-list-admins error:', error);
-        throw await buildAdminFunctionError(error, response);
-    }
-
-    if (!data || data.error) {
-        console.error('edge returned error payload:', data);
-        throw new Error(data?.error || 'Edge function retornou resposta inválida');
-    }
-
+    const data = await invokeAndThrow('superadmin-list-admins', {});
     return data.admins || [];
 }
 
-export async function adminCreateAdmin({ email, password }) {
-    const { data, error, response } = await supabase.functions.invoke('superadmin-create-admin', {
-        body: { email, password },
-    });
-
-    if (error) {
-        console.error('invoke superadmin-create-admin error:', error);
-        throw await buildAdminFunctionError(error, response);
-    }
-
-    if (!data || data.error) {
-        console.error('edge returned error payload:', data);
-        throw new Error(data?.error || 'Edge function retornou resposta inválida');
-    }
-
-    return data;
+export async function adminCreateAdmin({ email, role = 'admin' }) {
+    return invokeAndThrow('superadmin-create-admin', { email, role });
 }
 
-export async function adminRemoveAdmin({ adminId }) {
-    const { data, error, response } = await supabase.functions.invoke('superadmin-remove-admin', {
-        body: { adminId },
-    });
+export async function adminUpdateAdmin({ adminId, invitationId, role }) {
+    return invokeAndThrow('superadmin-update-admin', { adminId, invitationId, role });
+}
 
-    if (error) {
-        console.error('invoke superadmin-remove-admin error:', error);
-        throw await buildAdminFunctionError(error, response);
-    }
+export async function adminResendInvitation({ invitationId }) {
+    return invokeAndThrow('admin-resend-invitation', { invitationId });
+}
 
-    if (!data || data.error) {
-        console.error('edge returned error payload:', data);
-        throw new Error(data?.error || 'Edge function retornou resposta inválida');
-    }
+export async function adminAcceptInvitation({ invitationId, nonce, validateOnly } = {}) {
+    return invokeAndThrow('admin-accept-invitation', { invitationId, nonce, validateOnly });
+}
 
-    return data;
+export async function adminRemoveAdmin({ adminId, invitationId }) {
+    return invokeAndThrow('superadmin-remove-admin', { adminId, invitationId });
 }
