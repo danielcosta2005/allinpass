@@ -95,8 +95,8 @@ Esse helper centraliza a parte comum das funcoes administrativas:
 - leitura de profile por user id;
 - deteccao de membership de projeto;
 - montagem da URL de convite;
-- envio do email de convite;
-- fallback para magic link quando o usuario ja existe no Auth;
+- envio do email de convite via template `Invite user` do Supabase Auth;
+- bloqueio de fallback para OTP/magic link nos fluxos de convite, para evitar troca de modelo de email;
 - marcacao de falha de envio.
 
 As Edge Functions que importam esse helper sao:
@@ -218,7 +218,7 @@ Responsabilidades:
 - gera novo `nonce`;
 - renova `expires_at` para mais 24h;
 - marca status como `invited`;
-- envia novo link por magic link;
+- envia novo link pelo template `Invite user` do Supabase Auth;
 - invalida links antigos porque o aceite compara o `nonce` do link com o `metadata.nonce` salvo.
 
 ### `admin-accept-invitation`
@@ -395,7 +395,7 @@ O helper `_shared/adminAccess.ts` nao e deployado como function independente; el
 - A migration complementar `20260702181202_enforce_single_project_member_account.sql` precisa estar aplicada para o banco tambem impedir novos memberships duplicados entre projetos.
 - No banco remoto atual foram encontrados dois usuarios com memberships legados em mais de um projeto; enquanto esses dados nao forem consolidados, a migration aplica a trava por trigger, mas pula o indice unico definitivo em `project_members(user_id)`.
 - O envio de email depende do Supabase Auth estar com redirect URLs permitindo a base usada em `APP_BASE_URL` ou `SITE_URL`.
-- Convites enviados para usuarios ja existentes no Auth usam fallback por magic link.
+- Convites enviados ou reenviados exigem o template `Invite user` do Supabase Auth. Se o Supabase nao puder emitir esse tipo de convite para o email, a function falha em vez de disparar outro template.
 - O fluxo nao usa `user_metadata` para autorizacao; as permissoes efetivas continuam em `profiles` e `project_members`.
 - Como as functions usam `SUPABASE_SERVICE_ROLE_KEY`, toda autorizacao e validada manualmente antes de qualquer escrita sensivel.
 

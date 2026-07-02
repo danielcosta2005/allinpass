@@ -59,7 +59,6 @@ Deno.serve(async (req) => {
       email: invitation.email,
       invitationId: invitation.id,
       nonce: inviteNonce,
-      preferInvite: false,
       data: {
         invite_type: invitation.invite_type,
         project_id: invitation.project_id,

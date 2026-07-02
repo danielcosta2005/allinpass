@@ -178,12 +178,22 @@ export async function sendInvitationEmail(params: {
   invitationId: string;
   nonce?: string;
   preferInvite?: boolean;
+  requireInviteTemplate?: boolean;
   data?: Record<string, unknown>;
 }) {
-  const { supabaseAdmin, req, email, invitationId, nonce, preferInvite = true, data = {} } = params;
+  const {
+    supabaseAdmin,
+    req,
+    email,
+    invitationId,
+    nonce,
+    preferInvite = true,
+    requireInviteTemplate = true,
+    data = {},
+  } = params;
   const redirectTo = getInviteRedirectTo(req, invitationId, nonce);
 
-  if (preferInvite) {
+  if (preferInvite || requireInviteTemplate) {
     const { data: invited, error: inviteError } = await (supabaseAdmin.auth.admin as any)
       .inviteUserByEmail(email, {
         redirectTo,
@@ -198,7 +208,7 @@ export async function sendInvitationEmail(params: {
       return { userId: invited?.user?.id ?? null, delivery: "invite" };
     }
 
-    if (!isAlreadyRegisteredError(inviteError)) {
+    if (requireInviteTemplate || !isAlreadyRegisteredError(inviteError)) {
       throw inviteError;
     }
   }

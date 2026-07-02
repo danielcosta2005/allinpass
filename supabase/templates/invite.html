@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="supported-color-schemes" content="light">
+    <title>Convite para acessar o AllinPass</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f5f3ff;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
+      Voc&ecirc; recebeu um convite para acessar o painel AllinPass.
+    </div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f3ff;margin:0;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e9d5ff;border-radius:24px;overflow:hidden;box-shadow:0 24px 70px rgba(79,70,229,0.14);">
+            <tr>
+              <td style="padding:0;background:#4f46e5;">
+                <div style="background:linear-gradient(135deg,#9333EA 0%,#4F46E5 100%);padding:30px 32px 34px 32px;">
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td style="vertical-align:middle;">
+                        <div style="display:inline-block;width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.28);text-align:center;line-height:52px;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0;">
+                          AP
+                        </div>
+                      </td>
+                      <td align="right" style="vertical-align:middle;color:#ede9fe;font-size:13px;font-weight:700;">
+                        AllinPass
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="margin:28px 0 10px 0;color:#ddd6fe;font-size:13px;font-weight:800;letter-spacing:0.08em;text-transform:uppercase;">
+                    Convite de acesso
+                  </p>
+                  <h1 style="margin:0;color:#ffffff;font-size:30px;line-height:1.18;font-weight:800;letter-spacing:0;">
+                    Voc&ecirc; foi convidado para o AllinPass
+                  </h1>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <p style="margin:0 0 18px 0;color:#374151;font-size:16px;line-height:1.65;">
+                  Um administrador enviou um convite para voc&ecirc; acessar o painel do AllinPass.
+                </p>
+                <p style="margin:0 0 24px 0;color:#4b5563;font-size:15px;line-height:1.65;">
+                  Aceite o convite com o email <strong style="color:#111827;">{{ .Email }}</strong> e defina sua senha para continuar.
+                </p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 28px 0;background:#faf5ff;border:1px solid #e9d5ff;border-radius:18px;">
+                  <tr>
+                    <td style="padding:18px 20px;">
+                      <p style="margin:0 0 6px 0;color:#6d28d9;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:0.06em;">
+                        Pr&oacute;ximo passo
+                      </p>
+                      <p style="margin:0;color:#4b5563;font-size:14px;line-height:1.6;">
+                        Use sempre o link mais recente. Se outro convite for reenviado, este link anterior ser&aacute; substitu&iacute;do por seguran&ccedil;a.
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 28px 0;">
+                  <tr>
+                    <td style="border-radius:14px;background:#4f46e5;background:linear-gradient(135deg,#9333EA 0%,#4F46E5 100%);">
+                      <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 22px;color:#ffffff;text-decoration:none;font-size:15px;font-weight:800;border-radius:14px;">
+                        Aceitar convite
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;color:#6b7280;font-size:13px;line-height:1.6;">
+                  Se o bot&atilde;o n&atilde;o funcionar, copie e cole este link no navegador:<br>
+                  <a href="{{ .ConfirmationURL }}" style="color:#4f46e5;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 32px;background:#f8fafc;border-top:1px solid #e5e7eb;">
+                <p style="margin:0;color:#6b7280;font-size:12px;line-height:1.6;">
+                  Este convite foi enviado pelo AllinPass. Se voc&ecirc; n&atilde;o esperava este email, pode ignor&aacute;-lo com seguran&ccedil;a.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

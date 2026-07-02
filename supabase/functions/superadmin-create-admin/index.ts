@@ -148,7 +148,6 @@ Deno.serve(async (req) => {
         email: normalizedEmail,
         invitationId,
         nonce: inviteNonce,
-        preferInvite: !existingUser,
         data: { invite_type: "admin", role: requestedRole },
       });
 
