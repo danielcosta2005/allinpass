@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui/use-toast';
 import {
@@ -428,28 +429,33 @@ function formatSignedCurrencyFromCents(value) {
   return `${prefix}${formatCurrencyFromCents(Math.abs(cents))}`;
 }
 
-function StableNativeSelect({
+function StableSelect({
   value,
   onValueChange,
   children,
   ariaLabel,
+  disabled = false,
   className,
 }) {
+  const optionItems = React.Children.toArray(children).filter(React.isValidElement);
+
   return (
-    <div className="relative min-w-0 max-w-full">
-      <select
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-        aria-label={ariaLabel}
-        className={cn(
-          'flex w-full min-w-0 max-w-full appearance-none items-center justify-between rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm ring-offset-background transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
-          className
-        )}
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50" />
-    </div>
+    <Select value={String(value)} onValueChange={onValueChange} disabled={disabled}>
+      <SelectTrigger aria-label={ariaLabel} className={cn('min-w-0 max-w-full', className)}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {optionItems.map((option) => (
+          <SelectItem
+            key={option.key || option.props.value}
+            value={String(option.props.value)}
+            disabled={option.props.disabled}
+          >
+            {option.props.children}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -1228,7 +1234,7 @@ function FinancialFilters({ filters, planOptions, onChange, onReset }) {
           aria-label="Buscar por projeto, e-mail ou intermediador"
         />
       </div>
-      <StableNativeSelect
+      <StableSelect
         value={filters.plan}
         onValueChange={(value) => onChange('plan', value)}
         ariaLabel="Filtrar por plano"
@@ -1238,8 +1244,8 @@ function FinancialFilters({ filters, planOptions, onChange, onReset }) {
         {planOptions.map(([value, label]) => (
           <option key={value} value={value}>{label}</option>
         ))}
-      </StableNativeSelect>
-      <StableNativeSelect
+      </StableSelect>
+      <StableSelect
         value={filters.status}
         onValueChange={(value) => onChange('status', value)}
         ariaLabel="Filtrar por status"
@@ -1252,8 +1258,8 @@ function FinancialFilters({ filters, planOptions, onChange, onReset }) {
         <option value="suspended">Suspensa</option>
         <option value="expired">Expirada</option>
         <option value="sem_assinatura">Sem assinatura</option>
-      </StableNativeSelect>
-      <StableNativeSelect
+      </StableSelect>
+      <StableSelect
         value={filters.risk}
         onValueChange={(value) => onChange('risk', value)}
         ariaLabel="Filtrar por risco"
@@ -1263,7 +1269,7 @@ function FinancialFilters({ filters, planOptions, onChange, onReset }) {
         <option value="high">Alto</option>
         <option value="medium">Médio</option>
         <option value="low">Baixo</option>
-      </StableNativeSelect>
+      </StableSelect>
       <div className="flex min-h-9 items-center md:col-span-2 xl:col-span-1">
         <Button
           type="button"
@@ -1446,7 +1452,7 @@ function PaginationControls({
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground">Linhas por página</span>
-          <StableNativeSelect
+          <StableSelect
             value={String(pageSize)}
             onValueChange={(value) => onPageSizeChange(Number(value))}
             ariaLabel="Linhas por página"
@@ -1455,7 +1461,7 @@ function PaginationControls({
             {PAGE_SIZE_OPTIONS.map((option) => (
               <option key={option} value={String(option)}>{option}</option>
             ))}
-          </StableNativeSelect>
+          </StableSelect>
         </div>
 
         <div className="flex items-center gap-2">

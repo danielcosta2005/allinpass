@@ -101,6 +101,11 @@ const INITIAL_FORM_STATE = {
   qr_url: '',
 };
 
+const PASS_TYPE_OPTIONS = [
+  { value: 'loyalty', label: 'Fidelidade' },
+  { value: 'value', label: 'Valor' },
+];
+
 const MAX_CAROUSEL_VISIBILITY = 2;
 const HOVER_ACTION_BUTTON_CLASS = 'h-11 min-w-[132px] gap-2 rounded-xl px-4 text-sm font-semibold shadow-lg';
 
@@ -127,6 +132,19 @@ const WALLET_FUNCTION_ERROR_MESSAGES = {
 
 function isObject(v) {
   return v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function normalizePassType(value) {
+  return String(value ?? '').trim().toLowerCase() === 'value' ? 'value' : 'loyalty';
+}
+
+function formatCurrencyCents(cents) {
+  const parsed = Number(cents);
+  const normalizedCents = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(normalizedCents / 100);
 }
 
 function normalizeErrorText(value) {
@@ -307,6 +325,7 @@ function mergeWithInitial(defaults = {}) {
   return {
     ...INITIAL_FORM_STATE,
     ...normalized,
+    type: normalizePassType(normalized.type),
     colors: {
       ...INITIAL_FORM_STATE.colors,
       ...toObject(normalized.colors),
@@ -456,7 +475,7 @@ function passToFormState(pass, templateDefaults) {
 
   return {
     ...defaults,
-    type: pass?.type || defaults.type,
+    type: normalizePassType(pass?.type || defaults.type),
     title: pass?.title || defaults.title,
     description: pass?.description || defaults.description,
     exp_date: fields.exp_date || defaults.exp_date || '',
@@ -544,8 +563,12 @@ const PassPreview = ({
   const { logo: legacyLogo, appleLogo, googleLogo, googleHero, appleStrip } = images;
 
   const logoUrl = platform === 'apple' ? (appleLogo || legacyLogo) : (googleLogo || legacyLogo);
+  const passType = normalizePassType(formState.type);
   const pointsFieldKey = dataFields.find((f) => String(f?.key || '').toLowerCase().includes('points'))?.key;
   const pointsValue = pointsFieldKey ? (sampleValues[pointsFieldKey] || '123') : '123';
+  const balanceValue = formatCurrencyCents(sampleValues.balance_cents ?? 12345);
+  const metricLabel = passType === 'value' ? 'Saldo' : 'Pontos';
+  const metricValue = passType === 'value' ? balanceValue : pointsValue;
   const expText = `EXPIRA EM ${formatExpPreview(exp_date)}`;
   const qrValue = qrPreviewUrl || formState.qr_url || 'https://example.com';
 
@@ -575,8 +598,8 @@ const PassPreview = ({
             )}
 
             <main className="flex-grow flex flex-col items-start justify-center text-left">
-              <p style={{ color: label }} className="text-sm uppercase tracking-wider">Pontos</p>
-              <p style={{ color: text }} className="text-4xl leading-none">{pointsValue}</p>
+              <p style={{ color: label }} className="text-sm uppercase tracking-wider">{metricLabel}</p>
+              <p style={{ color: text }} className="text-4xl leading-none">{metricValue}</p>
             </main>
 
             <footer className="mt-6 flex items-center justify-center">
@@ -873,13 +896,14 @@ const PassEditorPanel = ({
         <div className="space-y-4">
           <div>
             <Label>Tipo</Label>
-            <Select value={formState.type} onValueChange={(v) => onFormChange('type', v)} disabled={readOnly || isProcessing}>
+            <Select value={normalizePassType(formState.type)} onValueChange={(v) => onFormChange('type', normalizePassType(v))} disabled={readOnly || isProcessing}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="loyalty">Loyalty</SelectItem>
-                <SelectItem value="offer">Offer</SelectItem>
-                <SelectItem value="event">Event</SelectItem>
-                <SelectItem value="generic">Generic</SelectItem>
+                {PASS_TYPE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -1280,7 +1304,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
       const body = {
         project_id: projectId,
         project_slug: projectSlug,
-        type: formState.type,
+        type: normalizePassType(formState.type),
         title: formState.title,
         description: formState.description,
         fields: buildFieldsPayload(formState),
@@ -1346,7 +1370,7 @@ const WalletConfigTab = ({ projectId, onBack }) => {
         pass_data: {
           pass_id: selectedPass.id,
           project_id: projectId,
-          type: formState.type,
+          type: normalizePassType(formState.type),
           title: formState.title,
           description: formState.description,
           exp_date: formState.exp_date || null,
