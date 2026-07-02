@@ -72,6 +72,39 @@ function pickFirstPoints(fields: any): string {
   return "0";
 }
 
+function getPassMode(typeRaw: unknown) {
+  return cleanString(typeRaw)?.toLowerCase() === "value" ? "value" : "loyalty";
+}
+
+function pickBalanceCents(fields: any): number {
+  const direct = fields?.balance_cents;
+  if (direct !== undefined && direct !== null && direct !== "") {
+    const cents = Number(direct);
+    if (Number.isFinite(cents)) return Math.max(Math.trunc(cents), 0);
+  }
+
+  if (fields && typeof fields === "object") {
+    for (const key of Object.keys(fields)) {
+      const normalizedKey = key.toLowerCase();
+      if (!normalizedKey.includes("balance") && !normalizedKey.includes("saldo")) {
+        continue;
+      }
+      const cents = Number((fields as any)[key]);
+      if (Number.isFinite(cents)) return Math.max(Math.trunc(cents), 0);
+    }
+  }
+
+  return 0;
+}
+
+function formatCurrencyBRL(cents: number) {
+  const normalizedCents = Number.isFinite(cents) ? Math.trunc(cents) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
 function storagePublicUrl(path: string) {
   if (!SUPABASE_URL) return null;
   return `${SUPABASE_URL}/storage/v1/object/public/pass-assets/${path}`;
@@ -431,7 +464,9 @@ serve(async (req) => {
       finalPassData.images = normalizeDefaults(passDesign?.images);
     }
 
-    const type = (cleanString(finalPassData.type) ?? "loyalty").toLowerCase();
+    const rawType = (cleanString(finalPassData.type) ?? "loyalty").toLowerCase();
+    const type = rawType === "value" ? "value" : rawType;
+    const passMode = getPassMode(type);
     const title = cleanString(finalPassData.title) ?? "Cartão Fidelidade";
     const header = cleanString(finalPassData.header) ?? "Programa Fidelidade";
 
@@ -441,6 +476,9 @@ serve(async (req) => {
 
     const fields = finalPassData?.fields ?? {};
     const points = pickFirstPoints(fields);
+    const balanceCents = pickBalanceCents(fields);
+    const metricLabel = passMode === "value" ? "SALDO" : "PONTOS";
+    const metricValue = passMode === "value" ? formatCurrencyBRL(balanceCents) : points;
 
     const bgColor = mapBgColor(finalPassData.colors);
 
@@ -490,7 +528,7 @@ serve(async (req) => {
     const classId = `${GOOGLE_ISSUER_ID}.${classSuffix}`;
     const objectId = `${GOOGLE_ISSUER_ID}.${objectSuffix}`;
 
-    const isLoyalty = type === "loyalty";
+    const isLoyalty = type === "loyalty" || type === "value";
 
     const loyaltyClass: any = isLoyalty
       ? {
@@ -512,7 +550,7 @@ serve(async (req) => {
         classId,
         state: "ACTIVE",
         accountId: serial,
-        loyaltyPoints: { label: "PONTOS", balance: { string: points } },
+        loyaltyPoints: { label: metricLabel, balance: { string: metricValue } },
         barcode: { type: "QR_CODE", value: qrMessage },
         textModulesData: [{
           header: "EXPIRA EM",
@@ -542,7 +580,7 @@ serve(async (req) => {
         header: { defaultValue: { language: "pt-BR", value: header } },
         subheader: { defaultValue: { language: "pt-BR", value: expLabel } },
         textModulesData: [
-          { header: "PONTOS", body: String(points) },
+          { header: metricLabel, body: String(metricValue) },
           { header: "EXPIRA EM", body: expText ?? "--/--/----" },
         ],
         barcode: { type: "QR_CODE", value: qrMessage },
@@ -602,6 +640,9 @@ serve(async (req) => {
           type,
           bgColor,
           points,
+          balance_cents: balanceCents,
+          metric_label: metricLabel,
+          metric_value: metricValue,
           qrMessage,
           exp_date: finalPassData.exp_date ?? null,
         },
