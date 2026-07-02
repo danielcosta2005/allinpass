@@ -46,9 +46,9 @@ async function getCallerProfile(supabaseAdmin: any, req: Request) {
   return { user, profile };
 }
 
-function ensureCanListAdmins(caller: { profile?: { role?: string } | null }) {
-  if (!["superadmin", "admin"].includes(caller.profile?.role || "")) {
-    throw new HttpError(403, "Acesso negado. Apenas admins podem visualizar admins.");
+function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
+  if (caller.profile?.role !== "superadmin") {
+    throw new HttpError(403, "Acesso negado. Apenas superadmins podem gerenciar admins.");
   }
 }
 
@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    ensureCanListAdmins(await getCallerProfile(supabaseAdmin, req));
+    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
 
     const { data: profiles, error: profilesError } = await supabaseAdmin
       .from("profiles")

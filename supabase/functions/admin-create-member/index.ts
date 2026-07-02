@@ -4,7 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 const FREE_PLAN_CODE = "free_trial";
 const BILLING_PROVISIONING_ORIGIN = "legacy_admin_create_member";
 
-type SupabaseAdminClient = any;
+type SupabaseAdminClient = ReturnType<typeof createClient>;
 
 type BillingPlanRow = {
   id: string;
@@ -62,33 +62,6 @@ function getBearerToken(req: Request) {
   return match?.[1] || "";
 }
 
-function normalizeOrigin(value: string | null | undefined) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  try {
-    return new URL(raw).origin;
-  } catch (_) {
-    return "";
-  }
-}
-
-function getInviteRedirectTo(req: Request) {
-  const configuredBaseUrl =
-    Deno.env.get("APP_BASE_URL") ||
-    Deno.env.get("SITE_URL") ||
-    Deno.env.get("PUBLIC_SITE_URL") ||
-    Deno.env.get("FRONTEND_URL");
-
-  const origin = normalizeOrigin(configuredBaseUrl) || normalizeOrigin(req.headers.get("Origin"));
-  return origin ? `${origin}/reset-password?flow=invite` : undefined;
-}
-
-function getInviteOptions(req: Request, data: Record<string, unknown>) {
-  const redirectTo = getInviteRedirectTo(req);
-  return redirectTo ? { redirectTo, data } : { data };
-}
-
 async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request) {
   const token = getBearerToken(req);
   if (!token) throw new HttpError(401, "Missing Authorization header");
@@ -107,44 +80,9 @@ async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request
   return { user, profile };
 }
 
-async function assertCanManageProjectMembers(
-  supabaseAdmin: SupabaseAdminClient,
-  caller: { user: { id: string }; profile?: { role?: string } | null },
-  projectId: string,
-) {
-  if (!projectId) throw new HttpError(400, "projectId e obrigatorio.");
-
-  const callerRole = caller.profile?.role;
-  if (callerRole === "superadmin") return;
-
-  if (callerRole === "admin") {
-    const { data: project, error } = await supabaseAdmin
-      .from("projects")
-      .select("id")
-      .eq("id", projectId)
-      .eq("created_by", caller.user.id)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (project?.id) return;
-  }
-
-  const { data: membership, error: membershipError } = await supabaseAdmin
-    .from("project_members")
-    .select("role")
-    .eq("project_id", projectId)
-    .eq("user_id", caller.user.id)
-    .maybeSingle();
-
-  if (membershipError) throw membershipError;
-  if (membership?.role === "owner") return;
-
-  throw new HttpError(403, "Acesso negado. Apenas gestores podem convidar membros.");
-}
-
-function assertValidMemberRole(role: string) {
-  if (!["owner", "staff"].includes(role)) {
-    throw new HttpError(400, "Papel invalido para membro do projeto.");
+function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
+  if (caller.profile?.role !== "superadmin") {
+    throw new HttpError(403, "Acesso negado. Apenas superadmins podem criar membros.");
   }
 }
 
@@ -342,15 +280,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, password, projectId: rawProjectId, role: rawRole } = await req.json().catch(() => ({}));
-    const normalizedEmail = String(email || "").trim().toLowerCase();
-    const projectId = String(rawProjectId || "").trim();
-    const role = String(rawRole || "").trim();
-    const cleanPassword = typeof password === "string" ? password.trim() : "";
-
-    if (!normalizedEmail) throw new HttpError(400, "Email e obrigatorio.");
-    if (!projectId) throw new HttpError(400, "projectId e obrigatorio.");
-    assertValidMemberRole(role);
+    const { email, password, projectId, role } = await req.json();
+    const normalizedEmail = String(email).trim().toLowerCase();
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -358,16 +289,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const caller = await getCallerProfile(supabaseAdmin, req);
-    await assertCanManageProjectMembers(supabaseAdmin, caller, projectId);
-
-    if (cleanPassword && caller.profile?.role !== "superadmin") {
-      throw new HttpError(403, "Apenas superadmins podem definir senha diretamente.");
-    }
-
-    if (cleanPassword && cleanPassword.length < 6) {
-      throw new HttpError(400, "A senha deve ter no minimo 6 caracteres.");
-    }
+    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
 
     let userId: string | null = null;
     let inviteSent = false;
@@ -382,22 +304,16 @@ Deno.serve(async (req) => {
       userId = existingUser.id;
     } else {
       // User não existe
-      if (cleanPassword) {
+      if (password && password.trim().length > 0) {
         const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
           email: normalizedEmail,
-          password: cleanPassword,
+          password: password.trim(),
           email_confirm: true,
         });
         if (createError) throw createError;
         userId = newUser.user.id;
       } else {
-        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(
-          normalizedEmail,
-          getInviteOptions(req, {
-            invited_project_id: projectId,
-            invited_project_role: role,
-          }),
-        );
+        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
         if (inviteError) throw inviteError;
         userId = invited.user?.id ?? null;
         inviteSent = true;
@@ -406,28 +322,13 @@ Deno.serve(async (req) => {
 
     if (!userId) throw new Error("Não foi possível determinar o userId.");
 
-    const { data: currentProfile, error: profileLookupError } = await supabaseAdmin
-      .from("profiles")
-      .select("role, created_at")
-      .eq("id", userId)
-      .maybeSingle();
-
-    if (profileLookupError) throw profileLookupError;
-    if (["superadmin", "admin"].includes(currentProfile?.role || "")) {
-      throw new HttpError(409, "Este usuario ja possui acesso administrativo.");
-    }
-
-    const profileRole = currentProfile?.role === "customer"
-      ? "establishment"
-      : currentProfile?.role || "establishment";
-
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
       .upsert({
         id: userId,
         email: normalizedEmail,
-        role: profileRole,
-        created_at: currentProfile?.created_at || new Date().toISOString(),
+        role: 'establishment',
+        created_at: new Date().toISOString(),
       }, { onConflict: "id" });
 
     if (profileError) throw profileError;
@@ -449,7 +350,7 @@ Deno.serve(async (req) => {
       status: 200,
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro na função admin-create-member:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

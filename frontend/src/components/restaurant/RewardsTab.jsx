@@ -186,7 +186,7 @@ function formatScannerRewardError(body, fallback) {
   return getFunctionErrorMessage(body, fallback?.message || "Nao foi possivel resgatar a recompensa.");
 }
 
-export default function RewardsTab({ activeTab = "rewards", canManageRewards = true, onTabChange, projectId }) {
+export default function RewardsTab({ activeTab = "rewards", onTabChange, projectId }) {
   const { toast } = useToast();
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
@@ -360,15 +360,12 @@ export default function RewardsTab({ activeTab = "rewards", canManageRewards = t
   }, [clearResetTimer]);
 
   function startCreate() {
-    if (!canManageRewards) return;
     setName("");
     setPointsRequired(10);
     setIsCreating(true);
   }
 
   async function saveReward() {
-    if (!canManageRewards) return;
-
     const finalName = name.trim();
     const finalPoints = Number(pointsRequired);
 
@@ -416,7 +413,6 @@ export default function RewardsTab({ activeTab = "rewards", canManageRewards = t
 
   async function toggleRewardStatus(reward) {
     if (!reward?.id) return;
-    if (!canManageRewards) return;
 
     const nextStatus = reward.status === "active" ? "inactive" : "active";
     setUpdatingRewardId(reward.id);
@@ -618,7 +614,7 @@ export default function RewardsTab({ activeTab = "rewards", canManageRewards = t
   return (
     <div className="space-y-4">
 
-      {isCreating && canManageRewards && (
+      {isCreating && (
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -738,23 +734,19 @@ export default function RewardsTab({ activeTab = "rewards", canManageRewards = t
             <div className="rounded-2xl border border-border bg-card p-10 text-center shadow-lg shadow-slate-950/5 dark:shadow-black/20">
               <Gift className="mx-auto h-10 w-10 text-muted-foreground/70" />
               <p className="mt-4 text-base font-medium text-foreground">Voce ainda nao possui recompensas</p>
-              {canManageRewards && (
-                <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
-                  <Plus className="h-4 w-4" />
-                  Criar recompensa
-                </Button>
-              )}
+              <Button onClick={startCreate} className="mt-4 gap-2" disabled={!projectId}>
+                <Plus className="h-4 w-4" />
+                Criar recompensa
+              </Button>
             </div>
           ) : (
             <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-              {canManageRewards && (
-                <div className="flex justify-end border-b px-4 py-3">
-                  <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
-                    <Plus className="h-4 w-4" />
-                    Criar recompensa
-                  </Button>
-                </div>
-              )}
+              <div className="flex justify-end border-b px-4 py-3">
+                <Button onClick={startCreate} className="gap-2" disabled={!projectId}>
+                  <Plus className="h-4 w-4" />
+                  Criar recompensa
+                </Button>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-muted">
@@ -787,7 +779,7 @@ export default function RewardsTab({ activeTab = "rewards", canManageRewards = t
                             <div className="flex items-center gap-3">
                               <Toggle
                                 checked={isActive}
-                                disabled={!canManageRewards || updatingRewardId === reward.id}
+                                disabled={updatingRewardId === reward.id}
                                 onChange={() => toggleRewardStatus(reward)}
                               />
                               <span className="text-xs font-medium text-muted-foreground">

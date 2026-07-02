@@ -1,81 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders } from "./cors.ts";
 
-type SupabaseAdminClient = any;
+async function isSuperAdmin(supabase: any) {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return false;
 
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function getBearerToken(req: Request) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || "";
-}
-
-async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request) {
-  const token = getBearerToken(req);
-  if (!token) throw new HttpError(401, "Missing Authorization header");
-
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  const user = userData?.user;
-  if (userError || !user) throw new HttpError(401, "Sessao invalida.");
-
-  const { data: profile, error: profileError } = await supabaseAdmin
+  const { data: profile, error: profErr } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .maybeSingle();
+    .single();
 
-  if (profileError) throw profileError;
-  return { user, profile };
-}
-
-async function assertCanManageProjectMembers(
-  supabaseAdmin: SupabaseAdminClient,
-  caller: { user: { id: string }; profile?: { role?: string } | null },
-  projectId: string,
-) {
-  if (!projectId) throw new HttpError(400, "projectId e obrigatorio.");
-
-  const callerRole = caller.profile?.role;
-  if (callerRole === "superadmin") return;
-
-  if (callerRole === "admin") {
-    const { data: project, error } = await supabaseAdmin
-      .from("projects")
-      .select("id")
-      .eq("id", projectId)
-      .eq("created_by", caller.user.id)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (project?.id) return;
-  }
-
-  const { data: membership, error: membershipError } = await supabaseAdmin
-    .from("project_members")
-    .select("role")
-    .eq("project_id", projectId)
-    .eq("user_id", caller.user.id)
-    .maybeSingle();
-
-  if (membershipError) throw membershipError;
-  if (membership?.role === "owner") return;
-
-  throw new HttpError(403, "Acesso negado. Apenas gestores podem remover membros.");
+  if (profErr) return false;
+  return profile?.role === "superadmin";
 }
 
 Deno.serve(async (req) => {
@@ -85,44 +22,73 @@ Deno.serve(async (req) => {
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-    if (!SUPABASE_URL || !SERVICE_KEY) {
-      throw new Error("Variaveis de ambiente do Supabase nao configuradas.");
+    if (!SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
+      throw new Error("Variáveis de ambiente do Supabase não configuradas.");
     }
 
-    const body = await req.json().catch(() => ({}));
-    const memberId = String(body.memberId || "").trim();
-    const projectId = String(body.projectId || "").trim();
-
-    if (!memberId || !projectId) {
-      throw new HttpError(400, "Os campos memberId e projectId sao obrigatorios.");
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
+    // Client do caller (com ANON + Authorization do usuário logado)
+    const callerSupabase = createClient(SUPABASE_URL, ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const caller = await getCallerProfile(supabaseAdmin, req);
-    await assertCanManageProjectMembers(supabaseAdmin, caller, projectId);
-
-    if (memberId === caller.user.id && caller.profile?.role !== "superadmin") {
-      throw new HttpError(400, "Voce nao pode remover seu proprio acesso ao projeto.");
+    const allowed = await isSuperAdmin(callerSupabase);
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: "Acesso negado. Apenas superadmins podem remover membros." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    const body = await req.json();
+    const memberId = body.memberId;   // ✅ padronizado
+    const projectId = body.projectId;
+
+    if (!memberId || !projectId) {
+      return new Response(JSON.stringify({ error: "Os campos memberId e projectId são obrigatórios." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Client admin
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
 
     const { error: deleteErr } = await supabaseAdmin
       .from("project_members")
       .delete()
       .match({ project_id: projectId, user_id: memberId });
 
-    if (deleteErr) throw deleteErr;
+    if (deleteErr) {
+      console.error("Erro ao deletar project_members:", deleteErr);
+      return new Response(JSON.stringify({ error: deleteErr.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    return jsonResponse({ success: true });
-  } catch (error: any) {
-    console.error("Erro na edge function admin-remove-member:", error);
-    return jsonResponse(
-      { error: error?.message || "Erro desconhecido na edge function" },
-      error instanceof HttpError ? error.status : 500,
-    );
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e: any) {
+    console.error("Erro na edge function admin-remove-member:", e);
+    return new Response(JSON.stringify({ error: e?.message || "Erro desconhecido na edge function" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
