@@ -1,55 +1,23 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
+import {
+  corsHeaders,
+  ensureSuperadmin,
+  findAuthUserByEmail,
+  getCallerProfile,
+  getProfileForUser,
+  getServiceClient,
+  hasAnyProjectMembership,
+  HttpError,
+  jsonResponse,
+  markInvitationSendFailure,
+  sendInvitationEmail,
+} from "../_shared/adminAccess.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const ADMIN_ROLES = new Set(["admin", "superadmin"]);
 
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function getBearerToken(req: Request) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || "";
-}
-
-async function getCallerProfile(supabaseAdmin: any, req: Request) {
-  const token = getBearerToken(req);
-  if (!token) throw new HttpError(401, "Missing Authorization header");
-
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  const user = userData?.user;
-  if (userError || !user) throw new HttpError(401, "Sessão inválida.");
-
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  return { user, profile };
-}
-
-function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
-  if (caller.profile?.role !== "superadmin") {
-    throw new HttpError(403, "Acesso negado. Apenas superadmins podem gerenciar admins.");
-  }
+function addHours(date: Date, hours: number) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + hours);
+  return next;
 }
 
 Deno.serve(async (req) => {
@@ -58,86 +26,162 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const supabaseAdmin = getServiceClient();
+    const caller = await getCallerProfile(supabaseAdmin, req);
+    ensureSuperadmin(caller, "Acesso negado. Apenas superadmins podem gerenciar admins.");
 
-    if (!SUPABASE_URL || !SERVICE_KEY) {
-      throw new Error("Variáveis de ambiente do Supabase não configuradas.");
-    }
-
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
-
-    const { email, password } = await req.json().catch(() => ({}));
+    const { email, role = "admin" } = await req.json().catch(() => ({}));
     const normalizedEmail = String(email || "").trim().toLowerCase();
-    const cleanPassword = typeof password === "string" ? password.trim() : "";
+    const requestedRole = String(role || "admin").trim().toLowerCase();
 
-    if (!normalizedEmail) throw new HttpError(400, "Email é obrigatório.");
-    if (cleanPassword && cleanPassword.length < 6) {
-      throw new HttpError(400, "A senha deve ter no mínimo 6 caracteres.");
+    if (!normalizedEmail) throw new HttpError(400, "Email e obrigatorio.", "missing_email");
+    if (!ADMIN_ROLES.has(requestedRole)) {
+      throw new HttpError(400, "Papel administrativo invalido.", "invalid_role");
     }
 
-    const { data: usersPage, error: listError } = await supabaseAdmin.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    });
-    if (listError) throw listError;
+    const existingUser = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
 
-    const existingUser = (usersPage?.users || []).find(
-      (user: any) => user.email?.toLowerCase() === normalizedEmail,
-    );
+    if (existingUser?.id) {
+      const currentProfile = await getProfileForUser(supabaseAdmin, existingUser.id);
+      const hasMembership = await hasAnyProjectMembership(supabaseAdmin, existingUser.id);
 
-    let userId = existingUser?.id || null;
-    let inviteSent = false;
+      if (currentProfile?.role === "establishment" || hasMembership) {
+        throw new HttpError(409, "Este email ja esta cadastrado como login de restaurante.", "restaurant_login_conflict");
+      }
 
-    if (!userId) {
-      if (cleanPassword) {
-        const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: normalizedEmail,
-          password: cleanPassword,
-          email_confirm: true,
+      if (currentProfile?.role === "admin" || currentProfile?.role === "superadmin") {
+        const { error: updateProfileError } = await supabaseAdmin
+          .from("profiles")
+          .update({
+            role: requestedRole,
+            email: normalizedEmail,
+          })
+          .eq("id", existingUser.id);
+
+        if (updateProfileError) throw updateProfileError;
+
+        return jsonResponse({
+          success: true,
+          userId: existingUser.id,
+          inviteSent: false,
+          status: "active",
+          role: requestedRole,
+          updated: true,
         });
-        if (createError) throw createError;
-        userId = created.user?.id || null;
-      } else {
-        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
-        if (inviteError) throw inviteError;
-        userId = invited.user?.id || null;
-        inviteSent = true;
       }
     }
 
-    if (!userId) throw new Error("Não foi possível determinar o userId.");
-
-    const { data: currentProfile, error: profileLookupError } = await supabaseAdmin
-      .from("profiles")
-      .select("role, created_at")
-      .eq("id", userId)
+    const { data: restaurantInvitation, error: restaurantInvitationError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id")
+      .eq("invite_type", "project_member")
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .limit(1)
       .maybeSingle();
 
-    if (profileLookupError) throw profileLookupError;
-    if (currentProfile?.role === "superadmin") {
-      throw new HttpError(409, "Este usuário já é superadmin.");
+    if (restaurantInvitationError) throw restaurantInvitationError;
+    if (restaurantInvitation?.id) {
+      throw new HttpError(409, "Este email ja possui convite de login de restaurante.", "restaurant_login_conflict");
     }
 
-    const { error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .upsert({
-        id: userId,
+    const now = new Date();
+    const expiresAt = addHours(now, 24).toISOString();
+    const inviteNonce = crypto.randomUUID();
+
+    const { data: pendingInvitation, error: pendingError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id")
+      .eq("invite_type", "admin")
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingError) throw pendingError;
+
+    let invitationId = pendingInvitation?.id as string | undefined;
+
+    if (invitationId) {
+      const { error: updateInviteError } = await supabaseAdmin
+        .from("user_invitations")
+        .update({
+          role: requestedRole,
+          status: "invited",
+          invited_user_id: existingUser?.id ?? null,
+          invited_by: caller.user.id,
+          expires_at: expiresAt,
+          last_sent_at: now.toISOString(),
+          accepted_at: null,
+          accepted_by: null,
+          metadata: { nonce: inviteNonce },
+        })
+        .eq("id", invitationId);
+
+      if (updateInviteError) throw updateInviteError;
+    } else {
+      const { data: createdInvitation, error: createInviteError } = await supabaseAdmin
+        .from("user_invitations")
+        .insert({
+          email: normalizedEmail,
+          invite_type: "admin",
+          role: requestedRole,
+          invited_user_id: existingUser?.id ?? null,
+          status: "invited",
+          invited_by: caller.user.id,
+          expires_at: expiresAt,
+          last_sent_at: now.toISOString(),
+          metadata: { nonce: inviteNonce },
+        })
+        .select("id")
+        .single();
+
+      if (createInviteError) throw createInviteError;
+      invitationId = createdInvitation.id as string;
+    }
+
+    try {
+      const delivery = await sendInvitationEmail({
+        supabaseAdmin,
+        req,
         email: normalizedEmail,
-        role: "admin",
-        created_at: currentProfile?.created_at || new Date().toISOString(),
-      }, { onConflict: "id" });
+        invitationId,
+        nonce: inviteNonce,
+        data: { invite_type: "admin", role: requestedRole },
+      });
 
-    if (profileError) throw profileError;
+      if (delivery.userId && delivery.userId !== existingUser?.id) {
+        const { error: updateUserError } = await supabaseAdmin
+          .from("user_invitations")
+          .update({ invited_user_id: delivery.userId })
+          .eq("id", invitationId);
 
-    return jsonResponse({ success: true, userId, inviteSent });
+        if (updateUserError) throw updateUserError;
+      }
+
+      return jsonResponse({
+        success: true,
+        userId: delivery.userId ?? existingUser?.id ?? null,
+        invitationId,
+        inviteSent: true,
+        status: "invited",
+        role: requestedRole,
+        expiresAt,
+      });
+    } catch (sendError) {
+      await markInvitationSendFailure(supabaseAdmin, invitationId, sendError);
+      throw sendError;
+    }
   } catch (error: any) {
     const status = error instanceof HttpError ? error.status : 500;
-    console.error("Erro na função superadmin-create-admin:", error);
-    return jsonResponse({ error: error?.message || "Erro desconhecido na edge function" }, status);
+    console.error("Erro na funcao superadmin-create-admin:", error);
+    return jsonResponse(
+      {
+        error: error?.message || "Erro desconhecido na edge function",
+        code: error?.code || null,
+      },
+      status,
+    );
   }
 });

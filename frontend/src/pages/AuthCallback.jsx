@@ -31,10 +31,22 @@ export default function AuthCallback() {
       const hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
       const authType = searchParams.get('type') || hashParams.get('type');
       const flow = searchParams.get('flow') || hashParams.get('flow');
+      const invitationId = searchParams.get('invitationId') || hashParams.get('invitationId');
+      const nonce = searchParams.get('nonce') || hashParams.get('nonce');
       const projectId = searchParams.get('projectId');
 
       if (authType === 'recovery' || flow === 'recovery') {
         navigateToPasswordReset();
+        return;
+      }
+
+      if (authType === 'invite' || flow === 'invite') {
+        handledRef.current = true;
+        setStatus("Preparando seu convite...");
+        const inviteParams = new URLSearchParams();
+        if (invitationId) inviteParams.set('invitationId', invitationId);
+        if (nonce) inviteParams.set('nonce', nonce);
+        navigate(`/convite${inviteParams.toString() ? `?${inviteParams.toString()}` : ''}`, { replace: true });
         return;
       }
 
@@ -102,7 +114,7 @@ export default function AuthCallback() {
       cancelled = true;
       subscription?.unsubscribe();
     };
-  }, [navigate, location.search, toast]);
+  }, [navigate, location.hash, location.search, toast]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-4">

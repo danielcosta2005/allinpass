@@ -1001,7 +1001,6 @@ const AffiliatesTab = () => {
                       <td className="px-5 py-4">
                         <p className="font-semibold text-foreground">{sellerName}</p>
                         <p className="text-sm text-muted-foreground">{projectName}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{commission.subscriptionId}</p>
                       </td>
                       <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">
                         {formatMonth(commission.competenceMonth)}
@@ -1013,7 +1012,6 @@ const AffiliatesTab = () => {
                         <p className="font-semibold text-foreground">
                           {formatCurrency(commission.eligibleAmountCents, commission.currency)}
                         </p>
-                        <p className="text-xs text-muted-foreground">Base da assinatura paga</p>
                       </td>
                       <td className="px-5 py-4">
                         <p className="font-semibold text-foreground">
@@ -1023,7 +1021,6 @@ const AffiliatesTab = () => {
                       </td>
                       <td className="px-5 py-4">
                         <p className="text-muted-foreground">{formatDateTime(commission.paidAt)}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{commission.providerPaymentId || '-'}</p>
                       </td>
                       <td className="px-5 py-4">
                         {commission.status === 'paid' ? (
@@ -1146,13 +1143,9 @@ const AffiliatesTab = () => {
                       </td>
                       <td className="px-5 py-4">
                         <p className="font-semibold text-foreground">{projectName}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{client.projectId}</p>
                       </td>
                       <td className="px-5 py-4">
                         <SubscriptionStatusBadge status={client.subscription?.status} />
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Plano: {client.subscription?.plan_id || client.planId || '-'}
-                        </p>
                       </td>
                       <td className="px-5 py-4">
                         <p className="font-semibold text-foreground">{getClientInvestigationStatus(client)}</p>

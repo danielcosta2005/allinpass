@@ -1,10 +1,21 @@
-import { corsHeaders } from "./cors.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
+import {
+  corsHeaders,
+  ensureCanManageProjectMembers,
+  findAuthUserByEmail,
+  getCallerProfile,
+  getProfileForUser,
+  getServiceClient,
+  hasAnyProjectMembership,
+  HttpError,
+  jsonResponse,
+  markInvitationSendFailure,
+  sendInvitationEmail,
+  type SupabaseAdminClient,
+} from "../_shared/adminAccess.ts";
 
 const FREE_PLAN_CODE = "free_trial";
 const BILLING_PROVISIONING_ORIGIN = "legacy_admin_create_member";
-
-type SupabaseAdminClient = ReturnType<typeof createClient>;
+const MEMBER_ROLES = new Set(["owner", "staff"]);
 
 type BillingPlanRow = {
   id: string;
@@ -17,24 +28,10 @@ type BillingPlanRow = {
   overage_notification_sent_cents: number | null;
 };
 
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-function generatePassword() {
-  const length = 12;
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()";
-  let retVal = "";
-  for (let i = 0, n = charset.length; i < length; ++i) {
-    retVal += charset.charAt(Math.floor(Math.random() * n));
-  }
-  return retVal;
+function addHours(date: Date, hours: number) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + hours);
+  return next;
 }
 
 function addDays(date: Date, days: number) {
@@ -54,36 +51,6 @@ function isDuplicateKeyError(error: unknown) {
   const code = String(maybeError?.code ?? "");
   const message = String(maybeError?.message ?? "");
   return code === "23505" || /duplicate key value/i.test(message);
-}
-
-function getBearerToken(req: Request) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || "";
-}
-
-async function getCallerProfile(supabaseAdmin: SupabaseAdminClient, req: Request) {
-  const token = getBearerToken(req);
-  if (!token) throw new HttpError(401, "Missing Authorization header");
-
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  const user = userData?.user;
-  if (userError || !user) throw new HttpError(401, "Sessao invalida.");
-
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  return { user, profile };
-}
-
-function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
-  if (caller.profile?.role !== "superadmin") {
-    throw new HttpError(403, "Acesso negado. Apenas superadmins podem criar membros.");
-  }
 }
 
 async function getExistingProjectSubscription(supabaseAdmin: SupabaseAdminClient, projectId: string) {
@@ -189,31 +156,29 @@ async function ensureProjectFreeTrialBilling(
   const trialEndsAt = trialDays > 0 ? addDays(now, trialDays) : null;
   const periodEnd = trialEndsAt ?? addMonths(now, 1);
 
-  const subscriptionPayload = {
-    project_id: projectId,
-    billing_account_id: billingAccountId,
-    plan_id: plan.id,
-    status,
-    trial_started_at: trialDays > 0 ? now.toISOString() : null,
-    trial_ends_at: trialEndsAt?.toISOString() ?? null,
-    current_period_start: now.toISOString(),
-    current_period_end: periodEnd.toISOString(),
-    gateway_provider: "other",
-    base_price_cents: plan.base_price_cents ?? 0,
-    included_pass_installs: plan.included_pass_installs ?? 0,
-    included_notification_sends: plan.included_notification_sends ?? 0,
-    overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
-    overage_notification_sent_cents: plan.overage_notification_sent_cents ?? 0,
-    currency: "BRL",
-    metadata: {
-      origin: BILLING_PROVISIONING_ORIGIN,
-      plan_code: FREE_PLAN_CODE,
-    },
-  };
-
   const { data: subscriptionData, error: subscriptionError } = await supabaseAdmin
     .from("billing_subscriptions")
-    .insert(subscriptionPayload)
+    .insert({
+      project_id: projectId,
+      billing_account_id: billingAccountId,
+      plan_id: plan.id,
+      status,
+      trial_started_at: trialDays > 0 ? now.toISOString() : null,
+      trial_ends_at: trialEndsAt?.toISOString() ?? null,
+      current_period_start: now.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+      gateway_provider: "other",
+      base_price_cents: plan.base_price_cents ?? 0,
+      included_pass_installs: plan.included_pass_installs ?? 0,
+      included_notification_sends: plan.included_notification_sends ?? 0,
+      overage_pass_install_cents: plan.overage_pass_install_cents ?? 0,
+      overage_notification_sent_cents: plan.overage_notification_sent_cents ?? 0,
+      currency: "BRL",
+      metadata: {
+        origin: BILLING_PROVISIONING_ORIGIN,
+        plan_code: FREE_PLAN_CODE,
+      },
+    })
     .select("id")
     .single();
 
@@ -280,81 +245,204 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { email, password, projectId, role } = await req.json();
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const { email, projectId, role = "staff" } = await req.json().catch(() => ({}));
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedProjectId = String(projectId || "").trim();
+    const requestedRole = String(role || "staff").trim().toLowerCase();
 
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
+    if (!normalizedProjectId) throw new HttpError(400, "projectId e obrigatorio.", "missing_project");
+    if (!normalizedEmail) throw new HttpError(400, "Email e obrigatorio.", "missing_email");
+    if (!MEMBER_ROLES.has(requestedRole)) {
+      throw new HttpError(400, "Papel de membro invalido.", "invalid_role");
+    }
 
-    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
+    const supabaseAdmin = getServiceClient();
+    const caller = await getCallerProfile(supabaseAdmin, req);
+    await ensureCanManageProjectMembers(supabaseAdmin, caller, normalizedProjectId);
 
-    let userId: string | null = null;
-    let inviteSent = false;
+    const { data: project, error: projectError } = await supabaseAdmin
+      .from("projects")
+      .select("id")
+      .eq("id", normalizedProjectId)
+      .maybeSingle();
 
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    if (listError) throw listError;
+    if (projectError) throw projectError;
+    if (!project?.id) throw new HttpError(404, "Projeto nao encontrado.", "project_not_found");
 
-    const existingUser = users.find(u => u.email?.toLowerCase() === normalizedEmail);
+    const { data: pendingInvitation, error: pendingError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id, invited_user_id")
+      .eq("invite_type", "project_member")
+      .eq("project_id", normalizedProjectId)
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (existingUser) {
-      // User existe -> get id.
-      userId = existingUser.id;
-    } else {
-      // User não existe
-      if (password && password.trim().length > 0) {
-        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: normalizedEmail,
-          password: password.trim(),
-          email_confirm: true,
-        });
-        if (createError) throw createError;
-        userId = newUser.user.id;
-      } else {
-        const { data: invited, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(normalizedEmail);
-        if (inviteError) throw inviteError;
-        userId = invited.user?.id ?? null;
-        inviteSent = true;
+    if (pendingError) throw pendingError;
+
+    const { data: otherProjectInvitation, error: otherProjectInvitationError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id")
+      .eq("invite_type", "project_member")
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .neq("project_id", normalizedProjectId)
+      .limit(1)
+      .maybeSingle();
+
+    if (otherProjectInvitationError) throw otherProjectInvitationError;
+    if (otherProjectInvitation?.id) {
+      throw new HttpError(
+        409,
+        "Este email ja possui convite para outro projeto.",
+        "project_member_invitation_conflict",
+      );
+    }
+
+    const existingUser = await findAuthUserByEmail(supabaseAdmin, normalizedEmail);
+
+    if (existingUser?.id) {
+      const currentProfile = await getProfileForUser(supabaseAdmin, existingUser.id);
+      const hasExistingMembership = await hasAnyProjectMembership(supabaseAdmin, existingUser.id);
+      const isSamePendingInviteUser = pendingInvitation?.invited_user_id === existingUser.id;
+
+      if (hasExistingMembership) {
+        throw new HttpError(
+          409,
+          "Este email ja esta vinculado a um projeto. Um login de restaurante nao pode pertencer a mais de um projeto.",
+          "project_member_account_conflict",
+        );
+      }
+
+      if (currentProfile?.role === "admin" || currentProfile?.role === "superadmin") {
+        throw new HttpError(409, "Este email ja esta cadastrado como login administrativo.", "admin_login_conflict");
+      }
+
+      if (currentProfile?.role === "establishment") {
+        throw new HttpError(
+          409,
+          "Este email ja possui uma conta de restaurante na Allinpass.",
+          "restaurant_login_conflict",
+        );
+      }
+
+      if (currentProfile?.role !== "customer" && !isSamePendingInviteUser) {
+        throw new HttpError(
+          409,
+          "Este email ja possui uma conta na Allinpass. Convites de membro devem ser enviados apenas para emails sem conta.",
+          "existing_account_conflict",
+        );
       }
     }
 
-    if (!userId) throw new Error("Não foi possível determinar o userId.");
+    const { data: adminInvitation, error: adminInvitationError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id")
+      .eq("invite_type", "admin")
+      .eq("email", normalizedEmail)
+      .in("status", ["invited", "expired"])
+      .limit(1)
+      .maybeSingle();
 
-    const { error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .upsert({
-        id: userId,
+    if (adminInvitationError) throw adminInvitationError;
+    if (adminInvitation?.id) {
+      throw new HttpError(409, "Este email ja possui convite de login administrativo.", "admin_login_conflict");
+    }
+
+    const now = new Date();
+    const expiresAt = addHours(now, 24).toISOString();
+    const inviteNonce = crypto.randomUUID();
+
+    let invitationId = pendingInvitation?.id as string | undefined;
+
+    if (invitationId) {
+      const { error: updateInviteError } = await supabaseAdmin
+        .from("user_invitations")
+        .update({
+          role: requestedRole,
+          status: "invited",
+          invited_user_id: existingUser?.id ?? null,
+          invited_by: caller.user.id,
+          expires_at: expiresAt,
+          last_sent_at: now.toISOString(),
+          accepted_at: null,
+          accepted_by: null,
+          metadata: { nonce: inviteNonce },
+        })
+        .eq("id", invitationId);
+
+      if (updateInviteError) throw updateInviteError;
+    } else {
+      const { data: createdInvitation, error: createInviteError } = await supabaseAdmin
+        .from("user_invitations")
+        .insert({
+          email: normalizedEmail,
+          invite_type: "project_member",
+          role: requestedRole,
+          project_id: normalizedProjectId,
+          invited_user_id: existingUser?.id ?? null,
+          status: "invited",
+          invited_by: caller.user.id,
+          expires_at: expiresAt,
+          last_sent_at: now.toISOString(),
+          metadata: { nonce: inviteNonce },
+        })
+        .select("id")
+        .single();
+
+      if (createInviteError) throw createInviteError;
+      invitationId = createdInvitation.id as string;
+    }
+
+    try {
+      const delivery = await sendInvitationEmail({
+        supabaseAdmin,
+        req,
         email: normalizedEmail,
-        role: 'establishment',
-        created_at: new Date().toISOString(),
-      }, { onConflict: "id" });
+        invitationId,
+        nonce: inviteNonce,
+        data: {
+          invite_type: "project_member",
+          project_id: normalizedProjectId,
+          role: requestedRole,
+        },
+      });
 
-    if (profileError) throw profileError;
+      if (delivery.userId && delivery.userId !== existingUser?.id) {
+        const { error: updateUserError } = await supabaseAdmin
+          .from("user_invitations")
+          .update({ invited_user_id: delivery.userId })
+          .eq("id", invitationId);
 
-    const { error: linkError } = await supabaseAdmin
-      .from("project_members")
-      .upsert({
-        project_id: projectId,
-        user_id: userId,
-        role, // staff or owner
-      }, { onConflict: "project_id,user_id" });
+        if (updateUserError) throw updateUserError;
+      }
 
-    if (linkError) throw linkError;
+      await ensureProjectFreeTrialBilling(supabaseAdmin, normalizedProjectId, normalizedEmail);
 
-    await ensureProjectFreeTrialBilling(supabaseAdmin, projectId, normalizedEmail);
-
-    return new Response(JSON.stringify({ success: true, userId, inviteSent }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200,
-    });
-
-  } catch (error) {
-    console.error("Erro na função admin-create-member:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: error instanceof HttpError ? error.status : 400,
-    });
+      return jsonResponse({
+        success: true,
+        userId: delivery.userId ?? existingUser?.id ?? null,
+        invitationId,
+        inviteSent: true,
+        status: "invited",
+        role: requestedRole,
+        expiresAt,
+      });
+    } catch (sendError) {
+      await markInvitationSendFailure(supabaseAdmin, invitationId, sendError);
+      throw sendError;
+    }
+  } catch (error: any) {
+    const status = error instanceof HttpError ? error.status : 400;
+    console.error("Erro na funcao admin-create-member:", error);
+    return jsonResponse(
+      {
+        error: error?.message || "Erro desconhecido na edge function",
+        code: error?.code || null,
+      },
+      status,
+    );
   }
 });

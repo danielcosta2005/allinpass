@@ -397,6 +397,7 @@ const RestaurantDashboard = () => {
               <TabsContent value="rewards" className="mt-0">
                 <RewardsTab
                   activeTab={activeRewardTab}
+                  canManageRewards={memberRole === 'owner'}
                   onTabChange={handleRewardSubTabChange}
                   projectId={projectId}
                 />
@@ -405,7 +406,7 @@ const RestaurantDashboard = () => {
                 <CustomersTab projectId={projectId} />
               </TabsContent>
               <TabsContent value="members" className="mt-0">
-                <MembersTab projectId={projectId} />
+                <MembersTab projectId={projectId} canManageMembers={memberRole === 'owner'} />
               </TabsContent>
               <TabsContent value="visits" className="mt-0">
                 <VisitsTab projectId={projectId} />

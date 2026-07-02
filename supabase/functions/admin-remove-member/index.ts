@@ -1,19 +1,11 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
-import { corsHeaders } from "./cors.ts";
-
-async function isSuperAdmin(supabase: any) {
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user) return false;
-
-  const { data: profile, error: profErr } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  if (profErr) return false;
-  return profile?.role === "superadmin";
-}
+import {
+  corsHeaders,
+  ensureCanManageProjectMembers,
+  getCallerProfile,
+  getServiceClient,
+  HttpError,
+  jsonResponse,
+} from "../_shared/adminAccess.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -21,74 +13,59 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const { memberId, invitationId, projectId } = await req.json().catch(() => ({}));
+    const normalizedProjectId = String(projectId || "").trim();
+    const normalizedMemberId = String(memberId || "").trim();
+    const normalizedInvitationId = String(invitationId || "").trim();
 
-    if (!SUPABASE_URL || !ANON_KEY || !SERVICE_KEY) {
-      throw new Error("Variáveis de ambiente do Supabase não configuradas.");
+    if (!normalizedProjectId) throw new HttpError(400, "projectId e obrigatorio.", "missing_project");
+    if (!normalizedMemberId && !normalizedInvitationId) {
+      throw new HttpError(400, "memberId ou invitationId e obrigatorio.", "missing_target");
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: "Missing Authorization header" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const supabaseAdmin = getServiceClient();
+    const caller = await getCallerProfile(supabaseAdmin, req);
+    await ensureCanManageProjectMembers(supabaseAdmin, caller, normalizedProjectId);
+
+    if (normalizedInvitationId) {
+      const { error: cancelError } = await supabaseAdmin
+        .from("user_invitations")
+        .update({ status: "cancelled" })
+        .eq("id", normalizedInvitationId)
+        .eq("invite_type", "project_member")
+        .eq("project_id", normalizedProjectId)
+        .in("status", ["invited", "expired"]);
+
+      if (cancelError) throw cancelError;
+
+      return jsonResponse({
+        success: true,
+        invitationId: normalizedInvitationId,
+        status: "cancelled",
       });
     }
 
-    // Client do caller (com ANON + Authorization do usuário logado)
-    const callerSupabase = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const allowed = await isSuperAdmin(callerSupabase);
-    if (!allowed) {
-      return new Response(JSON.stringify({ error: "Acesso negado. Apenas superadmins podem remover membros." }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    if (normalizedMemberId === caller.user.id) {
+      throw new HttpError(400, "Voce nao pode remover seu proprio acesso ao projeto.", "cannot_remove_self");
     }
 
-    const body = await req.json();
-    const memberId = body.memberId;   // ✅ padronizado
-    const projectId = body.projectId;
-
-    if (!memberId || !projectId) {
-      return new Response(JSON.stringify({ error: "Os campos memberId e projectId são obrigatórios." }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    // Client admin
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { error: deleteErr } = await supabaseAdmin
+    const { error: deleteError } = await supabaseAdmin
       .from("project_members")
       .delete()
-      .match({ project_id: projectId, user_id: memberId });
+      .match({ project_id: normalizedProjectId, user_id: normalizedMemberId });
 
-    if (deleteErr) {
-      console.error("Erro ao deletar project_members:", deleteErr);
-      return new Response(JSON.stringify({ error: deleteErr.message }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (deleteError) throw deleteError;
 
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e: any) {
-    console.error("Erro na edge function admin-remove-member:", e);
-    return new Response(JSON.stringify({ error: e?.message || "Erro desconhecido na edge function" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return jsonResponse({ success: true, userId: normalizedMemberId });
+  } catch (error: any) {
+    const status = error instanceof HttpError ? error.status : 500;
+    console.error("Erro na edge function admin-remove-member:", error);
+    return jsonResponse(
+      {
+        error: error?.message || "Erro desconhecido na edge function",
+        code: error?.code || null,
+      },
+      status,
+    );
   }
 });

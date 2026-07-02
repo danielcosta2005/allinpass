@@ -114,17 +114,24 @@ const SuperadminDashboard = () => {
   const mainTabs = useMemo(() => {
     const tabs = [];
 
-    if (isSuperadmin) {
+    if (canAccessKpiMembersAndCustomers) {
       tabs.push(
         { value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false },
-        { value: 'financeiro', label: 'Financeiro', icon: CreditCard, disabled: false },
-        { value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false },
-        { value: 'affiliates', label: 'Afiliados', icon: Users, disabled: false },
       );
     }
 
-    if (!isSuperadmin && canAccessKpiMembersAndCustomers) {
-      tabs.push({ value: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, disabled: false });
+    if (isSuperadmin) {
+      tabs.push(
+        { value: 'financeiro', label: 'Financeiro', icon: CreditCard, disabled: false },
+      );
+    }
+
+    if (canAccessKpiMembersAndCustomers) {
+      tabs.push({ value: 'admins', label: 'Admins', icon: ShieldCheck, disabled: false });
+    }
+
+    if (isSuperadmin) {
+      tabs.push({ value: 'affiliates', label: 'Afiliados', icon: Users, disabled: false });
     }
 
     tabs.push({ value: 'projects', label: 'Projetos', icon: Settings, disabled: false });
@@ -249,7 +256,7 @@ const SuperadminDashboard = () => {
             )}
             {canAccessKpiMembersAndCustomers && (
               <TabsContent value="members" className="mt-0">
-                {selectedProject && <MembersTab projectId={selectedProject.id} />}
+                {selectedProject && <MembersTab projectId={selectedProject.id} canManageMembers={isSuperadmin} />}
               </TabsContent>
             )}
             {canAccessKpiMembersAndCustomers && (
@@ -267,7 +274,7 @@ const SuperadminDashboard = () => {
                 <FinancialPlansTab />
               </TabsContent>
             )}
-            {isSuperadmin && (
+            {canAccessKpiMembersAndCustomers && (
               <TabsContent value="admins" className="mt-0">
                 <AdminTab />
               </TabsContent>

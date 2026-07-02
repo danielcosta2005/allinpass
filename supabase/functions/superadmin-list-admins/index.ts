@@ -1,54 +1,14 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
+import {
+  corsHeaders,
+  getCallerProfile,
+  getServiceClient,
+  HttpError,
+  jsonResponse,
+} from "../_shared/adminAccess.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-class HttpError extends Error {
-  status: number;
-
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-function jsonResponse(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function getBearerToken(req: Request) {
-  const authHeader = req.headers.get("Authorization") || "";
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  return match?.[1] || "";
-}
-
-async function getCallerProfile(supabaseAdmin: any, req: Request) {
-  const token = getBearerToken(req);
-  if (!token) throw new HttpError(401, "Missing Authorization header");
-
-  const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
-  const user = userData?.user;
-  if (userError || !user) throw new HttpError(401, "Sessão inválida.");
-
-  const { data: profile, error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (profileError) throw profileError;
-  return { user, profile };
-}
-
-function ensureSuperadmin(caller: { profile?: { role?: string } | null }) {
-  if (caller.profile?.role !== "superadmin") {
-    throw new HttpError(403, "Acesso negado. Apenas superadmins podem gerenciar admins.");
+function ensureCanReadAdmins(caller: { profile?: { role?: string | null } | null }) {
+  if (caller.profile?.role !== "superadmin" && caller.profile?.role !== "admin") {
+    throw new HttpError(403, "Acesso negado. Apenas admins podem visualizar esta aba.", "forbidden");
   }
 }
 
@@ -58,23 +18,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-
-    if (!SUPABASE_URL || !SERVICE_KEY) {
-      throw new Error("Variáveis de ambiente do Supabase não configuradas.");
-    }
-
-    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-
-    ensureSuperadmin(await getCallerProfile(supabaseAdmin, req));
+    const supabaseAdmin = getServiceClient();
+    const caller = await getCallerProfile(supabaseAdmin, req);
+    ensureCanReadAdmins(caller);
 
     const { data: profiles, error: profilesError } = await supabaseAdmin
       .from("profiles")
-      .select("id, email, name, created_at")
-      .eq("role", "admin")
+      .select("id, email, name, role, created_at")
+      .in("role", ["admin", "superadmin"])
       .order("created_at", { ascending: false });
 
     if (profilesError) throw profilesError;
@@ -112,16 +63,64 @@ Deno.serve(async (req) => {
       (authUsers?.users || []).map((user: any) => [user.id, user]),
     );
 
-    const admins = (profiles || []).map((profile: any) => ({
+    const activeAdmins = (profiles || []).map((profile: any) => ({
       ...profile,
       email: profile.email || authUsersById.get(profile.id)?.email || null,
+      status: "active",
+      invitation_id: null,
+      expires_at: null,
       projects: projectsByAdmin.get(profile.id) || [],
     }));
 
-    return jsonResponse({ success: true, admins });
+    const activeEmails = new Set(
+      activeAdmins.map((admin: any) => String(admin.email || "").trim().toLowerCase()).filter(Boolean),
+    );
+
+    const { data: invitations, error: invitationsError } = await supabaseAdmin
+      .from("user_invitations")
+      .select("id, email, role, created_at, expires_at, status, invited_user_id")
+      .eq("invite_type", "admin")
+      .in("status", ["invited", "expired"])
+      .order("created_at", { ascending: false });
+
+    if (invitationsError) throw invitationsError;
+
+    const seenInvitationEmails = new Set<string>();
+    const invitedAdmins = (invitations || [])
+      .filter((invitation: any) => {
+        const email = String(invitation.email || "").trim().toLowerCase();
+        if (!email || activeEmails.has(email) || seenInvitationEmails.has(email)) return false;
+        seenInvitationEmails.add(email);
+        return true;
+      })
+      .map((invitation: any) => ({
+        id: invitation.invited_user_id || invitation.id,
+        email: invitation.email,
+        name: null,
+        role: invitation.role,
+        created_at: invitation.created_at,
+        status: invitation.status === "expired" || new Date(invitation.expires_at).getTime() <= Date.now()
+          ? "expired"
+          : "invited",
+        invitation_id: invitation.id,
+        expires_at: invitation.expires_at,
+        projects: [],
+      }));
+
+    return jsonResponse({
+      success: true,
+      admins: [...invitedAdmins, ...activeAdmins],
+      canManageAdmins: caller.profile?.role === "superadmin",
+    });
   } catch (error: any) {
     const status = error instanceof HttpError ? error.status : 500;
-    console.error("Erro na função superadmin-list-admins:", error);
-    return jsonResponse({ error: error?.message || "Erro desconhecido na edge function" }, status);
+    console.error("Erro na funcao superadmin-list-admins:", error);
+    return jsonResponse(
+      {
+        error: error?.message || "Erro desconhecido na edge function",
+        code: error?.code || null,
+      },
+      status,
+    );
   }
 });
