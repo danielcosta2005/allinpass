@@ -280,7 +280,7 @@ function forcePassRequiredFields(
 
 function mapTemplateStyle(typeRaw: unknown): AppleStyle {
   const t = cleanString(typeRaw)?.toLowerCase() ?? "loyalty";
-  if (t === "loyalty") return "storeCard";
+  if (t === "loyalty" || t === "value") return "storeCard";
   if (t === "offer") return "coupon";
   if (t === "event") return "eventTicket";
   return "generic";
@@ -329,10 +329,46 @@ function pickFirstPoints(fields: any): string {
   return "0";
 }
 
+function getPassMode(typeRaw: unknown) {
+  return cleanString(typeRaw)?.toLowerCase() === "value" ? "value" : "loyalty";
+}
+
+function pickBalanceCents(fields: any): number {
+  const direct = fields?.balance_cents;
+  if (direct !== undefined && direct !== null && direct !== "") {
+    const cents = Number(direct);
+    if (Number.isFinite(cents)) return Math.max(Math.trunc(cents), 0);
+  }
+
+  if (fields && typeof fields === "object") {
+    for (const key of Object.keys(fields)) {
+      const normalizedKey = key.toLowerCase();
+      if (!normalizedKey.includes("balance") && !normalizedKey.includes("saldo")) {
+        continue;
+      }
+      const cents = Number((fields as any)[key]);
+      if (Number.isFinite(cents)) return Math.max(Math.trunc(cents), 0);
+    }
+  }
+
+  return 0;
+}
+
+function formatCurrencyBRL(cents: number) {
+  const normalizedCents = Number.isFinite(cents) ? Math.trunc(cents) : 0;
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(normalizedCents / 100);
+}
+
 type AvailableReward = {
   id: string;
   name: string;
-  points_required: number;
+  reward_type: "loyalty" | "value";
+  points_required?: number;
+  value_required_cents?: number;
+  currency?: string;
 };
 
 function parsePointsValue(value: unknown): number | null {
@@ -349,13 +385,31 @@ function normalizeRewards(rows: unknown): AvailableReward[] {
     .map((row: any) => {
       const id = cleanString(row?.id);
       const name = cleanString(row?.name);
+      const rewardType = cleanString(row?.reward_type)?.toLowerCase() === "value"
+        ? "value"
+        : "loyalty";
       const pointsRequired = parsePointsValue(row?.points_required);
+      const valueRequiredCents = parsePointsValue(row?.value_required_cents);
+      const currency = cleanString(row?.currency) ?? "BRL";
 
-      if (!id || !name || pointsRequired === null) return null;
+      if (!id || !name) return null;
+      if (rewardType === "value") {
+        if (valueRequiredCents === null || valueRequiredCents <= 0) return null;
+        return {
+          id,
+          name,
+          reward_type: "value",
+          value_required_cents: valueRequiredCents,
+          currency,
+        };
+      }
+
+      if (pointsRequired === null) return null;
 
       return {
         id,
         name,
+        reward_type: "loyalty",
         points_required: pointsRequired,
       };
     })
@@ -392,6 +446,14 @@ function buildPointsChangeMessage(
   );
 }
 
+function buildValueChangeMessage(rewards: AvailableReward[]) {
+  const rewardNames = formatRewardNames(rewards);
+  if (!rewardNames) return "Saldo atualizado: %@";
+  return truncateChangeMessage(
+    `Saldo atualizado: %@. Pode resgatar: ${rewardNames}.`,
+  );
+}
+
 async function loadAvailableRewardsForPoints(
   sb: ReturnType<typeof createClient>,
   projectId: string,
@@ -401,10 +463,37 @@ async function loadAvailableRewardsForPoints(
 
   const { data, error } = await sb
     .from("rewards")
-    .select("id, name, points_required")
+    .select("id, name, reward_type, points_required")
     .eq("project_id", projectId)
     .eq("status", "active")
+    .eq("reward_type", "loyalty")
     .eq("points_required", points)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.warn(
+      "[apple-pass] rewards lookup failed (ignored):",
+      error.message,
+    );
+    return [];
+  }
+
+  return normalizeRewards(data);
+}
+
+async function loadAvailableRewardsForBalance(
+  sb: ReturnType<typeof createClient>,
+  projectId: string,
+  balanceCents: number,
+): Promise<AvailableReward[]> {
+  const { data, error } = await sb
+    .from("rewards")
+    .select("id, name, reward_type, value_required_cents, currency")
+    .eq("project_id", projectId)
+    .eq("status", "active")
+    .eq("reward_type", "value")
+    .lte("value_required_cents", balanceCents)
+    .order("value_required_cents", { ascending: true })
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -423,8 +512,11 @@ function buildAppleFields(
   options: { suppressPointsNotification?: boolean } = {},
 ) {
   const fields = finalPassData?.fields ?? {};
+  const passMode = getPassMode(finalPassData?.type);
   const points = pickFirstPoints(fields);
   const numericPoints = parsePointsValue(points);
+  const balanceCents = pickBalanceCents(fields);
+  const balanceDisplay = formatCurrencyBRL(balanceCents);
   const exp = formatBRDate(finalPassData?.exp_date);
   const rewardsAvailable = normalizeRewards(finalPassData?.rewards_available);
 
@@ -442,14 +534,16 @@ function buildAppleFields(
     ],
     auxiliaryFields: [
       {
-        key: "points",
-        label: "PONTOS",
-        value: String(points),
+        key: passMode === "value" ? "balance" : "points",
+        label: passMode === "value" ? "SALDO" : "PONTOS",
+        value: passMode === "value" ? balanceDisplay : String(points),
         ...(options.suppressPointsNotification ? {} : {
-          changeMessage: buildPointsChangeMessage(
-            numericPoints,
-            rewardsAvailable,
-          ),
+          changeMessage: passMode === "value"
+            ? buildValueChangeMessage(rewardsAvailable)
+            : buildPointsChangeMessage(
+              numericPoints,
+              rewardsAvailable,
+            ),
         }),
       },
     ],
@@ -1298,14 +1392,22 @@ serve(async (req: Request) => {
       finalPassData.images = normalizeDefaults(passDesign?.images);
     }
 
+    const passMode = getPassMode(finalPassData?.type);
     const currentPoints = parsePointsValue(
       pickFirstPoints(finalPassData?.fields ?? {}),
     );
-    finalPassData.rewards_available = await loadAvailableRewardsForPoints(
-      sb,
-      project_id,
-      currentPoints,
-    );
+    const currentBalanceCents = pickBalanceCents(finalPassData?.fields ?? {});
+    finalPassData.rewards_available = passMode === "value"
+      ? await loadAvailableRewardsForBalance(
+        sb,
+        project_id,
+        currentBalanceCents,
+      )
+      : await loadAvailableRewardsForPoints(
+        sb,
+        project_id,
+        currentPoints,
+      );
 
     const resolvedSerialNumber = cleanString(finalPassData.serialNumber) ??
       crypto.randomUUID();

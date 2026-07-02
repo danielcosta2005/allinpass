@@ -74,6 +74,11 @@ type RedeemResult = {
   points_spent?: number;
   points_before?: number;
   points_after?: number;
+  value_spent_cents?: number;
+  value_before_cents?: number;
+  value_after_cents?: number;
+  balance_cents?: number;
+  currency?: string;
   [key: string]: unknown;
 };
 
@@ -89,9 +94,11 @@ function statusForRedeemError(error: string | undefined) {
   if (error === "not_found" || error === "reward_not_found") return 404;
   if (
     error === "wrong_project" || error === "wrong_reward_project" ||
-    error === "reward_inactive"
+    error === "reward_inactive" || error === "reward_type_mismatch"
   ) return 403;
-  if (error === "insufficient_points") return 409;
+  if (error === "insufficient_points" || error === "insufficient_balance") {
+    return 409;
+  }
   return 400;
 }
 
@@ -234,6 +241,7 @@ serve(async (req) => {
         p_project_id: projectId,
         p_reward_id: rewardId,
         p_pass_token: token,
+        p_actor_user_id: userData.user.id,
       },
     );
 
