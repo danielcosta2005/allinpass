@@ -9,11 +9,27 @@ import {
   getAffiliateDiscountBps,
 } from '@/lib/subscriptionPlans';
 
-function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick, affiliateOffer = null }) {
+function PlanCard({
+  plan,
+  ctaTo,
+  showCta = true,
+  className = '',
+  onCtaClick,
+  affiliateOffer = null,
+  limitedPromotion = null,
+}) {
   const affiliateDiscountBps = getAffiliateDiscountBps(affiliateOffer);
   const showAffiliateOffer = plan.type === 'paid' && affiliateDiscountBps > 0;
   const affiliateDiscountPercent = formatAffiliateDiscountPercent(affiliateOffer);
   const affiliateFirstMonthPrice = calculateAffiliateFirstMonthPrice(plan.price, affiliateOffer);
+  const showLimitedPromotion =
+    plan.type === 'paid' &&
+    !showAffiliateOffer &&
+    limitedPromotion?.enabled &&
+    limitedPromotion?.originalPriceMultiplier > 1;
+  const limitedPromotionOriginalPrice = showLimitedPromotion
+    ? plan.price * limitedPromotion.originalPriceMultiplier
+    : 0;
 
   return (
     <div
@@ -120,6 +136,54 @@ function PlanCard({ plan, ctaTo, showCta = true, className = '', onCtaClick, aff
               <p className={`mt-1 text-xs ${plan.highlighted ? 'text-purple-100' : 'text-gray-500'}`}>
                 Depois, R$ {formatCurrencyBRL(plan.price)}/mês.
               </p>
+            </div>
+          </div>
+        ) : showLimitedPromotion ? (
+          <div className="space-y-3">
+            <div
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${
+                plan.highlighted
+                  ? 'bg-white text-purple-700'
+                  : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              <BadgePercent className="h-3.5 w-3.5" />
+              {limitedPromotion.label} - {limitedPromotion.discountLabel}
+            </div>
+            <div
+              className={`border-t pt-3 ${
+                plan.highlighted ? 'border-white/20' : 'border-amber-100'
+              }`}
+            >
+              <div
+                className={`mb-1 flex flex-wrap items-center gap-2 text-sm ${
+                  plan.highlighted ? 'text-purple-100' : 'text-gray-500'
+                }`}
+              >
+                <span className="line-through decoration-2">
+                  De R$ {formatCurrencyBRL(limitedPromotionOriginalPrice)}/mês
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    plan.highlighted
+                      ? 'bg-amber-300 text-amber-950'
+                      : 'bg-amber-500 text-white'
+                  }`}
+                >
+                  {limitedPromotion.audienceLabel}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-end gap-x-1 gap-y-0.5">
+                <span className={`pb-1 text-sm ${plan.highlighted ? 'text-purple-100' : 'text-gray-500'}`}>
+                  R$
+                </span>
+                <span className={`text-5xl font-bold ${plan.highlighted ? 'text-white' : 'text-gray-900'}`}>
+                  {formatCurrencyBRL(plan.price)}
+                </span>
+                <span className={`pb-1 text-sm ${plan.highlighted ? 'text-purple-100' : 'text-gray-500'}`}>
+                  /mês
+                </span>
+              </div>
             </div>
           </div>
         ) : (

@@ -47,6 +47,14 @@ const SUPPORT_WHATSAPP_URL =
   import.meta.env.VITE_RESTAURANT_SUPPORT_WHATSAPP_URL ||
   `https://wa.me/?text=${encodeURIComponent(SUPPORT_MESSAGE)}`;
 
+const LIMITED_FIRST_100_PROMOTION = {
+  enabled: true,
+  label: 'Promo limitada',
+  discountLabel: '50% OFF',
+  audienceLabel: '100 primeiros',
+  originalPriceMultiplier: 1.5,
+};
+
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
   show: (i = 0) => ({
@@ -678,6 +686,15 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
           <motion.p variants={fadeUp} className="mt-4 text-lg text-gray-600">
             Comece pequeno, escale quando quiser. Sem fidelidade, sem multas, sem surpresas.
           </motion.p>
+          <motion.div
+            variants={fadeUp}
+            className="mt-5 inline-flex flex-wrap items-center justify-center gap-2 rounded-full bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 ring-1 ring-amber-200"
+          >
+            <BadgePercent className="h-4 w-4" />
+            <span>
+              {LIMITED_FIRST_100_PROMOTION.discountLabel} para os {LIMITED_FIRST_100_PROMOTION.audienceLabel}.
+            </span>
+          </motion.div>
           {affiliateOffer?.valid ? (
             <motion.div
               variants={fadeUp}
@@ -709,6 +726,7 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
                 plan={p}
                 ctaTo={buildSignupPath(p.key, { ref: affiliateRef })}
                 affiliateOffer={p.type === 'paid' ? affiliateOffer : null}
+                limitedPromotion={p.type === 'paid' ? LIMITED_FIRST_100_PROMOTION : null}
                 onCtaClick={() => {
                   trackStandard('InitiateCheckout', {
                     value: Number(p.price) || 0,

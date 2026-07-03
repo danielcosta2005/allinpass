@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
-import { Users, Wallet, Settings, LayoutDashboard, Bell, ShieldCheck, CreditCard } from 'lucide-react';
+import { Users, Wallet, Settings, LayoutDashboard, Gauge, ShieldCheck, CreditCard } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import DashboardShell from '@/components/dashboard/DashboardShell';
 import ProjectsTab from '@/components/superadmin/ProjectsTab';
@@ -10,7 +10,7 @@ import WalletConfigTab from '@/components/superadmin/WalletConfigTab';
 import CustomersTab from '@/components/superadmin/CustomersTab';
 import DashboardTab from '@/components/superadmin/DashboardTab';
 import FinancialPlansTab from '@/components/superadmin/FinancialPlansTab';
-import NotificationsConfigTab from '@/components/superadmin/NotificationsConfigTab';
+import UsageConfigTab from '@/components/superadmin/UsageConfigTab';
 import AdminTab from '@/components/superadmin/AdminTab';
 import AffiliatesTab from '@/components/superadmin/AffiliatesTab';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
@@ -23,6 +23,10 @@ import {
   canSeeSuperadminTabs,
   getDefaultAdminTab,
 } from '@/lib/adminPermissions';
+
+function normalizeSuperadminTabValue(value) {
+  return value === 'notifications' ? 'usage' : value;
+}
 
 const SuperadminDashboard = () => {
   const { user, role, signOut } = useAuth();
@@ -44,7 +48,7 @@ const SuperadminDashboard = () => {
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
-      return sessionStorage.getItem('superadmin_active_tab') || defaultTab;
+      return normalizeSuperadminTabValue(sessionStorage.getItem('superadmin_active_tab')) || defaultTab;
     } catch (_) {
       return defaultTab;
     }
@@ -59,9 +63,10 @@ const SuperadminDashboard = () => {
     : false;
 
   const handleTabChange = (value) => {
-    setActiveTab(value);
+    const normalizedValue = normalizeSuperadminTabValue(value);
+    setActiveTab(normalizedValue);
     try {
-      sessionStorage.setItem('superadmin_active_tab', value);
+      sessionStorage.setItem('superadmin_active_tab', normalizedValue);
     } catch (_) {}
   };
 
@@ -150,7 +155,7 @@ const SuperadminDashboard = () => {
 
     if (isSuperadmin) {
       tabs.push(
-        { value: 'notifications', label: 'Notificações', icon: Bell, disabled: false },
+        { value: 'usage', label: 'Usagem', icon: Gauge, disabled: false },
         { value: 'members', label: 'Membros', icon: Users, disabled: false },
         { value: 'customers', label: 'Clientes', icon: Users, disabled: false },
       );
@@ -250,8 +255,8 @@ const SuperadminDashboard = () => {
               )}
             </TabsContent>
             {isSuperadmin && (
-              <TabsContent value="notifications" className="mt-0">
-                {selectedProject && <NotificationsConfigTab projectId={selectedProject.id} />}
+              <TabsContent value="usage" className="mt-0">
+                {selectedProject && <UsageConfigTab projectId={selectedProject.id} />}
               </TabsContent>
             )}
             {canAccessKpiMembersAndCustomers && (
