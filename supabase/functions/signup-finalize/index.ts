@@ -22,6 +22,12 @@ type SignupCheckoutSessionRow = {
   provider_customer_id: string | null;
   provider_payment_id: string | null;
   amount_cents: number;
+  promo_code_id: string | null;
+  promo_code: string | null;
+  promo_discount_bps: number | null;
+  promo_discount_cents: number | null;
+  promo_original_amount_cents: number | null;
+  promo_commission_bps: number | null;
   affiliate_link_id: string | null;
   affiliate_seller_id: string | null;
   affiliate_code: string | null;
@@ -541,6 +547,12 @@ async function getPaidCheckoutSession(
         "provider_customer_id",
         "provider_payment_id",
         "amount_cents",
+        "promo_code_id",
+        "promo_code",
+        "promo_discount_bps",
+        "promo_discount_cents",
+        "promo_original_amount_cents",
+        "promo_commission_bps",
         "affiliate_link_id",
         "affiliate_seller_id",
         "affiliate_code",
@@ -604,6 +616,96 @@ function hasAffiliateCheckout(
   );
 }
 
+async function isAffiliateSellerActive(
+  supabaseAdmin: SupabaseAdminClient,
+  sellerId: string | null,
+) {
+  if (!sellerId) return false;
+
+  const { data, error } = await supabaseAdmin
+    .from("affiliate_sellers")
+    .select("id")
+    .eq("id", sellerId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) throw error;
+  return Boolean(data?.id);
+}
+
+function hasPromotionalCheckout(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  return Boolean(
+    checkoutSession?.promo_code_id &&
+      checkoutSession.promo_code &&
+      Number(checkoutSession.promo_discount_bps || 0) > 0,
+  );
+}
+
+function hasDiscountedCheckout(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  return hasPromotionalCheckout(checkoutSession) ||
+    hasAffiliateCheckout(checkoutSession);
+}
+
+function getCheckoutDiscountBps(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  const discountBps = hasPromotionalCheckout(checkoutSession)
+    ? checkoutSession?.promo_discount_bps
+    : checkoutSession?.affiliate_discount_bps;
+
+  return Math.max(
+    0,
+    Math.min(10000, Math.trunc(Number(discountBps ?? 0))),
+  );
+}
+
+function getCheckoutDiscountCents(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  const discountCents = hasPromotionalCheckout(checkoutSession)
+    ? checkoutSession?.promo_discount_cents
+    : checkoutSession?.affiliate_discount_cents;
+
+  return Math.max(
+    0,
+    Math.trunc(Number(discountCents ?? 0)),
+  );
+}
+
+function getCheckoutOriginalAmountCents(
+  checkoutSession: SignupCheckoutSessionRow | null,
+  fallbackAmountCents: number,
+) {
+  const originalAmountCents = hasPromotionalCheckout(checkoutSession)
+    ? checkoutSession?.promo_original_amount_cents
+    : checkoutSession?.affiliate_original_amount_cents;
+
+  return Math.max(
+    0,
+    Math.trunc(Number(originalAmountCents ?? fallbackAmountCents)),
+  );
+}
+
+function getCheckoutCommissionBps(
+  checkoutSession: SignupCheckoutSessionRow | null,
+) {
+  const commissionBps = hasPromotionalCheckout(checkoutSession)
+    ? checkoutSession?.promo_commission_bps
+    : AFFILIATE_COMMISSION_RATE_BPS;
+
+  return Math.max(
+    0,
+    Math.min(
+      10000,
+      Math.trunc(Number(commissionBps ?? AFFILIATE_COMMISSION_RATE_BPS)),
+    ),
+  );
+}
+
 async function restoreAsaasSubscriptionBasePrice({
   plan,
   paidCheckoutSession,
@@ -612,7 +714,7 @@ async function restoreAsaasSubscriptionBasePrice({
   paidCheckoutSession: SignupCheckoutSessionRow | null;
 }) {
   if (
-    !hasAffiliateCheckout(paidCheckoutSession) ||
+    !hasDiscountedCheckout(paidCheckoutSession) ||
     !paidCheckoutSession?.provider_subscription_id
   ) {
     return null;
@@ -674,6 +776,12 @@ async function createAffiliateAttribution({
 }): Promise<AffiliateAttributionRow | null> {
   if (!hasAffiliateCheckout(paidCheckoutSession)) return null;
 
+  const sellerActive = await isAffiliateSellerActive(
+    supabaseAdmin,
+    paidCheckoutSession!.affiliate_seller_id,
+  );
+  if (!sellerActive) return null;
+
   const { data, error } = await supabaseAdmin
     .from("affiliate_attributions")
     .insert({
@@ -691,6 +799,16 @@ async function createAffiliateAttribution({
         checkout_session_id: paidCheckoutSession!.id,
         provider_subscription_id: paidCheckoutSession!.provider_subscription_id,
         plan_code: plan.code,
+        promo_code_id: paidCheckoutSession!.promo_code_id ?? null,
+        promo_code: paidCheckoutSession!.promo_code ??
+          paidCheckoutSession!.affiliate_code,
+        promo_discount_bps: getCheckoutDiscountBps(paidCheckoutSession),
+        promo_discount_cents: getCheckoutDiscountCents(paidCheckoutSession),
+        promo_original_amount_cents: getCheckoutOriginalAmountCents(
+          paidCheckoutSession,
+          plan.base_price_cents,
+        ),
+        commission_bps: getCheckoutCommissionBps(paidCheckoutSession),
         affiliate_discount_bps: paidCheckoutSession!.affiliate_discount_bps ??
           0,
         affiliate_discount_cents:
@@ -789,8 +907,9 @@ async function createInitialAffiliateCommission({
   const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
   if (eligibleAmountCents <= 0) return null;
 
+  const commissionRateBps = getCheckoutCommissionBps(paidCheckoutSession);
   const commissionCents = Math.round(
-    (eligibleAmountCents * AFFILIATE_COMMISSION_RATE_BPS) / 10000,
+    (eligibleAmountCents * commissionRateBps) / 10000,
   );
   const competenceMonth = getAffiliateCommissionCompetenceMonth(
     paidCheckoutSession.paid_at,
@@ -817,7 +936,7 @@ async function createInitialAffiliateCommission({
       provider_payment_id: paidCheckoutSession.provider_payment_id,
       provider_event_id: "signup_finalize",
       eligible_amount_cents: eligibleAmountCents,
-      commission_rate_bps: AFFILIATE_COMMISSION_RATE_BPS,
+      commission_rate_bps: commissionRateBps,
       commission_cents: commissionCents,
       currency: "BRL",
       status: "pending",
@@ -829,6 +948,12 @@ async function createInitialAffiliateCommission({
         provider_subscription_id: paidCheckoutSession.provider_subscription_id,
         payment_value_cents: paidAmountCents,
         subscription_base_price_cents: basePriceCents,
+        promo_code_id: paidCheckoutSession.promo_code_id,
+        promo_code: paidCheckoutSession.promo_code ??
+          paidCheckoutSession.affiliate_code,
+        promo_discount_bps: getCheckoutDiscountBps(paidCheckoutSession),
+        promo_discount_cents: getCheckoutDiscountCents(paidCheckoutSession),
+        commission_bps: commissionRateBps,
         billing_cycle_id: billingCycleId,
       },
     })
@@ -850,6 +975,36 @@ async function createInitialAffiliateCommission({
   }
 
   throw error;
+}
+
+async function confirmPromotionalCodeUsage({
+  supabaseAdmin,
+  paidCheckoutSession,
+}: {
+  supabaseAdmin: SupabaseAdminClient;
+  paidCheckoutSession: SignupCheckoutSessionRow | null;
+}) {
+  if (!paidCheckoutSession?.promo_code_id) return null;
+
+  const { data, error } = await supabaseAdmin.rpc(
+    "confirm_billing_promotional_code_redemption",
+    {
+      p_code_id: paidCheckoutSession.promo_code_id,
+      p_checkout_session_id: paidCheckoutSession.id,
+    },
+  );
+
+  if (error) throw error;
+
+  if (!data?.id) {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_PROMO_UNAVAILABLE",
+      "Codigo promocional indisponivel para finalizacao.",
+      409,
+    );
+  }
+
+  return data;
 }
 
 function buildWalletDefaults(projectName: string) {
@@ -1017,6 +1172,7 @@ Deno.serve(async (req) => {
 
     const isFreeTrial = plan.code === FREE_PLAN_CODE;
     let paidCheckoutSession: SignupCheckoutSessionRow | null = null;
+    let confirmedPromotionalCode: { redeemed_uses?: number } | null = null;
 
     if (!isFreeTrial) {
       if (!checkoutSessionId) {
@@ -1036,14 +1192,14 @@ Deno.serve(async (req) => {
       );
 
       const expectedCheckoutAmountCents =
-        hasAffiliateCheckout(paidCheckoutSession)
+        hasPromotionalCheckout(paidCheckoutSession) ||
+          hasAffiliateCheckout(paidCheckoutSession)
           ? Math.max(
             0,
-            Number(
-              paidCheckoutSession.affiliate_original_amount_cents ??
-                plan.base_price_cents,
-            ) -
-              Number(paidCheckoutSession.affiliate_discount_cents ?? 0),
+            getCheckoutOriginalAmountCents(
+              paidCheckoutSession,
+              plan.base_price_cents,
+            ) - getCheckoutDiscountCents(paidCheckoutSession),
           )
           : plan.base_price_cents;
 
@@ -1098,6 +1254,11 @@ Deno.serve(async (req) => {
     }
 
     claimedFinalizationUserId = user.id;
+
+    confirmedPromotionalCode = await confirmPromotionalCodeUsage({
+      supabaseAdmin,
+      paidCheckoutSession,
+    });
 
     const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
       {
@@ -1239,6 +1400,16 @@ Deno.serve(async (req) => {
                 origin: "signup_finalize",
                 plan_code: plan.code,
                 checkout_session_id: paidCheckoutSession?.id ?? null,
+                promo_code_id: paidCheckoutSession?.promo_code_id ?? null,
+                promo_code: paidCheckoutSession?.promo_code ?? null,
+                promo_discount_bps:
+                  paidCheckoutSession?.promo_discount_bps ?? 0,
+                promo_discount_cents:
+                  paidCheckoutSession?.promo_discount_cents ?? 0,
+                promo_original_amount_cents:
+                  paidCheckoutSession?.promo_original_amount_cents ?? null,
+                promo_commission_bps:
+                  paidCheckoutSession?.promo_commission_bps ?? 0,
                 affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
                 affiliate_discount_cents:
                   paidCheckoutSession?.affiliate_discount_cents ?? 0,
@@ -1320,6 +1491,16 @@ Deno.serve(async (req) => {
                 checkout_session_id: paidCheckoutSession?.id ?? null,
                 provider_checkout_id:
                   paidCheckoutSession?.provider_checkout_id ?? null,
+                promo_code_id: paidCheckoutSession?.promo_code_id ?? null,
+                promo_code: paidCheckoutSession?.promo_code ?? null,
+                promo_discount_bps:
+                  paidCheckoutSession?.promo_discount_bps ?? 0,
+                promo_discount_cents:
+                  paidCheckoutSession?.promo_discount_cents ?? 0,
+                promo_original_amount_cents:
+                  paidCheckoutSession?.promo_original_amount_cents ?? null,
+                promo_commission_bps:
+                  paidCheckoutSession?.promo_commission_bps ?? 0,
                 affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
                 affiliate_discount_bps:
                   paidCheckoutSession?.affiliate_discount_bps ?? 0,
@@ -1350,6 +1531,8 @@ Deno.serve(async (req) => {
               origin: "signup_finalize",
               plan_code: plan.code,
               checkout_session_id: paidCheckoutSession?.id ?? null,
+              promo_code_id: paidCheckoutSession?.promo_code_id ?? null,
+              promo_code: paidCheckoutSession?.promo_code ?? null,
               affiliate_code: paidCheckoutSession?.affiliate_code ?? null,
             },
           });
@@ -1428,8 +1611,12 @@ Deno.serve(async (req) => {
             ...user.user_metadata,
             establishment_name: establishmentName,
             plan_code: plan.code,
-            affiliate_ref: paidCheckoutSession?.affiliate_code ??
-              user.user_metadata?.affiliate_ref ?? "",
+            promo_code: paidCheckoutSession
+              ? paidCheckoutSession.promo_code ?? ""
+              : user.user_metadata?.promo_code ?? "",
+            affiliate_ref: paidCheckoutSession
+              ? paidCheckoutSession.affiliate_code ?? ""
+              : user.user_metadata?.affiliate_ref ?? "",
           },
         });
 
@@ -1466,6 +1653,12 @@ Deno.serve(async (req) => {
             provider_checkout_id: paidCheckoutSession.provider_checkout_id,
             paid_at: paidCheckoutSession.paid_at,
             amount_cents: paidCheckoutSession.amount_cents,
+            promo_code: paidCheckoutSession.promo_code,
+            promo_discount_bps: paidCheckoutSession.promo_discount_bps ?? 0,
+            promo_discount_cents:
+              paidCheckoutSession.promo_discount_cents ?? 0,
+            promo_original_amount_cents:
+              paidCheckoutSession.promo_original_amount_cents ?? null,
             affiliate_discount_cents:
               paidCheckoutSession.affiliate_discount_cents ?? 0,
             affiliate_original_amount_cents:
@@ -1477,6 +1670,18 @@ Deno.serve(async (req) => {
             attribution_id: affiliateAttribution.id,
             source_code: affiliateAttribution.source_code,
             initial_commission_id: affiliateCommission?.id ?? null,
+          }
+          : null,
+        promo: paidCheckoutSession?.promo_code
+          ? {
+            code_id: paidCheckoutSession.promo_code_id,
+            code: paidCheckoutSession.promo_code,
+            discount_bps: paidCheckoutSession.promo_discount_bps ?? 0,
+            discount_cents: paidCheckoutSession.promo_discount_cents ?? 0,
+            original_amount_cents:
+              paidCheckoutSession.promo_original_amount_cents ?? null,
+            commission_bps: paidCheckoutSession.promo_commission_bps ?? 0,
+            redeemed_uses: confirmedPromotionalCode?.redeemed_uses ?? null,
           }
           : null,
       };
@@ -1499,6 +1704,16 @@ Deno.serve(async (req) => {
             metadata: {
               origin: "signup_finalize",
               checkout_session_id: paidCheckoutSession.id,
+              promo_code_id: paidCheckoutSession.promo_code_id ?? null,
+              promo_code: paidCheckoutSession.promo_code ?? null,
+              promo_discount_bps:
+                paidCheckoutSession.promo_discount_bps ?? 0,
+              promo_discount_cents:
+                paidCheckoutSession.promo_discount_cents ?? 0,
+              promo_original_amount_cents:
+                paidCheckoutSession.promo_original_amount_cents ?? null,
+              promo_commission_bps:
+                paidCheckoutSession.promo_commission_bps ?? 0,
               affiliate_attribution_id: affiliateAttribution?.id ?? null,
               affiliate_code: paidCheckoutSession.affiliate_code ?? null,
               affiliate_discount_cents:

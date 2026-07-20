@@ -53,6 +53,8 @@ describe("affiliate recurring commissions", () => {
     const webhookSource = readIfExists(path.join(repoRoot, "supabase/functions/asaas-webhook/index.ts"));
 
     expect(webhookSource).toContain("AFFILIATE_COMMISSION_RATE_BPS = 1000");
+    expect(webhookSource).toContain("getAffiliateCommissionRateBps");
+    expect(webhookSource).toContain("metadata.commission_bps");
     expect(webhookSource).toContain("createAffiliateCommission");
     expect(webhookSource).toContain("affiliate_commissions");
     expect(webhookSource).toContain("affiliate_attributions");
@@ -63,6 +65,7 @@ describe("affiliate recurring commissions", () => {
     expect(webhookSource).toContain("isPaidPaymentEvent(event, paymentStatus)");
     expect(webhookSource).toContain("eligibleAmountCents");
     expect(webhookSource).toContain("Math.min");
+    expect(webhookSource).toContain("commissionRateBps");
     expect(webhookSource).toContain("commissionCents");
     expect(webhookSource).toContain("competenceMonth");
     expect(webhookSource).toContain("provider_payment_id");
@@ -102,7 +105,6 @@ describe("affiliate recurring commissions", () => {
     expect(helperSource).toContain("action: 'listCommissionClients'");
     expect(helperSource).toContain("affiliate-admin");
     expect(helperSource).not.toContain("commissionCents =");
-    expect(helperSource).not.toContain("commissionRate");
     expect(helperSource).not.toContain("* 0.1");
     expect(helperSource).not.toContain("* 0.10");
   });

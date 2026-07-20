@@ -9,22 +9,33 @@ describe("signup confirmation UX", () => {
       path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
       "utf8"
     );
+    const signupStatusCardsSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/SignupStatusCards.jsx"),
+      "utf8"
+    );
 
     expect(signupPageSource).toContain("handleResendConfirmationEmail");
     expect(signupPageSource).toContain("supabase.auth.resend");
     expect(signupPageSource).toContain("type: 'signup'");
     expect(signupPageSource).toContain("emailRedirectTo");
-    expect(signupPageSource).toContain("Reenviar e-mail");
+    expect(signupStatusCardsSource).toContain("Reenviar e-mail");
 
     const confirmEmailStart = signupPageSource.indexOf("{finishedFlow === 'confirm-email'");
     const confirmEmailBlock = signupPageSource.slice(
       confirmEmailStart,
       signupPageSource.indexOf("finishedFlow === 'paid'", confirmEmailStart)
     );
+    const confirmEmailCardStart = signupStatusCardsSource.indexOf("export function ConfirmEmailCard");
+    const confirmEmailCardBlock = signupStatusCardsSource.slice(
+      confirmEmailCardStart,
+      signupStatusCardsSource.indexOf("export function PaidSuccessCard", confirmEmailCardStart)
+    );
 
-    expect(confirmEmailBlock).toContain("Reenviar e-mail");
-    expect(confirmEmailBlock).not.toContain("Ir para login");
-    expect(confirmEmailBlock).not.toContain("Voltar aos planos");
+    expect(confirmEmailBlock).toContain("<ConfirmEmailCard");
+    expect(confirmEmailBlock).toContain("onResendConfirmationEmail={handleResendConfirmationEmail}");
+    expect(confirmEmailCardBlock).toContain("Reenviar e-mail");
+    expect(confirmEmailCardBlock).not.toContain("Ir para login");
+    expect(confirmEmailCardBlock).not.toContain("Voltar aos planos");
   });
 
   test("login confirmation resend does not force the free trial signup redirect", () => {
@@ -82,7 +93,8 @@ describe("signup confirmation UX", () => {
     expect(signupPageSource).toContain("searchParams.get('planCode')");
     expect(signupPageSource).toContain("findPlanKeyByCode");
     expect(signupPageSource).toContain("planCodeFromMetadata");
-    expect(signupPageSource).toContain("[selectedPlan, selectedPlanKey]");
+    expect(signupPageSource).toContain("selectedPlanKey");
+    expect(signupPageSource).toContain("currentPromoCode");
     expect(signupPageSource).not.toContain("const planKey = selectedPlan?.key || 'free-trial'");
   });
 
@@ -97,22 +109,31 @@ describe("signup confirmation UX", () => {
       setPasswordStart,
       setPasswordEnd
     );
-    const stepperBlock = signupPageSource.slice(
-      signupPageSource.indexOf("steps.map"),
-      signupPageSource.indexOf("</ol>")
+    const setPasswordFormSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/SetPasswordForm.jsx"),
+      "utf8"
+    );
+    const stepperSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/SignupProgressSteps.jsx"),
+      "utf8"
+    );
+    const signupPageUtilsSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/signupPageUtils.js"),
+      "utf8"
     );
 
     expect(signupPageSource).toContain("finishedFlow === 'set-password'");
     expect(signupPageSource).toContain("handlePasswordSetupSubmit");
     expect(signupPageSource).toContain("supabase.auth.updateUser({ password: passwordSetupValue })");
-    expect(signupPageSource).toContain("__signup_password_setup_required");
+    expect(signupPageUtilsSource).toContain("__signup_password_setup_required");
     expect(signupPageSource).toContain("setFinishedFlow('set-password')");
     expect(signupPageSource).toContain("navigate('/org', { replace: true })");
-    expect(setPasswordBlock).toContain("rounded-2xl border border-emerald-200 bg-emerald-50 p-5");
+    expect(setPasswordBlock).toContain("<SetPasswordForm");
+    expect(setPasswordFormSource).toContain("rounded-2xl border border-emerald-200 bg-emerald-50 p-5");
     expect(setPasswordBlock).not.toContain("border-amber-200 bg-amber-50");
-    expect(stepperBlock).toContain("finishedFlow === 'confirm-email'");
-    expect(stepperBlock).toContain("const done =");
-    expect(stepperBlock).toContain("isSuccessFlow");
+    expect(stepperSource).toContain("finishedFlow === 'confirm-email'");
+    expect(stepperSource).toContain("const done =");
+    expect(stepperSource).toContain("isSuccessFlow");
   });
 
   test("free trial signup asks for a password only after precheck confirms a new account can be created", () => {
@@ -120,20 +141,20 @@ describe("signup confirmation UX", () => {
       path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
       "utf8"
     );
-    const firstStepBlock = signupPageSource.slice(
-      signupPageSource.indexOf('key="step-1"'),
-      signupPageSource.indexOf('{signupCaptchaEnabled && (')
+    const stepOneSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/StepOneSignupForm.jsx"),
+      "utf8"
     );
-    const createPasswordBlock = signupPageSource.slice(
-      signupPageSource.indexOf("finishedFlow === 'create-password'"),
-      signupPageSource.indexOf("finishedFlow === 'trial'")
+    const createPasswordFormSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/CreatePasswordForm.jsx"),
+      "utf8"
     );
 
     expect(signupPageSource).toContain("setFinishedFlow('create-password')");
     expect(signupPageSource).toContain("handleCreatePasswordSubmit");
-    expect(firstStepBlock).not.toContain('htmlFor="password"');
-    expect(firstStepBlock).not.toContain('id="password"');
-    expect(createPasswordBlock).toContain('htmlFor="password"');
+    expect(stepOneSource).not.toContain('htmlFor="password"');
+    expect(stepOneSource).not.toContain('id="password"');
+    expect(createPasswordFormSource).toContain('htmlFor="password"');
     expect(signupPageSource).toContain("supabase.auth.signUp");
   });
 
@@ -142,9 +163,14 @@ describe("signup confirmation UX", () => {
       path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"),
       "utf8"
     );
-    const createPasswordStart = signupPageSource.indexOf("finishedFlow === 'create-password'");
-    const createPasswordEnd = signupPageSource.indexOf("finishedFlow === 'trial'", createPasswordStart);
-    const createPasswordBlock = signupPageSource.slice(createPasswordStart, createPasswordEnd);
+    const createPasswordFormSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/CreatePasswordForm.jsx"),
+      "utf8"
+    );
+    const passwordInputSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/pages/signup/PasswordInput.jsx"),
+      "utf8"
+    );
     const submitStart = signupPageSource.indexOf("const handleCreatePasswordSubmit");
     const submitEnd = signupPageSource.indexOf("const handleSignupSubmit", submitStart);
     const submitBlock = signupPageSource.slice(submitStart, submitEnd);
@@ -153,12 +179,12 @@ describe("signup confirmation UX", () => {
     expect(submitBlock).toContain("formData.passwordConfirmation !== formData.password");
     expect(submitBlock).toContain("passwordConfirmation:");
     expect(submitBlock).toContain("As senhas não conferem. Ajuste para continuar.");
-    expect(createPasswordBlock).toContain('htmlFor="password-confirmation"');
-    expect(createPasswordBlock).toContain('id="password-confirmation"');
-    expect(createPasswordBlock).toContain("autoComplete=\"new-password\"");
-    expect(createPasswordBlock).toContain("showPassword");
-    expect(createPasswordBlock).toContain("EyeOff");
-    expect(createPasswordBlock).toContain("Eye");
+    expect(createPasswordFormSource).toContain('htmlFor="password-confirmation"');
+    expect(createPasswordFormSource).toContain('id="password-confirmation"');
+    expect(passwordInputSource).toContain("autoComplete=\"new-password\"");
+    expect(createPasswordFormSource).toContain("showPassword");
+    expect(passwordInputSource).toContain("EyeOff");
+    expect(passwordInputSource).toContain("Eye");
   });
 
   test("home route shows a progress screen while Supabase processes auth return URLs", () => {

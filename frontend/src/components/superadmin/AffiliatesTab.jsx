@@ -8,6 +8,7 @@ import {
   FileSearch,
   Link as LinkIcon,
   Loader2,
+  BadgePercent,
   RefreshCw,
   Search,
   UserPlus,
@@ -29,10 +30,12 @@ import { useToast } from '@/components/ui/use-toast';
 import {
   buildAffiliateLinkUrl,
   createAffiliateSeller,
-  getOrCreateAffiliateLink,
+  createPromotionalCode,
+  getOrCreateSellerPromotionalCode,
   listAffiliateCommissionClients,
   listAffiliateCommissions,
   listAffiliateSellers,
+  listPromotionalCodes,
   markAffiliateCommissionPaid,
   markAffiliateSellerCompetencePaid,
   updateAffiliateSeller,
@@ -45,6 +48,16 @@ const EMPTY_FORM = {
   name: '',
   contact: '',
   pixKey: '',
+  status: 'active',
+  promoCode: '',
+  discountPercent: '10',
+  commissionPercent: '10',
+};
+const EMPTY_PROMO_FORM = {
+  code: '',
+  discountPercent: '10',
+  maxUses: '',
+  validUntil: '',
   status: 'active',
 };
 
@@ -98,6 +111,12 @@ function formatCurrency(cents = 0, currency = 'BRL') {
 function formatRateBps(rateBps = 0) {
   const value = Number(rateBps || 0) / 100;
   return `${value.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%`;
+}
+
+function percentToBps(value, fallback = 0) {
+  const parsed = Number(String(value ?? '').replace(',', '.'));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(10000, Math.round(parsed * 100)));
 }
 
 function getStatusLabel(status) {
@@ -202,19 +221,25 @@ function SummaryTile({ icon: Icon, label, value, helper }) {
 const AffiliatesTab = () => {
   const { toast } = useToast();
   const [sellers, setSellers] = useState([]);
+  const [promotionalCodes, setPromotionalCodes] = useState([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [promoTotal, setPromoTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [promoSubmitting, setPromoSubmitting] = useState(false);
+  const [promosLoading, setPromosLoading] = useState(true);
   const [generatingLinkSellerId, setGeneratingLinkSellerId] = useState(null);
   const [copyingLinkSellerId, setCopyingLinkSellerId] = useState(null);
   const [formMode, setFormMode] = useState('');
   const [activeSeller, setActiveSeller] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [promoDialogOpen, setPromoDialogOpen] = useState(false);
+  const [promoForm, setPromoForm] = useState(EMPTY_PROMO_FORM);
   const [selectedCompetence, setSelectedCompetence] = useState(getCurrentCompetence);
   const [selectedSellerId, setSelectedSellerId] = useState('');
   const [commissionStatusFilter, setCommissionStatusFilter] = useState('');
@@ -292,6 +317,24 @@ const AffiliatesTab = () => {
     }
   }, [page, search, selectedCompetenceForApi, statusFilter, toast]);
 
+  const fetchPromotionalCodes = useCallback(async () => {
+    setPromosLoading(true);
+
+    try {
+      const result = await listPromotionalCodes({ page: 1, pageSize: 50 });
+      setPromotionalCodes(result.promotionalCodes);
+      setPromoTotal(result.total);
+    } catch (error) {
+      toast({
+        title: 'Erro ao carregar códigos',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPromosLoading(false);
+    }
+  }, [toast]);
+
   const fetchCommissions = useCallback(async () => {
     setCommissionsLoading(true);
 
@@ -347,6 +390,10 @@ const AffiliatesTab = () => {
   }, [fetchSellers, page]);
 
   useEffect(() => {
+    fetchPromotionalCodes();
+  }, [fetchPromotionalCodes]);
+
+  useEffect(() => {
     fetchCommissions();
   }, [fetchCommissions]);
 
@@ -367,11 +414,15 @@ const AffiliatesTab = () => {
   };
 
   const openEditDialog = (seller) => {
+    const promo = seller.promotionalCode || {};
     setForm({
       name: seller.name || '',
       contact: seller.contact || '',
       pixKey: seller.pixKey || '',
       status: seller.status === 'inactive' ? 'inactive' : 'active',
+      promoCode: promo.code || seller.affiliateLink?.code || '',
+      discountPercent: String(Number(promo.discountBps ?? 1000) / 100),
+      commissionPercent: String(Number(promo.commissionBps ?? 1000) / 100),
     });
     setActiveSeller(seller);
     setFormMode('edit');
@@ -379,6 +430,10 @@ const AffiliatesTab = () => {
 
   const handleFormChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handlePromoFormChange = (field, value) => {
+    setPromoForm((current) => ({ ...current, [field]: value }));
   };
 
   const handleSearchSubmit = (event) => {
@@ -411,13 +466,20 @@ const AffiliatesTab = () => {
 
   const handleRefreshAll = () => {
     fetchSellers(page, { quiet: true });
+    fetchPromotionalCodes();
     fetchCommissions();
     fetchClients();
   };
 
-  const updateSellerLink = (sellerId, affiliateLink) => {
+  const updateSellerPromotion = (sellerId, affiliateLink, promotionalCode = null) => {
     setSellers((current) => current.map((seller) => (
-      seller.id === sellerId ? { ...seller, affiliateLink } : seller
+      seller.id === sellerId
+        ? {
+          ...seller,
+          affiliateLink: affiliateLink || seller.affiliateLink,
+          promotionalCode: promotionalCode || seller.promotionalCode,
+        }
+        : seller
     )));
   };
 
@@ -433,15 +495,16 @@ const AffiliatesTab = () => {
 
     setGeneratingLinkSellerId(seller.id);
     try {
-      const affiliateLink = await getOrCreateAffiliateLink({ sellerId: seller.id });
-      updateSellerLink(seller.id, affiliateLink);
+      const result = await getOrCreateSellerPromotionalCode({ sellerId: seller.id });
+      updateSellerPromotion(seller.id, result.affiliateLink, result.promotionalCode);
       toast({
-        title: 'Link gerado',
-        description: `Link de ${seller.name} pronto para copiar.`,
+        title: 'Codigo gerado',
+        description: `Codigo de ${seller.name} pronto para copiar.`,
       });
+      fetchPromotionalCodes();
     } catch (error) {
       toast({
-        title: 'Erro ao gerar link',
+        title: 'Erro ao gerar codigo',
         description: error.message,
         variant: 'destructive',
       });
@@ -460,11 +523,11 @@ const AffiliatesTab = () => {
       return;
     }
 
-    const code = seller.affiliateLink?.code;
+    const code = seller.promotionalCode?.code || seller.affiliateLink?.code;
     if (!code) {
       toast({
-        title: 'Link ausente',
-        description: 'Gere o link antes de copiar.',
+        title: 'Codigo ausente',
+        description: 'Gere o codigo antes de copiar.',
         variant: 'destructive',
       });
       return;
@@ -493,6 +556,30 @@ const AffiliatesTab = () => {
     }
   };
 
+  const handleCopyPromoCode = async (promo) => {
+    const code = promo?.code;
+    if (!code) return;
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Area de transferencia indisponivel neste navegador.');
+      }
+
+      const url = buildAffiliateLinkUrl(code);
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link copiado',
+        description: url,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao copiar link',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -515,10 +602,24 @@ const AffiliatesTab = () => {
     setSubmitting(true);
     try {
       if (formMode === 'edit' && activeSeller?.id) {
-        const updatedSeller = await updateAffiliateSeller({
+        let updatedSeller = await updateAffiliateSeller({
           sellerId: activeSeller.id,
           ...payload,
         });
+
+        if (payload.status === 'active') {
+          const promotion = await getOrCreateSellerPromotionalCode({
+            sellerId: activeSeller.id,
+            code: form.promoCode.trim(),
+            discountBps: percentToBps(form.discountPercent, 1000),
+            commissionBps: percentToBps(form.commissionPercent, 1000),
+          });
+          updatedSeller = {
+            ...updatedSeller,
+            affiliateLink: promotion.affiliateLink || updatedSeller.affiliateLink,
+            promotionalCode: promotion.promotionalCode || updatedSeller.promotionalCode,
+          };
+        }
 
         setSellers((current) => current.map((seller) => (
           seller.id === updatedSeller.id ? updatedSeller : seller
@@ -529,17 +630,29 @@ const AffiliatesTab = () => {
         });
       } else {
         const createdSeller = await createAffiliateSeller(payload);
+        const promotion = await getOrCreateSellerPromotionalCode({
+          sellerId: createdSeller.id,
+          code: form.promoCode.trim(),
+          discountBps: percentToBps(form.discountPercent, 1000),
+          commissionBps: percentToBps(form.commissionPercent, 1000),
+        });
+        const sellerWithPromotion = {
+          ...createdSeller,
+          affiliateLink: promotion.affiliateLink || createdSeller.affiliateLink,
+          promotionalCode: promotion.promotionalCode || createdSeller.promotionalCode,
+        };
         setPage(1);
-        setSellers((current) => [createdSeller, ...current].slice(0, PAGE_SIZE));
+        setSellers((current) => [sellerWithPromotion, ...current].slice(0, PAGE_SIZE));
         setTotal((current) => current + 1);
         toast({
           title: 'Vendedor criado',
-          description: `${createdSeller.name} foi cadastrado como afiliado.`,
+          description: `${createdSeller.name} foi cadastrado com codigo promocional.`,
         });
       }
 
       resetForm();
       fetchSellers(1, { quiet: true });
+      fetchPromotionalCodes();
     } catch (error) {
       toast({
         title: formMode === 'edit' ? 'Erro ao editar vendedor' : 'Erro ao criar vendedor',
@@ -548,6 +661,49 @@ const AffiliatesTab = () => {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleCampaignPromoSubmit = async (event) => {
+    event.preventDefault();
+
+    const code = promoForm.code.trim();
+    if (!code) {
+      toast({
+        title: 'Codigo obrigatorio',
+        description: 'Informe o codigo da campanha.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPromoSubmitting(true);
+    try {
+      const result = await createPromotionalCode({
+        code,
+        discountBps: percentToBps(promoForm.discountPercent, 1000),
+        commissionBps: 0,
+        maxUses: promoForm.maxUses ? Number(promoForm.maxUses) : null,
+        validUntil: promoForm.validUntil || '',
+        status: promoForm.status,
+      });
+
+      setPromotionalCodes((current) => [result.promotionalCode, ...current].filter(Boolean).slice(0, 50));
+      setPromoTotal((current) => current + 1);
+      setPromoDialogOpen(false);
+      setPromoForm(EMPTY_PROMO_FORM);
+      toast({
+        title: 'Campanha criada',
+        description: `${result.promotionalCode.code} pronto para copiar.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Erro ao criar campanha',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setPromoSubmitting(false);
     }
   };
 
@@ -624,8 +780,8 @@ const AffiliatesTab = () => {
       return <span className="text-muted-foreground">Vendedor inativo</span>;
     }
 
-    const affiliateLink = seller.affiliateLink;
-    if (!affiliateLink?.code) {
+    const code = seller.promotionalCode?.code || seller.affiliateLink?.code;
+    if (!code) {
       const isGenerating = generatingLinkSellerId === seller.id;
 
       return (
@@ -642,7 +798,7 @@ const AffiliatesTab = () => {
           ) : (
             <LinkIcon className="h-4 w-4" />
           )}
-          Gerar link
+          Gerar codigo
         </Button>
       );
     }
@@ -652,7 +808,7 @@ const AffiliatesTab = () => {
     return (
       <div className="flex w-72 items-center gap-2">
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-          {`/?ref=${affiliateLink.code}#planos`}
+          {`/?promo=${code}#planos`}
         </span>
         <Button
           type="button"
@@ -697,6 +853,16 @@ const AffiliatesTab = () => {
               <RefreshCw className="h-4 w-4" />
             )}
             Atualizar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPromoDialogOpen(true)}
+            className="gap-2"
+            disabled={promoSubmitting}
+          >
+            <BadgePercent className="h-4 w-4" />
+            Nova campanha
           </Button>
           <Button type="button" onClick={openCreateDialog} className="gap-2" disabled={submitting}>
             <UserPlus className="h-4 w-4" />
@@ -762,6 +928,85 @@ const AffiliatesTab = () => {
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-lg shadow-slate-950/5 dark:shadow-black/20">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-foreground">
+              <BadgePercent className="h-5 w-5 text-primary" />
+              Codigos promocionais
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Campanhas gerais nao geram comissao; codigos com vendedor geram comissao.
+            </p>
+          </div>
+          <span className="text-sm text-muted-foreground">{promoTotal} codigo{promoTotal === 1 ? '' : 's'}</span>
+        </div>
+
+        {promosLoading ? (
+          <div className="flex justify-center py-8">
+            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+          </div>
+        ) : promotionalCodes.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-muted text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-5 py-3">Codigo</th>
+                  <th className="px-5 py-3">Tipo</th>
+                  <th className="px-5 py-3">Desconto</th>
+                  <th className="px-5 py-3">Comissao</th>
+                  <th className="px-5 py-3">Usos</th>
+                  <th className="px-5 py-3">Status</th>
+                  <th className="px-5 py-3 text-right">Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {promotionalCodes.map((promo) => (
+                  <tr key={promo.id} className="border-t border-border">
+                    <td className="px-5 py-4 font-mono text-xs text-muted-foreground">
+                      {promo.code}
+                    </td>
+                    <td className="px-5 py-4">
+                      {promo.sellerId ? promo.seller?.name || 'Vendedor' : 'Campanha geral'}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-foreground">
+                      {formatRateBps(promo.discountBps)}
+                    </td>
+                    <td className="px-5 py-4 text-muted-foreground">
+                      {promo.sellerId ? formatRateBps(promo.commissionBps) : '-'}
+                    </td>
+                    <td className="px-5 py-4 text-muted-foreground">
+                      {promo.redeemedUses || 0}{promo.maxUses ? `/${promo.maxUses}` : ''}
+                    </td>
+                    <td className="px-5 py-4">
+                      <StatusBadge status={promo.status} />
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Copiar codigo ${promo.code}`}
+                        onClick={() => handleCopyPromoCode(promo)}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="py-8 text-center">
+            <p className="font-semibold text-foreground">Nenhum codigo promocional cadastrado.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Crie uma campanha geral ou gere o codigo de um vendedor.
+            </p>
+          </div>
+        )}
       </div>
 
       <motion.div
@@ -1138,7 +1383,7 @@ const AffiliatesTab = () => {
                       <td className="px-5 py-4">
                         <p className="font-semibold text-foreground">{client.seller?.name || 'Vendedor'}</p>
                         <p className="font-mono text-xs text-muted-foreground">
-                          {client.link?.code ? `ref=${client.link.code}` : client.sourceCode || '-'}
+                          {client.link?.code ? `promo=${client.link.code}` : client.sourceCode || '-'}
                         </p>
                       </td>
                       <td className="px-5 py-4">
@@ -1254,6 +1499,47 @@ const AffiliatesTab = () => {
               />
             </div>
 
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="affiliate-promo-code">Codigo</Label>
+                <Input
+                  id="affiliate-promo-code"
+                  value={form.promoCode}
+                  onChange={(event) => handleFormChange('promoCode', event.target.value)}
+                  placeholder="Gerado se vazio"
+                  disabled={submitting}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="affiliate-discount-percent">Desconto (%)</Label>
+                <Input
+                  id="affiliate-discount-percent"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  value={form.discountPercent}
+                  onChange={(event) => handleFormChange('discountPercent', event.target.value)}
+                  disabled={submitting}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="affiliate-commission-percent">Comissao (%)</Label>
+                <Input
+                  id="affiliate-commission-percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={form.commissionPercent}
+                  onChange={(event) => handleFormChange('commissionPercent', event.target.value)}
+                  disabled={submitting}
+                  required
+                />
+              </div>
+            </div>
+
             {formMode === 'edit' && (
               <div className="space-y-2">
                 <Label htmlFor="affiliate-status">Status</Label>
@@ -1280,6 +1566,104 @@ const AffiliatesTab = () => {
               <Button type="submit" disabled={submitting}>
                 {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Salvar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={promoDialogOpen} onOpenChange={(open) => {
+        setPromoDialogOpen(open);
+        if (!open) setPromoForm(EMPTY_PROMO_FORM);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo codigo de campanha</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCampaignPromoSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="campaign-promo-code">Codigo</Label>
+              <Input
+                id="campaign-promo-code"
+                value={promoForm.code}
+                onChange={(event) => handlePromoFormChange('code', event.target.value)}
+                placeholder="BLACK20"
+                disabled={promoSubmitting}
+                required
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="campaign-discount-percent">Desconto (%)</Label>
+                <Input
+                  id="campaign-discount-percent"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  value={promoForm.discountPercent}
+                  onChange={(event) => handlePromoFormChange('discountPercent', event.target.value)}
+                  disabled={promoSubmitting}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="campaign-max-uses">Limite de usos</Label>
+                <Input
+                  id="campaign-max-uses"
+                  type="number"
+                  min="1"
+                  value={promoForm.maxUses}
+                  onChange={(event) => handlePromoFormChange('maxUses', event.target.value)}
+                  placeholder="Sem limite"
+                  disabled={promoSubmitting}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="campaign-valid-until">Validade</Label>
+                <Input
+                  id="campaign-valid-until"
+                  type="datetime-local"
+                  value={promoForm.validUntil}
+                  onChange={(event) => handlePromoFormChange('validUntil', event.target.value)}
+                  disabled={promoSubmitting}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="campaign-status">Status</Label>
+                <Select
+                  value={promoForm.status}
+                  onValueChange={(value) => handlePromoFormChange('status', value)}
+                  disabled={promoSubmitting}
+                >
+                  <SelectTrigger id="campaign-status">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Ativo</SelectItem>
+                    <SelectItem value="inactive">Inativo</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPromoDialogOpen(false)}
+                disabled={promoSubmitting}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={promoSubmitting}>
+                {promoSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Criar campanha
               </Button>
             </DialogFooter>
           </form>

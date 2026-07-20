@@ -7,90 +7,98 @@ function readIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
 }
 
-function readAffiliateLinkMigrations() {
+function readAllMigrations() {
   const migrationsDir = path.join(repoRoot, "supabase/migrations");
   if (!fs.existsSync(migrationsDir)) return "";
 
   return fs
     .readdirSync(migrationsDir)
-    .filter((name) => name.endsWith(".sql") && name.includes("affiliate_program_links"))
+    .filter((name) => name.endsWith(".sql"))
     .map((name) => fs.readFileSync(path.join(migrationsDir, name), "utf8"))
     .join("\n");
 }
 
-describe("affiliate links admin lifecycle", () => {
-  test("ships a constrained affiliate_links table with superadmin-only RLS", () => {
-    const migrationSource = readAffiliateLinkMigrations();
+describe("affiliate links and promotional codes admin lifecycle", () => {
+  test("keeps affiliate_links constrained and adds promotional code canon", () => {
+    const migrationSource = readAllMigrations();
 
     expect(migrationSource).toContain("create table if not exists public.affiliate_links");
-    expect(migrationSource).toContain("seller_id uuid not null references public.affiliate_sellers(id) on delete cascade");
-    expect(migrationSource).toContain("code text not null");
-    expect(migrationSource).toContain("status text not null default 'active'");
-    expect(migrationSource).toContain("affiliate_links_code_not_blank");
-    expect(migrationSource).toContain("affiliate_links_code_format");
-    expect(migrationSource).toContain("affiliate_links_status_check");
     expect(migrationSource).toContain("affiliate_links_seller_id_uidx");
     expect(migrationSource).toContain("affiliate_links_lower_code_uidx");
-    expect(migrationSource).toContain("trg_affiliate_links_updated_at");
-    expect(migrationSource).toContain("alter table public.affiliate_links enable row level security");
-    expect(migrationSource).toContain("revoke all on table public.affiliate_links from anon");
-    expect(migrationSource).toContain("grant select, insert, update, delete on table public.affiliate_links to authenticated");
-    expect(migrationSource).toContain("grant all on table public.affiliate_links to service_role");
-    expect(migrationSource).toContain("to authenticated");
+    expect(migrationSource).toContain("create table if not exists public.billing_promotional_codes");
+    expect(migrationSource).toContain("billing_promotional_codes_lower_code_uidx");
+    expect(migrationSource).toContain("billing_promotional_codes_affiliate_link_uidx");
+    expect(migrationSource).toContain("validate_billing_promotional_code_affiliate_link");
+    expect(migrationSource).toContain("billing_promotional_code_redemptions");
+    expect(migrationSource).toContain("checkout_session_id uuid not null references public.signup_checkout_sessions(id)");
+    expect(migrationSource).toContain("discount_bps integer not null default 1000");
+    expect(migrationSource).toContain("commission_bps integer not null default 0");
+    expect(migrationSource).toContain("seller_id is not null or commission_bps = 0");
+    expect(migrationSource).toContain("affiliate_link_backfill");
+    expect(migrationSource).toContain("alter table public.billing_promotional_codes enable row level security");
     expect(migrationSource).toContain("(select public.is_superadmin())");
     expect(migrationSource).not.toContain("auth.role()");
   });
 
-  test("affiliate-admin can get or create seller links without trusting client codes", () => {
+  test("affiliate-admin manages seller promotional codes without trusting financial client values in checkout", () => {
     const functionSource = readIfExists(
       path.join(repoRoot, "supabase/functions/affiliate-admin/index.ts"),
     );
 
-    expect(functionSource).toContain("AffiliateLinkRow");
-    expect(functionSource).toContain("mapLink");
-    expect(functionSource).toContain("affiliateLink");
+    expect(functionSource).toContain("PromotionalCodeRow");
+    expect(functionSource).toContain("mapPromotionalCode");
+    expect(functionSource).toContain("promotionalCode");
     expect(functionSource).toContain("generateLinkCode");
+    expect(functionSource).toContain("assertPromotionalCodeAvailable");
+    expect(functionSource).toContain("AFFILIATE_PROMO_CODE_CONFLICT");
     expect(functionSource).toContain("getOrCreateSellerLink");
-    expect(functionSource).toContain("AFFILIATE_SELLER_INACTIVE");
-    expect(functionSource).toContain("AFFILIATE_LINK_CODE_COLLISION");
+    expect(functionSource).toContain("getOrCreateSellerPromotionalCode");
+    expect(functionSource).toContain("listPromotionalCodes");
+    expect(functionSource).toContain("createPromotionalCode");
+    expect(functionSource).toContain("updatePromotionalCode");
+    expect(functionSource).toContain(".from(\"billing_promotional_codes\")");
     expect(functionSource).toContain(".from(\"affiliate_links\")");
     expect(functionSource).toContain(".from(\"affiliate_sellers\")");
     expect(functionSource).toContain("updated_by: caller.user.id");
-    expect(functionSource).toContain("action === \"getOrCreateSellerLink\"");
-    expect(functionSource).not.toContain("payload?.code");
-    expect(functionSource).not.toContain("code: payload");
+    expect(functionSource).toContain("action === \"getOrCreateSellerPromotionalCode\"");
     expect(functionSource).not.toContain("auth.role()");
   });
 
-  test("frontend helper exposes getOrCreateAffiliateLink and link URL building", () => {
+  test("frontend helper exposes promotional code APIs and promo URL building", () => {
     const helperSource = readIfExists(path.join(repoRoot, "frontend/src/lib/affiliates.js"));
 
     expect(helperSource).toContain("getOrCreateAffiliateLink");
+    expect(helperSource).toContain("getOrCreateSellerPromotionalCode");
+    expect(helperSource).toContain("buildPromotionalLinkUrl");
     expect(helperSource).toContain("buildAffiliateLinkUrl");
-    expect(helperSource).toContain("action: 'getOrCreateSellerLink'");
+    expect(helperSource).toContain("/?promo=");
+    expect(helperSource).toContain("resolvePromotionalCode");
+    expect(helperSource).toContain("listPromotionalCodes");
+    expect(helperSource).toContain("createPromotionalCode");
     expect(helperSource).toContain("affiliate-admin");
-    expect(helperSource).toContain("affiliateLink");
-    expect(helperSource).toContain("#planos");
     expect(helperSource).not.toContain(".from('affiliate_links')");
     expect(helperSource).not.toContain('.from("affiliate_links")');
   });
 
-  test("AffiliatesTab renders generate and copy link affordances with inactive gating", () => {
+  test("AffiliatesTab renders seller codes and campaign code affordances", () => {
     const tabSource = readIfExists(
       path.join(repoRoot, "frontend/src/components/superadmin/AffiliatesTab.jsx"),
     );
 
-    expect(tabSource).toContain("getOrCreateAffiliateLink");
+    expect(tabSource).toContain("getOrCreateSellerPromotionalCode");
+    expect(tabSource).toContain("createPromotionalCode");
+    expect(tabSource).toContain("listPromotionalCodes");
     expect(tabSource).toContain("buildAffiliateLinkUrl");
     expect(tabSource).toContain("navigator.clipboard.writeText");
-    expect(tabSource).toContain("Gerar link");
-    expect(tabSource).toContain("Copiar link");
+    expect(tabSource).toContain("Gerar codigo");
+    expect(tabSource).toContain("Nova campanha");
+    expect(tabSource).toContain("Codigos promocionais");
+    expect(tabSource).toContain("Campanha geral");
     expect(tabSource).toContain("Vendedor inativo");
     expect(tabSource).toContain("generatingLinkSellerId");
     expect(tabSource).toContain("Copy");
-    expect(tabSource).toContain("Link");
     expect(tabSource).toContain("aria-label");
-    expect(tabSource).not.toContain("<td className=\"px-5 py-4 text-gray-500\">Aguardando link</td>");
+    expect(tabSource).not.toContain("/?ref=");
   });
 
   test("SuperadminDashboard keeps AffiliatesTab in the superadmin-only flow", () => {
@@ -102,7 +110,9 @@ describe("affiliate links admin lifecycle", () => {
     expect(dashboardSource).toContain("value: 'affiliates'");
     expect(dashboardSource).toContain("label: 'Afiliados'");
     expect(dashboardSource).toContain("isSuperadmin");
-    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"><AffiliatesTab /></TabsContent>");
+    expect(dashboardSource).toMatch(
+      /<TabsContent\s+value="affiliates"[\s\S]*?<AffiliatesTab\s+\/>[\s\S]*?<\/TabsContent>/,
+    );
     expect(dashboardSource).not.toContain("projectTabs.push({ value: 'affiliates'");
   });
 });
