@@ -19,12 +19,6 @@ type CheckoutSession = {
   expires_at: string | null;
   status: string;
   amount_cents: number | null;
-  promo_code_id: string | null;
-  promo_code: string | null;
-  promo_discount_bps: number | null;
-  promo_discount_cents: number | null;
-  promo_original_amount_cents: number | null;
-  promo_commission_bps: number | null;
   affiliate_link_id: string | null;
   affiliate_seller_id: string | null;
   affiliate_code: string | null;
@@ -40,35 +34,19 @@ type AffiliateLinkRow = {
   status: string;
 };
 
-type PromotionalCodeRow = {
-  id: string;
-  affiliate_link_id: string | null;
-  seller_id: string | null;
-  code: string;
-  discount_bps: number;
-  commission_bps: number;
-  max_uses: number | null;
-  redeemed_uses: number;
-  valid_until: string | null;
-  status: string;
-};
-
 type AffiliateSellerRow = {
   id: string;
   status: string;
 };
 
-type PromotionalContext = {
-  promoCodeId: string;
-  linkId: string | null;
-  sellerId: string | null;
+type AffiliateContext = {
+  linkId: string;
+  sellerId: string;
   code: string;
   discountBps: number;
   discountCents: number;
   originalAmountCents: number;
   checkoutAmountCents: number;
-  commissionBps: number;
-  source: "campaign" | "affiliate" | "affiliate_legacy";
 };
 
 type SupabaseAdminClient = SupabaseClient<any, "public", any>;
@@ -76,8 +54,7 @@ type SupabaseAdminClient = SupabaseClient<any, "public", any>;
 const FREE_PLAN_CODE = "free_trial";
 const DEFAULT_CHECKOUT_EXPIRATION_MINUTES = 60;
 const AFFILIATE_DISCOUNT_BPS = 1000;
-const AFFILIATE_COMMISSION_BPS = 1000;
-const PROMO_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
+const AFFILIATE_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
 
 class SignupCheckoutError extends Error {
   code: string;
@@ -125,14 +102,14 @@ function normalizePlanCode(value: unknown) {
     .replace(/[^a-z0-9_]/g, "");
 }
 
-function normalizePromotionalCode(value: unknown) {
+function normalizeAffiliateRef(value: unknown) {
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "")
     .slice(0, 40);
 
-  return PROMO_CODE_PATTERN.test(normalized) ? normalized : "";
+  return AFFILIATE_CODE_PATTERN.test(normalized) ? normalized : "";
 }
 
 function calculateDiscountCents(amountCents: number, discountBps: number) {
@@ -243,215 +220,13 @@ function buildSignupRedirectUrl(
   return url.toString();
 }
 
-function isPromoUsable(promo: PromotionalCodeRow | null) {
-  if (!promo || promo.status !== "active") return false;
-
-  if (promo.valid_until) {
-    const validUntil = new Date(promo.valid_until);
-    if (!Number.isNaN(validUntil.getTime()) && validUntil <= new Date()) {
-      return false;
-    }
-  }
-
-  const maxUses = promo.max_uses == null
-    ? null
-    : Math.max(0, Math.trunc(Number(promo.max_uses || 0)));
-  const redeemedUses = Math.max(
-    0,
-    Math.trunc(Number(promo.redeemed_uses || 0)),
-  );
-
-  return maxUses == null || redeemedUses < maxUses;
-}
-
-async function getActiveSeller(
+async function resolveAffiliateContext(
   supabaseAdmin: SupabaseAdminClient,
-  sellerId: string | null,
-) {
-  if (!sellerId) return null;
-
-  const { data: sellerData, error: sellerError } = await supabaseAdmin
-    .from("affiliate_sellers")
-    .select("id, status")
-    .eq("id", sellerId)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (sellerError) {
-    throw new SignupCheckoutError(
-      "SIGNUP_CHECKOUT_AFFILIATE_LOOKUP_FAILED",
-      "Nao foi possivel validar o vendedor afiliado.",
-      500,
-    );
-  }
-
-  return sellerData as AffiliateSellerRow | null;
-}
-
-async function getOrCreateLegacyPromoCode(
-  supabaseAdmin: SupabaseAdminClient,
-  link: AffiliateLinkRow,
-): Promise<PromotionalCodeRow | null> {
-  const { data: existingPromo, error: existingError } = await supabaseAdmin
-    .from("billing_promotional_codes")
-    .select([
-      "id",
-      "affiliate_link_id",
-      "seller_id",
-      "code",
-      "discount_bps",
-      "commission_bps",
-      "max_uses",
-      "redeemed_uses",
-      "valid_until",
-      "status",
-    ].join(", "))
-    .eq("affiliate_link_id", link.id)
-    .maybeSingle();
-
-  if (existingError) throw existingError;
-  if (existingPromo) return existingPromo as PromotionalCodeRow;
-
-  const { data: insertedPromo, error: insertError } = await supabaseAdmin
-    .from("billing_promotional_codes")
-    .insert({
-      affiliate_link_id: link.id,
-      seller_id: link.seller_id,
-      code: link.code,
-      discount_bps: AFFILIATE_DISCOUNT_BPS,
-      commission_bps: AFFILIATE_COMMISSION_BPS,
-      duration: "first_month",
-      status: link.status,
-      metadata: { origin: "affiliate_link_runtime_backfill" },
-    })
-    .select([
-      "id",
-      "affiliate_link_id",
-      "seller_id",
-      "code",
-      "discount_bps",
-      "commission_bps",
-      "max_uses",
-      "redeemed_uses",
-      "valid_until",
-      "status",
-    ].join(", "))
-    .single();
-
-  if (!insertError) return insertedPromo as PromotionalCodeRow;
-
-  if (
-    insertError?.code === "23505" ||
-    String(insertError?.message || "").toLowerCase().includes("duplicate key")
-  ) {
-    const { data: concurrentPromo, error: concurrentError } =
-      await supabaseAdmin
-        .from("billing_promotional_codes")
-        .select([
-          "id",
-          "affiliate_link_id",
-          "seller_id",
-          "code",
-          "discount_bps",
-          "commission_bps",
-          "max_uses",
-          "redeemed_uses",
-          "valid_until",
-          "status",
-        ].join(", "))
-        .ilike("code", link.code)
-        .maybeSingle();
-
-    if (concurrentError) throw concurrentError;
-    return concurrentPromo as PromotionalCodeRow | null;
-  }
-
-  throw insertError;
-}
-
-function buildPromotionalContext(
-  promo: PromotionalCodeRow,
+  affiliateRef: string,
   plan: BillingPlan,
-  source: PromotionalContext["source"],
-): PromotionalContext {
-  const originalAmountCents = Math.max(
-    0,
-    Math.trunc(Number(plan.base_price_cents || 0)),
-  );
-  const discountBps = Math.max(
-    1,
-    Math.min(10000, Math.trunc(Number(promo.discount_bps || 0))),
-  );
-  const discountCents = calculateDiscountCents(
-    originalAmountCents,
-    discountBps,
-  );
-  const checkoutAmountCents = Math.max(0, originalAmountCents - discountCents);
-
-  return {
-    promoCodeId: promo.id,
-    linkId: promo.affiliate_link_id,
-    sellerId: promo.seller_id,
-    code: normalizePromotionalCode(promo.code),
-    discountBps,
-    discountCents,
-    originalAmountCents,
-    checkoutAmountCents,
-    commissionBps: Math.max(
-      0,
-      Math.min(10000, Math.trunc(Number(promo.commission_bps || 0))),
-    ),
-    source,
-  };
-}
-
-async function resolvePromotionalContext(
-  supabaseAdmin: SupabaseAdminClient,
-  rawCode: string,
-  plan: BillingPlan,
-): Promise<PromotionalContext | null> {
-  const code = normalizePromotionalCode(rawCode);
+): Promise<AffiliateContext | null> {
+  const code = normalizeAffiliateRef(affiliateRef);
   if (!code) return null;
-
-  const promoSelectFields = [
-    "id",
-    "affiliate_link_id",
-    "seller_id",
-    "code",
-    "discount_bps",
-    "commission_bps",
-    "max_uses",
-    "redeemed_uses",
-    "valid_until",
-    "status",
-  ].join(", ");
-
-  const { data: promoData, error: promoError } = await supabaseAdmin
-    .from("billing_promotional_codes")
-    .select(promoSelectFields)
-    .ilike("code", code)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (promoError) {
-    throw new SignupCheckoutError(
-      "SIGNUP_CHECKOUT_PROMO_LOOKUP_FAILED",
-      "Nao foi possivel validar o codigo promocional.",
-      500,
-    );
-  }
-
-  const promo = promoData as PromotionalCodeRow | null;
-  if (promo && isPromoUsable(promo)) {
-    const seller = await getActiveSeller(supabaseAdmin, promo.seller_id);
-    if (!promo.seller_id || seller?.id) {
-      return buildPromotionalContext(
-        promo,
-        plan,
-        promo.seller_id ? "affiliate" : "campaign",
-      );
-    }
-  }
 
   const { data: linkData, error: linkError } = await supabaseAdmin
     .from("affiliate_links")
@@ -471,13 +246,43 @@ async function resolvePromotionalContext(
   const link = linkData as AffiliateLinkRow | null;
   if (!link?.id || !link.seller_id) return null;
 
-  const seller = await getActiveSeller(supabaseAdmin, link.seller_id);
+  const { data: sellerData, error: sellerError } = await supabaseAdmin
+    .from("affiliate_sellers")
+    .select("id, status")
+    .eq("id", link.seller_id)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (sellerError) {
+    throw new SignupCheckoutError(
+      "SIGNUP_CHECKOUT_AFFILIATE_LOOKUP_FAILED",
+      "Nao foi possivel validar o vendedor afiliado.",
+      500,
+    );
+  }
+
+  const seller = sellerData as AffiliateSellerRow | null;
   if (!seller?.id) return null;
 
-  const legacyPromo = await getOrCreateLegacyPromoCode(supabaseAdmin, link);
-  if (!legacyPromo || !isPromoUsable(legacyPromo)) return null;
+  const originalAmountCents = Math.max(
+    0,
+    Math.trunc(Number(plan.base_price_cents || 0)),
+  );
+  const discountCents = calculateDiscountCents(
+    originalAmountCents,
+    AFFILIATE_DISCOUNT_BPS,
+  );
+  const checkoutAmountCents = Math.max(0, originalAmountCents - discountCents);
 
-  return buildPromotionalContext(legacyPromo, plan, "affiliate_legacy");
+  return {
+    linkId: link.id,
+    sellerId: seller.id,
+    code: normalizeAffiliateRef(link.code) || code,
+    discountBps: AFFILIATE_DISCOUNT_BPS,
+    discountCents,
+    originalAmountCents,
+    checkoutAmountCents,
+  };
 }
 
 function getAsaasErrorMessage(payload: unknown) {
@@ -563,20 +368,8 @@ Deno.serve(async (req) => {
     const planCode = normalizePlanCode(
       payload.planCode ?? user.user_metadata?.plan_code,
     );
-    const rawPromotionalCodeInput =
-      payload.promoCode ??
-        payload.promo ??
-        payload.couponCode ??
-        payload.coupon ??
-        payload.affiliateRef ??
-        payload.ref ??
-        "";
-    const hasExplicitPromotionalCodeInput = String(rawPromotionalCodeInput)
-      .trim().length > 0;
-    const promotionalCode = normalizePromotionalCode(
-      rawPromotionalCodeInput ||
-        user.user_metadata?.promo_code ||
-        user.user_metadata?.affiliate_ref,
+    const affiliateRef = normalizeAffiliateRef(
+      payload.affiliateRef ?? payload.ref ?? user.user_metadata?.affiliate_ref,
     );
     const email = String(user.email ?? "").trim().toLowerCase();
 
@@ -627,29 +420,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (hasExplicitPromotionalCodeInput && !promotionalCode) {
-      throw new SignupCheckoutError(
-        "SIGNUP_CHECKOUT_PROMO_UNAVAILABLE",
-        "Codigo promocional invalido ou indisponivel.",
-        409,
-      );
-    }
-
-    const promotionalContext = await resolvePromotionalContext(
+    const affiliateContext = await resolveAffiliateContext(
       supabaseAdmin,
-      promotionalCode,
+      affiliateRef,
       plan,
     );
-
-    if (hasExplicitPromotionalCodeInput && !promotionalContext) {
-      throw new SignupCheckoutError(
-        "SIGNUP_CHECKOUT_PROMO_UNAVAILABLE",
-        "Codigo promocional invalido ou indisponivel.",
-        409,
-      );
-    }
-
-    const checkoutAmountCents = promotionalContext?.checkoutAmountCents ??
+    const checkoutAmountCents = affiliateContext?.checkoutAmountCents ??
       plan.base_price_cents;
 
     let reusableSessionQuery = supabaseAdmin
@@ -662,12 +438,6 @@ Deno.serve(async (req) => {
           "expires_at",
           "status",
           "amount_cents",
-          "promo_code_id",
-          "promo_code",
-          "promo_discount_bps",
-          "promo_discount_cents",
-          "promo_original_amount_cents",
-          "promo_commission_bps",
           "affiliate_link_id",
           "affiliate_seller_id",
           "affiliate_code",
@@ -681,14 +451,9 @@ Deno.serve(async (req) => {
       .in("status", ["pending", "created"])
       .gt("expires_at", new Date().toISOString());
 
-    reusableSessionQuery = promotionalContext
-      ? reusableSessionQuery.eq(
-        "promo_code_id",
-        promotionalContext.promoCodeId,
-      )
-      : reusableSessionQuery
-        .is("promo_code_id", null)
-        .is("affiliate_link_id", null);
+    reusableSessionQuery = affiliateContext
+      ? reusableSessionQuery.eq("affiliate_link_id", affiliateContext.linkId)
+      : reusableSessionQuery.is("affiliate_link_id", null);
 
     const { data: reusableSessionData, error: reusableSessionError } =
       await reusableSessionQuery
@@ -699,25 +464,7 @@ Deno.serve(async (req) => {
     if (reusableSessionError) throw reusableSessionError;
 
     const reusableSession = reusableSessionData as CheckoutSession | null;
-    const reusableSessionMatchesContext = reusableSession
-      ? promotionalContext
-        ? reusableSession.promo_code_id === promotionalContext.promoCodeId &&
-          reusableSession.promo_code === promotionalContext.code &&
-          Number(reusableSession.amount_cents || 0) === checkoutAmountCents &&
-          Number(reusableSession.promo_discount_bps || 0) ===
-            promotionalContext.discountBps &&
-          Number(reusableSession.promo_discount_cents || 0) ===
-            promotionalContext.discountCents &&
-          Number(reusableSession.promo_original_amount_cents || 0) ===
-            promotionalContext.originalAmountCents &&
-          Number(reusableSession.promo_commission_bps || 0) ===
-            promotionalContext.commissionBps
-        : !reusableSession.promo_code_id &&
-          !reusableSession.affiliate_link_id &&
-          Number(reusableSession.amount_cents || 0) === checkoutAmountCents
-      : false;
-
-    if (reusableSession?.checkout_url && reusableSessionMatchesContext) {
+    if (reusableSession?.checkout_url) {
       return jsonResponse(origin, {
         success: true,
         checkout_session_id: reusableSession.id,
@@ -727,12 +474,6 @@ Deno.serve(async (req) => {
         expires_at: reusableSession.expires_at,
         reused: true,
         amount_cents: reusableSession.amount_cents,
-        promo_code: reusableSession.promo_code,
-        promo_discount_bps: reusableSession.promo_discount_bps ?? 0,
-        promo_discount_cents: reusableSession.promo_discount_cents ?? 0,
-        promo_original_amount_cents:
-          reusableSession.promo_original_amount_cents ?? null,
-        promo_commission_bps: reusableSession.promo_commission_bps ?? 0,
         affiliate_ref: reusableSession.affiliate_code,
         affiliate_discount_bps: reusableSession.affiliate_discount_bps ?? 0,
         affiliate_discount_cents: reusableSession.affiliate_discount_cents ?? 0,
@@ -768,50 +509,22 @@ Deno.serve(async (req) => {
         status: "pending",
         amount_cents: checkoutAmountCents,
         currency: "BRL",
-        promo_code_id: promotionalContext?.promoCodeId ?? null,
-        promo_code: promotionalContext?.code ?? null,
-        promo_discount_bps: promotionalContext?.discountBps ?? 0,
-        promo_discount_cents: promotionalContext?.discountCents ?? 0,
-        promo_original_amount_cents:
-          promotionalContext?.originalAmountCents ?? null,
-        promo_commission_bps: promotionalContext?.commissionBps ?? 0,
-        affiliate_link_id: promotionalContext?.linkId ?? null,
-        affiliate_seller_id: promotionalContext?.sellerId ?? null,
-        affiliate_code: promotionalContext?.sellerId
-          ? promotionalContext.code
-          : null,
-        affiliate_discount_bps: promotionalContext?.sellerId
-          ? promotionalContext.discountBps
-          : 0,
-        affiliate_discount_cents: promotionalContext?.sellerId
-          ? promotionalContext.discountCents
-          : 0,
+        affiliate_link_id: affiliateContext?.linkId ?? null,
+        affiliate_seller_id: affiliateContext?.sellerId ?? null,
+        affiliate_code: affiliateContext?.code ?? null,
+        affiliate_discount_bps: affiliateContext?.discountBps ?? 0,
+        affiliate_discount_cents: affiliateContext?.discountCents ?? 0,
         affiliate_original_amount_cents:
-          promotionalContext?.sellerId
-            ? promotionalContext.originalAmountCents
-            : null,
+          affiliateContext?.originalAmountCents ?? null,
         expires_at: expiresAt.toISOString(),
         metadata: {
           origin: "signup_start_checkout",
-          promo: promotionalContext
+          affiliate: affiliateContext
             ? {
-              id: promotionalContext.promoCodeId,
-              code: promotionalContext.code,
-              source: promotionalContext.source,
-              discount_bps: promotionalContext.discountBps,
-              discount_cents: promotionalContext.discountCents,
-              original_amount_cents: promotionalContext.originalAmountCents,
-              commission_bps: promotionalContext.commissionBps,
-              seller_id: promotionalContext.sellerId,
-              affiliate_link_id: promotionalContext.linkId,
-            }
-            : null,
-          affiliate: promotionalContext?.sellerId
-            ? {
-              code: promotionalContext.code,
-              discount_bps: promotionalContext.discountBps,
-              discount_cents: promotionalContext.discountCents,
-              original_amount_cents: promotionalContext.originalAmountCents,
+              code: affiliateContext.code,
+              discount_bps: affiliateContext.discountBps,
+              discount_cents: affiliateContext.discountCents,
+              original_amount_cents: affiliateContext.originalAmountCents,
             }
             : null,
         },
@@ -839,24 +552,21 @@ Deno.serve(async (req) => {
         finalizar: "1",
         checkout: "success",
         checkoutSessionId: session.id,
-        promo: promotionalContext?.code ?? "",
-        ref: promotionalContext?.sellerId ? promotionalContext.code : "",
+        ref: affiliateContext?.code ?? "",
       }),
       cancel_url: buildSignupRedirectUrl(appBaseUrl, {
         plano: plan.code,
         planCode: plan.code,
         checkout: "cancel",
         checkoutSessionId: session.id,
-        promo: promotionalContext?.code ?? "",
-        ref: promotionalContext?.sellerId ? promotionalContext.code : "",
+        ref: affiliateContext?.code ?? "",
       }),
       expired_url: buildSignupRedirectUrl(appBaseUrl, {
         plano: plan.code,
         planCode: plan.code,
         checkout: "expired",
         checkoutSessionId: session.id,
-        promo: promotionalContext?.code ?? "",
-        ref: promotionalContext?.sellerId ? promotionalContext.code : "",
+        ref: affiliateContext?.code ?? "",
       }),
     };
 
@@ -880,10 +590,8 @@ Deno.serve(async (req) => {
       items: [
         {
           name: plan.name,
-          description: promotionalContext
-            ? `Assinatura mensal AllinPass - ${plan.name} (${
-              promotionalContext.discountBps / 100
-            }% de desconto no primeiro mes)`
+          description: affiliateContext
+            ? `Assinatura mensal AllinPass - ${plan.name} (10% de desconto no primeiro mes)`
             : `Assinatura mensal AllinPass - ${plan.name}`,
           quantity: 1,
           value: checkoutAmountCents / 100,
@@ -917,25 +625,12 @@ Deno.serve(async (req) => {
           status: "failed",
           metadata: {
             origin: "signup_start_checkout",
-            promo: promotionalContext
+            affiliate: affiliateContext
               ? {
-                id: promotionalContext.promoCodeId,
-                code: promotionalContext.code,
-                source: promotionalContext.source,
-                discount_bps: promotionalContext.discountBps,
-                discount_cents: promotionalContext.discountCents,
-                original_amount_cents: promotionalContext.originalAmountCents,
-                commission_bps: promotionalContext.commissionBps,
-                seller_id: promotionalContext.sellerId,
-                affiliate_link_id: promotionalContext.linkId,
-              }
-              : null,
-            affiliate: promotionalContext?.sellerId
-              ? {
-                code: promotionalContext.code,
-                discount_bps: promotionalContext.discountBps,
-                discount_cents: promotionalContext.discountCents,
-                original_amount_cents: promotionalContext.originalAmountCents,
+                code: affiliateContext.code,
+                discount_bps: affiliateContext.discountBps,
+                discount_cents: affiliateContext.discountCents,
+                original_amount_cents: affiliateContext.originalAmountCents,
               }
               : null,
             asaas_request: asaasPayload,
@@ -973,25 +668,12 @@ Deno.serve(async (req) => {
         status: "created",
         metadata: {
           origin: "signup_start_checkout",
-          promo: promotionalContext
+          affiliate: affiliateContext
             ? {
-              id: promotionalContext.promoCodeId,
-              code: promotionalContext.code,
-              source: promotionalContext.source,
-              discount_bps: promotionalContext.discountBps,
-              discount_cents: promotionalContext.discountCents,
-              original_amount_cents: promotionalContext.originalAmountCents,
-              commission_bps: promotionalContext.commissionBps,
-              seller_id: promotionalContext.sellerId,
-              affiliate_link_id: promotionalContext.linkId,
-            }
-            : null,
-          affiliate: promotionalContext?.sellerId
-            ? {
-              code: promotionalContext.code,
-              discount_bps: promotionalContext.discountBps,
-              discount_cents: promotionalContext.discountCents,
-              original_amount_cents: promotionalContext.originalAmountCents,
+              code: affiliateContext.code,
+              discount_bps: affiliateContext.discountBps,
+              discount_cents: affiliateContext.discountCents,
+              original_amount_cents: affiliateContext.originalAmountCents,
             }
             : null,
           asaas_request: asaasPayload,
@@ -1008,10 +690,8 @@ Deno.serve(async (req) => {
         ...user.user_metadata,
         establishment_name: establishmentName,
         plan_code: plan.code,
-        promo_code: promotionalContext?.code ?? "",
-        affiliate_ref: promotionalContext?.sellerId
-          ? promotionalContext.code
-          : "",
+        affiliate_ref: affiliateContext?.code ??
+          user.user_metadata?.affiliate_ref ?? "",
       },
     });
 
@@ -1024,24 +704,11 @@ Deno.serve(async (req) => {
       expires_at: session.expires_at,
       reused: false,
       amount_cents: checkoutAmountCents,
-      promo_code: promotionalContext?.code ?? null,
-      promo_discount_bps: promotionalContext?.discountBps ?? 0,
-      promo_discount_cents: promotionalContext?.discountCents ?? 0,
-      promo_original_amount_cents: promotionalContext?.originalAmountCents ??
+      affiliate_ref: affiliateContext?.code ?? null,
+      affiliate_discount_bps: affiliateContext?.discountBps ?? 0,
+      affiliate_discount_cents: affiliateContext?.discountCents ?? 0,
+      affiliate_original_amount_cents: affiliateContext?.originalAmountCents ??
         null,
-      promo_commission_bps: promotionalContext?.commissionBps ?? 0,
-      affiliate_ref: promotionalContext?.sellerId
-        ? promotionalContext.code
-        : null,
-      affiliate_discount_bps: promotionalContext?.sellerId
-        ? promotionalContext.discountBps
-        : 0,
-      affiliate_discount_cents: promotionalContext?.sellerId
-        ? promotionalContext.discountCents
-        : 0,
-      affiliate_original_amount_cents: promotionalContext?.sellerId
-        ? promotionalContext.originalAmountCents
-        : null,
     });
   } catch (error) {
     console.error("signup-start-checkout error", error);

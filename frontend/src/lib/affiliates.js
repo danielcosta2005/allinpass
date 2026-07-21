@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-import { PROMO_DISCOUNT_BPS, normalizePromoCode } from '@/lib/subscriptionPlans';
+import { AFFILIATE_DISCOUNT_BPS, normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
 function mapLink(link = null) {
   if (!link) return null;
@@ -11,28 +11,6 @@ function mapLink(link = null) {
     status: link.status,
     createdAt: link.createdAt ?? link.created_at,
     updatedAt: link.updatedAt ?? link.updated_at,
-  };
-}
-
-function mapPromotionalCode(promo = null) {
-  if (!promo) return null;
-
-  return {
-    id: promo.id,
-    affiliateLinkId: promo.affiliateLinkId ?? promo.affiliate_link_id,
-    sellerId: promo.sellerId ?? promo.seller_id,
-    code: promo.code,
-    discountBps: promo.discountBps ?? promo.discount_bps,
-    commissionBps: promo.commissionBps ?? promo.commission_bps,
-    duration: promo.duration,
-    maxUses: promo.maxUses ?? promo.max_uses,
-    redeemedUses: promo.redeemedUses ?? promo.redeemed_uses ?? 0,
-    validUntil: promo.validUntil ?? promo.valid_until,
-    status: promo.status,
-    metadata: promo.metadata || {},
-    createdAt: promo.createdAt ?? promo.created_at,
-    updatedAt: promo.updatedAt ?? promo.updated_at,
-    seller: promo.seller ?? promo.affiliate_sellers ?? null,
   };
 }
 
@@ -48,7 +26,6 @@ function mapSeller(seller = {}) {
     createdAt: seller.createdAt ?? seller.created_at,
     updatedAt: seller.updatedAt ?? seller.updated_at,
     affiliateLink: mapLink(seller.affiliateLink ?? seller.affiliate_link),
-    promotionalCode: mapPromotionalCode(seller.promotionalCode ?? seller.promotional_code),
     summary: {
       attributedClientsCount: summary.attributedClientsCount ?? summary.attributed_clients_count ?? 0,
       pendingCommissionCents: summary.pendingCommissionCents ?? summary.pending_commission_cents ?? 0,
@@ -144,7 +121,7 @@ function mapCommissionClient(client = {}) {
 
 export function buildAffiliateLinkUrl(code) {
   const cleanCode = String(code || '').trim();
-  const path = `/?promo=${encodeURIComponent(cleanCode)}#planos`;
+  const path = `/?ref=${encodeURIComponent(cleanCode)}#planos`;
 
   if (typeof window === 'undefined' || !window.location?.origin) {
     return path;
@@ -152,8 +129,6 @@ export function buildAffiliateLinkUrl(code) {
 
   return `${window.location.origin}${path}`;
 }
-
-export const buildPromotionalLinkUrl = buildAffiliateLinkUrl;
 
 async function invokeAffiliateAdmin(body) {
   const { data, error } = await supabase.functions.invoke('affiliate-admin', {
@@ -173,38 +148,35 @@ async function invokeAffiliateAdmin(body) {
   return data.data || data;
 }
 
-export async function resolvePromotionalCode(code) {
-  const normalizedCode = normalizePromoCode(code);
+export async function resolveAffiliateRef(ref) {
+  const normalizedRef = normalizeAffiliateRef(ref);
 
-  if (!normalizedCode) {
-    return { valid: false, code: '', discountBps: 0, source: '' };
+  if (!normalizedRef) {
+    return { valid: false, code: '', discountBps: 0 };
   }
 
   const { data, error } = await supabase.functions.invoke('affiliate-public', {
     body: {
-      action: 'resolvePromotionalCode',
-      promoCode: normalizedCode,
+      action: 'resolveAffiliateRef',
+      ref: normalizedRef,
     },
   });
 
   if (error) {
     console.error('invoke affiliate-public error:', error);
-    return { valid: false, code: '', discountBps: 0, source: '' };
+    return { valid: false, code: '', discountBps: 0 };
   }
 
   const response = data?.data || data || {};
-  const responseCode = normalizePromoCode(response.code || normalizedCode);
-  const valid = Boolean(response.valid) && Boolean(responseCode);
+  const code = normalizeAffiliateRef(response.code || normalizedRef);
+  const valid = Boolean(response.valid) && Boolean(code);
 
   return {
     valid,
-    code: valid ? responseCode : '',
-    discountBps: valid ? Number(response.discountBps || PROMO_DISCOUNT_BPS) : 0,
-    source: valid ? String(response.source || '') : '',
+    code: valid ? code : '',
+    discountBps: valid ? Number(response.discountBps || AFFILIATE_DISCOUNT_BPS) : 0,
   };
 }
-
-export const resolveAffiliateRef = resolvePromotionalCode;
 
 export async function createAffiliateSeller({ name, contact, pixKey }) {
   const data = await invokeAffiliateAdmin({ action: 'createSeller', name, contact, pixKey });
@@ -232,32 +204,6 @@ export async function listAffiliateSellers({
 
   return {
     sellers: Array.isArray(data.sellers) ? data.sellers.map(mapSeller) : [],
-    page: data.page || page,
-    pageSize: data.pageSize || pageSize,
-    total: data.total || 0,
-  };
-}
-
-export async function listPromotionalCodes({
-  page = 1,
-  pageSize = 25,
-  status = '',
-  search = '',
-  sellerId = '',
-} = {}) {
-  const data = await invokeAffiliateAdmin({
-    action: 'listPromotionalCodes',
-    page,
-    pageSize,
-    status,
-    search,
-    sellerId,
-  });
-
-  return {
-    promotionalCodes: Array.isArray(data.promotionalCodes)
-      ? data.promotionalCodes.map(mapPromotionalCode)
-      : [],
     page: data.page || page,
     pageSize: data.pageSize || pageSize,
     total: data.total || 0,
@@ -351,58 +297,6 @@ export async function updateAffiliateSeller({ sellerId, name, contact, pixKey, s
   return mapSeller(data.seller);
 }
 
-export async function createPromotionalCode({
-  code,
-  discountBps,
-  commissionBps = 0,
-  sellerId = '',
-  maxUses = null,
-  validUntil = '',
-  status = 'active',
-}) {
-  const data = await invokeAffiliateAdmin({
-    action: 'createPromotionalCode',
-    code,
-    discountBps,
-    commissionBps,
-    sellerId,
-    maxUses,
-    validUntil,
-    status,
-  });
-
-  return {
-    promotionalCode: mapPromotionalCode(data.promotionalCode),
-    affiliateLink: mapLink(data.link),
-  };
-}
-
-export async function updatePromotionalCode({
-  promoCodeId,
-  code,
-  discountBps,
-  commissionBps,
-  maxUses,
-  validUntil,
-  status,
-}) {
-  const data = await invokeAffiliateAdmin({
-    action: 'updatePromotionalCode',
-    promoCodeId,
-    code,
-    discountBps,
-    commissionBps,
-    maxUses,
-    validUntil,
-    status,
-  });
-
-  return {
-    promotionalCode: mapPromotionalCode(data.promotionalCode),
-    affiliateLink: mapLink(data.link),
-  };
-}
-
 export async function getOrCreateAffiliateLink({ sellerId }) {
   const data = await invokeAffiliateAdmin({
     action: 'getOrCreateSellerLink',
@@ -410,30 +304,4 @@ export async function getOrCreateAffiliateLink({ sellerId }) {
   });
 
   return mapLink(data.link);
-}
-
-export async function getOrCreateSellerPromotionalCode({
-  sellerId,
-  code = '',
-  discountBps = 1000,
-  commissionBps = 1000,
-  maxUses = null,
-  validUntil = '',
-  status = 'active',
-}) {
-  const data = await invokeAffiliateAdmin({
-    action: 'getOrCreateSellerPromotionalCode',
-    sellerId,
-    code,
-    discountBps,
-    commissionBps,
-    maxUses,
-    validUntil,
-    status,
-  });
-
-  return {
-    promotionalCode: mapPromotionalCode(data.promotionalCode),
-    affiliateLink: mapLink(data.link),
-  };
 }

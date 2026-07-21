@@ -10,7 +10,7 @@ import {
   trackSignupPaymentInfoAdded,
   trackSignupPurchaseCompleted,
 } from '@/lib/signupPixelEvents';
-import { normalizePromoCode } from '@/lib/subscriptionPlans';
+import { normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
 export function usePaidSignupRecovery({
   projectId,
@@ -24,7 +24,6 @@ export function usePaidSignupRecovery({
 
   const userMetadataPlanCode = user?.user_metadata?.plan_code || '';
   const userMetadataEstablishmentName = user?.user_metadata?.establishment_name || '';
-  const userMetadataPromoCode = user?.user_metadata?.promo_code || '';
   const userMetadataAffiliateRef = user?.user_metadata?.affiliate_ref || '';
 
   useEffect(() => {
@@ -82,17 +81,15 @@ export function usePaidSignupRecovery({
     const establishmentName = String(
       signupStatus?.establishmentName || userMetadataEstablishmentName || '',
     ).trim();
-    const promoCode = normalizePromoCode(
-      signupStatus?.promoCode || signupStatus?.affiliateRef || userMetadataPromoCode || userMetadataAffiliateRef || '',
+    const affiliateRef = normalizeAffiliateRef(
+      signupStatus?.affiliateRef || userMetadataAffiliateRef || '',
     );
 
-    return { planCode, establishmentName, promoCode, affiliateRef: promoCode };
+    return { planCode, establishmentName, affiliateRef };
   }, [
     signupStatus?.establishmentName,
-    signupStatus?.promoCode,
     signupStatus?.affiliateRef,
     signupStatus?.planCode,
-    userMetadataPromoCode,
     userMetadataAffiliateRef,
     userMetadataEstablishmentName,
     userMetadataPlanCode,
@@ -101,7 +98,7 @@ export function usePaidSignupRecovery({
   const handleContinuePayment = useCallback(async () => {
     if (signupActionLoading) return;
 
-    const { planCode, establishmentName, promoCode, affiliateRef } = resolvePendingSignupData();
+    const { planCode, establishmentName, affiliateRef } = resolvePendingSignupData();
     if (!planCode || planCode === 'free_trial' || !establishmentName) {
       toast({
         title: 'Nao foi possivel continuar',
@@ -114,7 +111,7 @@ export function usePaidSignupRecovery({
     setSignupActionLoading(true);
 
     try {
-      const checkout = await startPaidSignupCheckout({ establishmentName, planCode, promoCode, affiliateRef });
+      const checkout = await startPaidSignupCheckout({ establishmentName, planCode, affiliateRef });
       trackSignupPaymentInfoAdded({
         source: 'org_paid_signup_recovery',
         planCode,
@@ -145,7 +142,7 @@ export function usePaidSignupRecovery({
   const handleFinalizeActivation = useCallback(async () => {
     if (signupActionLoading) return;
 
-    const { planCode, establishmentName, promoCode, affiliateRef } = resolvePendingSignupData();
+    const { planCode, establishmentName, affiliateRef } = resolvePendingSignupData();
     const checkoutSessionId = String(signupStatus?.checkoutSessionId || '').trim();
 
     if (!planCode || planCode === 'free_trial' || !establishmentName || !checkoutSessionId) {
@@ -164,7 +161,6 @@ export function usePaidSignupRecovery({
         establishmentName,
         planCode,
         checkoutSessionId,
-        promoCode,
         affiliateRef,
         dedupeKey: `org-finalize:${planCode}:${checkoutSessionId}`,
         retryDelaysMs: PAID_SIGNUP_FINALIZE_RETRY_DELAYS_MS,

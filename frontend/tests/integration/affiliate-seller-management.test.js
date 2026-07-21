@@ -33,8 +33,6 @@ describe("affiliate seller management UI and backend", () => {
     expect(helperSource).toContain("createAffiliateSeller");
     expect(helperSource).toContain("listAffiliateSellers");
     expect(helperSource).toContain("updateAffiliateSeller");
-    expect(helperSource).toContain("getOrCreateSellerPromotionalCode");
-    expect(helperSource).toContain("createPromotionalCode");
     expect(helperSource).toContain("affiliate-admin");
     expect(helperSource).toContain("action: 'createSeller'");
     expect(helperSource).toContain("action: 'listSellers'");
@@ -57,12 +55,8 @@ describe("affiliate seller management UI and backend", () => {
     expect(tabSource).toContain("useToast");
     expect(tabSource).toContain("Novo vendedor");
     expect(tabSource).toContain("Editar vendedor");
-    expect(tabSource).toContain("Gerar codigo");
+    expect(tabSource).toContain("Gerar link");
     expect(tabSource).toContain("Copiar link");
-    expect(tabSource).toContain("Nova campanha");
-    expect(tabSource).toContain("Codigo");
-    expect(tabSource).toContain("Desconto (%)");
-    expect(tabSource).toContain("Comissao (%)");
     expect(tabSource).toContain("Ativo");
     expect(tabSource).toContain("Inativo");
   });
@@ -77,9 +71,7 @@ describe("affiliate seller management UI and backend", () => {
     expect(dashboardSource).toContain("value: 'affiliates'");
     expect(dashboardSource).toContain("label: 'Afiliados'");
     expect(dashboardSource).toContain("isSuperadmin");
-    expect(dashboardSource).toMatch(
-      /<TabsContent\s+value="affiliates"[\s\S]*?<AffiliatesTab\s+\/>[\s\S]*?<\/TabsContent>/,
-    );
+    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"><AffiliatesTab /></TabsContent>");
     expect(dashboardSource).not.toContain("projectTabs.push({ value: 'affiliates'");
   });
 });

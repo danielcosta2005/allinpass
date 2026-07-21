@@ -4,13 +4,11 @@ import { motion } from 'framer-motion';
 import { BadgePercent, CheckCircle2, CreditCard, Loader2, Lock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
-  calculatePromoFirstMonthPrice,
+  calculateAffiliateFirstMonthPrice,
+  formatAffiliateDiscountPercent,
   formatCurrencyBRL,
-  formatPromoDiscountPercent,
-  getPromoDiscountBps,
+  getAffiliateDiscountBps,
 } from '@/lib/subscriptionPlans';
 
 export function FinalizingSignupCard({
@@ -74,20 +72,13 @@ export function PaymentStep({
   affiliateOffer = null,
   checkoutError,
   checkoutLoading,
-  onApplyPromoCode,
   onContinue,
-  onPromoCodeChange,
-  promoCode = '',
-  promoError = '',
-  promoLoading = false,
-  promoOffer = null,
   selectedPlan,
 }) {
-  const activePromoOffer = promoOffer || affiliateOffer;
-  const promoDiscountBps = getPromoDiscountBps(activePromoOffer);
-  const showPromoOffer = selectedPlan?.type === 'paid' && promoDiscountBps > 0;
-  const promoDiscountPercent = formatPromoDiscountPercent(activePromoOffer);
-  const promoFirstMonthPrice = calculatePromoFirstMonthPrice(selectedPlan?.price, activePromoOffer);
+  const affiliateDiscountBps = getAffiliateDiscountBps(affiliateOffer);
+  const showAffiliateOffer = selectedPlan?.type === 'paid' && affiliateDiscountBps > 0;
+  const affiliateDiscountPercent = formatAffiliateDiscountPercent(affiliateOffer);
+  const affiliateFirstMonthPrice = calculateAffiliateFirstMonthPrice(selectedPlan?.price, affiliateOffer);
 
   return (
     <motion.div
@@ -107,7 +98,7 @@ export function PaymentStep({
             <p className="text-2xl font-bold text-slate-900">{selectedPlan.name}</p>
             <p className="text-sm text-slate-600 mt-1">{selectedPlan.description}</p>
           </div>
-          {showPromoOffer ? (
+          {showAffiliateOffer ? (
             <div className="text-left sm:text-right">
               <div className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
                 <BadgePercent className="h-3.5 w-3.5" />
@@ -117,11 +108,11 @@ export function PaymentStep({
                 R$ {formatCurrencyBRL(selectedPlan.price)}/mês
               </p>
               <p className="text-2xl font-bold text-emerald-700">
-                R$ {formatCurrencyBRL(promoFirstMonthPrice)}
+                R$ {formatCurrencyBRL(affiliateFirstMonthPrice)}
                 <span className="ml-1 text-sm font-semibold text-emerald-800">no primeiro mês</span>
               </p>
               <p className="text-xs text-slate-500">
-                -{promoDiscountPercent}% agora. Depois, R$ {formatCurrencyBRL(selectedPlan.price)}/mês.
+                -{affiliateDiscountPercent}% agora. Depois, R$ {formatCurrencyBRL(selectedPlan.price)}/mês.
               </p>
             </div>
           ) : (
@@ -130,47 +121,6 @@ export function PaymentStep({
             </p>
           )}
         </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <Label htmlFor="signup-promo-code" className="text-sm font-semibold text-slate-900">
-          Codigo promocional
-        </Label>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <Input
-            id="signup-promo-code"
-            value={promoCode}
-            onChange={(event) => onPromoCodeChange?.(event.target.value)}
-            placeholder="Ex.: JOAO10"
-            className="uppercase"
-            disabled={checkoutLoading || promoLoading}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onApplyPromoCode}
-            disabled={checkoutLoading || promoLoading}
-            className="shrink-0"
-          >
-            {promoLoading ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Validando
-              </span>
-            ) : 'Aplicar'}
-          </Button>
-        </div>
-        {showPromoOffer ? (
-          <p className="mt-2 text-sm font-medium text-emerald-700">
-            {activePromoOffer.code} aplicado: {promoDiscountPercent}% de desconto no primeiro mes.
-          </p>
-        ) : promoError ? (
-          <p className="mt-2 text-sm font-medium text-rose-700">{promoError}</p>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">
-            Opcional. O desconto e validado no servidor antes do checkout.
-          </p>
-        )}
       </div>
 
       <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
@@ -197,18 +147,13 @@ export function PaymentStep({
       <Button
         type="button"
         onClick={onContinue}
-        disabled={checkoutLoading || promoLoading}
+        disabled={checkoutLoading}
         className="w-full h-12 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
       >
         {checkoutLoading ? (
           <span className="inline-flex items-center gap-2">
             <Loader2 className="w-4 h-4 animate-spin" />
             Abrindo checkout...
-          </span>
-        ) : promoLoading ? (
-          <span className="inline-flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Validando codigo...
           </span>
         ) : 'Ir para checkout Asaas'}
       </Button>

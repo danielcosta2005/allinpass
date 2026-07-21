@@ -2,21 +2,18 @@ import { supabase } from '@/lib/supabaseClient';
 
 export const DEFAULT_PLAN_KEY = 'starter';
 export const AFFILIATE_DISCOUNT_BPS = 1000;
-export const PROMO_DISCOUNT_BPS = AFFILIATE_DISCOUNT_BPS;
 
-const PROMO_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
+const AFFILIATE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
 
-export const normalizePromoCode = (value) => {
+export const normalizeAffiliateRef = (value) => {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '')
     .slice(0, 40);
 
-  return PROMO_CODE_PATTERN.test(normalized) ? normalized : '';
+  return AFFILIATE_REF_PATTERN.test(normalized) ? normalized : '';
 };
-
-export const normalizeAffiliateRef = normalizePromoCode;
 
 const PLAN_ORDER = ['free_trial', 'starter', 'pro', 'premium'];
 
@@ -83,28 +80,24 @@ export const formatCurrencyBRL = (amount) =>
     maximumFractionDigits: 2,
   });
 
-export const getPromoDiscountBps = (promoOffer = null) => {
-  if (!promoOffer?.valid) return 0;
+export const getAffiliateDiscountBps = (affiliateOffer = null) => {
+  if (!affiliateOffer?.valid) return 0;
 
-  const discountBps = Math.trunc(toNumber(promoOffer.discountBps, PROMO_DISCOUNT_BPS));
+  const discountBps = Math.trunc(toNumber(affiliateOffer.discountBps, AFFILIATE_DISCOUNT_BPS));
   return Math.min(10000, Math.max(0, discountBps));
 };
 
-export const getAffiliateDiscountBps = getPromoDiscountBps;
-
-export const calculatePromoFirstMonthPrice = (price, promoOffer = null) => {
+export const calculateAffiliateFirstMonthPrice = (price, affiliateOffer = null) => {
   const normalizedPrice = Math.max(0, toNumber(price, 0));
-  const discountBps = getPromoDiscountBps(promoOffer);
+  const discountBps = getAffiliateDiscountBps(affiliateOffer);
 
   if (discountBps <= 0) return normalizedPrice;
 
   return Math.max(0, normalizedPrice * (1 - discountBps / 10000));
 };
 
-export const calculateAffiliateFirstMonthPrice = calculatePromoFirstMonthPrice;
-
-export const formatPromoDiscountPercent = (promoOffer = null) => {
-  const discountBps = getPromoDiscountBps(promoOffer);
+export const formatAffiliateDiscountPercent = (affiliateOffer = null) => {
+  const discountBps = getAffiliateDiscountBps(affiliateOffer);
   const discountPercent = discountBps / 100;
   const hasDecimal = !Number.isInteger(discountPercent);
 
@@ -113,8 +106,6 @@ export const formatPromoDiscountPercent = (promoOffer = null) => {
     maximumFractionDigits: hasDecimal ? 2 : 0,
   });
 };
-
-export const formatAffiliateDiscountPercent = formatPromoDiscountPercent;
 
 const formatIntegerBR = (value) =>
   Math.max(0, Number(value || 0)).toLocaleString('pt-BR', {
@@ -360,9 +351,9 @@ export const findPlanByKey = (planKey, plans = subscriptionPlans) =>
 
 export const isPaidPlan = (plan) => plan?.type === 'paid';
 
-export const buildSignupPath = (planKey, { promo = '', ref = '' } = {}) => {
+export const buildSignupPath = (planKey, { ref = '' } = {}) => {
   const params = new URLSearchParams({ plano: String(planKey || DEFAULT_PLAN_KEY) });
-  const promoCode = normalizePromoCode(promo || ref);
-  if (promoCode) params.set('promo', promoCode);
+  const affiliateRef = normalizeAffiliateRef(ref);
+  if (affiliateRef) params.set('ref', affiliateRef);
   return `/cadastro?${params.toString()}`;
 };

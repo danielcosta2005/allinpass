@@ -27,7 +27,6 @@ type CheckoutSessionRow = {
   establishment_name: string;
   amount_cents: number;
   currency: string;
-  promo_code: string | null;
   affiliate_code: string | null;
 };
 
@@ -211,7 +210,7 @@ Deno.serve(async (req) => {
     const { data: checkoutData, error: checkoutError } = await supabaseAdmin
       .from("signup_checkout_sessions")
       .select(
-        "id, plan_id, plan_code, status, checkout_url, expires_at, paid_at, created_at, updated_at, establishment_name, amount_cents, currency, promo_code, affiliate_code",
+        "id, plan_id, plan_code, status, checkout_url, expires_at, paid_at, created_at, updated_at, establishment_name, amount_cents, currency, affiliate_code",
       )
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
@@ -272,14 +271,8 @@ Deno.serve(async (req) => {
       paid_at: latestSession?.paid_at ?? null,
       amount_cents: latestSession?.amount_cents ?? null,
       currency: latestSession?.currency ?? null,
-      promo_code: latestSession
-        ? latestSession.promo_code ?? latestSession.affiliate_code ?? null
-        : user.user_metadata?.promo_code ??
-          user.user_metadata?.affiliate_ref ??
-          null,
-      affiliate_ref: latestSession
-        ? latestSession.affiliate_code ?? null
-        : user.user_metadata?.affiliate_ref ?? null,
+      affiliate_ref: latestSession?.affiliate_code ??
+        user.user_metadata?.affiliate_ref ?? null,
       updated_at: latestSession?.updated_at ??
         existingCustomerIntent?.updated_at ?? null,
     });

@@ -4,7 +4,7 @@ import {
   getFunctionErrorMessage,
   readFunctionErrorPayload,
 } from '@/lib/functionErrors';
-import { normalizePromoCode } from '@/lib/subscriptionPlans';
+import { normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
 const FINALIZE_DEDUPE_TTL_MS = 60_000;
 const SIGNUP_STATUS_DEDUPE_TTL_MS = 5_000;
@@ -93,7 +93,7 @@ export function readExistingCustomerSignupContext() {
     const establishmentName = String(parsed?.establishmentName || '').trim();
     const planCode = String(parsed?.planCode || 'free_trial').trim().toLowerCase();
     const planKey = String(parsed?.planKey || '').trim().toLowerCase();
-    const promoCode = normalizePromoCode(parsed?.promoCode || parsed?.affiliateRef);
+    const affiliateRef = normalizeAffiliateRef(parsed?.affiliateRef);
     const createdAt = Number(parsed?.createdAt || 0);
     const passwordSetupCompletedAt = Number(parsed?.passwordSetupCompletedAt || 0);
     const now = Date.now();
@@ -109,8 +109,7 @@ export function readExistingCustomerSignupContext() {
       establishmentName,
       planCode: planCode || 'free_trial',
       planKey,
-      promoCode,
-      affiliateRef: promoCode,
+      affiliateRef,
       createdAt,
       passwordSetupCompletedAt: Number.isFinite(passwordSetupCompletedAt)
         ? passwordSetupCompletedAt
@@ -127,7 +126,6 @@ export function rememberExistingCustomerSignupContext({
   establishmentName,
   planCode = 'free_trial',
   planKey = '',
-  promoCode = '',
   affiliateRef = '',
 }) {
   if (typeof window === 'undefined') return;
@@ -136,7 +134,7 @@ export function rememberExistingCustomerSignupContext({
   const normalizedEstablishmentName = String(establishmentName || '').trim();
   const normalizedPlanCode = String(planCode || 'free_trial').trim().toLowerCase();
   const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
-  const normalizedPromoCode = normalizePromoCode(promoCode || affiliateRef);
+  const normalizedAffiliateRef = normalizeAffiliateRef(affiliateRef);
 
   if (!normalizedEmail || !normalizedEstablishmentName) {
     clearExistingCustomerSignupContext();
@@ -148,8 +146,7 @@ export function rememberExistingCustomerSignupContext({
     establishmentName: normalizedEstablishmentName,
     planCode: normalizedPlanCode || 'free_trial',
     planKey: normalizedPlanKey,
-    promoCode: normalizedPromoCode,
-    affiliateRef: normalizedPromoCode,
+    affiliateRef: normalizedAffiliateRef,
     createdAt: Date.now(),
     passwordSetupCompletedAt: 0,
   };
@@ -188,7 +185,6 @@ export async function finalizeSignup({
   establishmentName,
   planCode = 'free_trial',
   checkoutSessionId = '',
-  promoCode = '',
   affiliateRef = '',
   dedupeKey = '',
   initialDelayMs = 0,
@@ -229,7 +225,6 @@ export async function finalizeSignup({
             establishmentName,
             planCode,
             checkoutSessionId,
-            promoCode,
             affiliateRef,
           },
         });
@@ -298,7 +293,6 @@ export function markExistingCustomerSignupPasswordReady({
   establishmentName = '',
   planCode = '',
   planKey = '',
-  promoCode = '',
   affiliateRef = '',
 } = {}) {
   if (typeof window === 'undefined') return;
@@ -306,7 +300,7 @@ export function markExistingCustomerSignupPasswordReady({
   const normalizedEmail = String(email || '').trim().toLowerCase();
   const normalizedPlanCode = String(planCode || '').trim().toLowerCase();
   const normalizedPlanKey = String(planKey || '').trim().toLowerCase();
-  const normalizedPromoCode = normalizePromoCode(promoCode || affiliateRef);
+  const normalizedAffiliateRef = normalizeAffiliateRef(affiliateRef);
   const currentContext = readExistingCustomerSignupContext();
   const currentMatchesEmail = currentContext?.email === normalizedEmail;
   const normalizedEstablishmentName = String(
@@ -322,8 +316,7 @@ export function markExistingCustomerSignupPasswordReady({
     establishmentName: normalizedEstablishmentName,
     planCode: normalizedPlanCode || currentContext?.planCode || 'free_trial',
     planKey: normalizedPlanKey || currentContext?.planKey || '',
-    promoCode: normalizedPromoCode || currentContext?.promoCode || currentContext?.affiliateRef || '',
-    affiliateRef: normalizedPromoCode || currentContext?.promoCode || currentContext?.affiliateRef || '',
+    affiliateRef: normalizedAffiliateRef || currentContext?.affiliateRef || '',
     createdAt: currentMatchesEmail ? currentContext.createdAt : Date.now(),
     passwordSetupCompletedAt: Date.now(),
   };
@@ -350,16 +343,13 @@ export async function finalizeFreeTrialSignup({
 export async function startPaidSignupCheckout({
   establishmentName,
   planCode,
-  promoCode = '',
   affiliateRef,
 }) {
-  const normalizedPromoCode = normalizePromoCode(promoCode || affiliateRef);
   const { data, error, response } = await supabase.functions.invoke('signup-start-checkout', {
     body: {
       establishmentName,
       planCode,
-      promoCode: normalizedPromoCode,
-      affiliateRef: normalizedPromoCode,
+      affiliateRef,
     },
   });
 
@@ -407,8 +397,7 @@ function normalizeSignupStatusResponse(data) {
     paidAt: data?.paid_at || null,
     amount_cents: data?.amount_cents ?? null,
     currency: data?.currency || null,
-    promoCode: normalizePromoCode(data?.promo_code || data?.affiliate_ref),
-    affiliateRef: normalizePromoCode(data?.affiliate_ref || data?.promo_code),
+    affiliateRef: normalizeAffiliateRef(data?.affiliate_ref),
     updatedAt: data?.updated_at || null,
   };
 }
@@ -466,17 +455,9 @@ export async function sendExistingCustomerSignupLink({
   establishmentName,
   planCode = 'free_trial',
   planKey = '',
-  promoCode = '',
   affiliateRef = '',
 }) {
-  rememberExistingCustomerSignupContext({
-    email,
-    establishmentName,
-    planCode,
-    planKey,
-    promoCode,
-    affiliateRef,
-  });
+  rememberExistingCustomerSignupContext({ email, establishmentName, planCode, planKey, affiliateRef });
 
   const { error } = await supabase.auth.signInWithOtp({
     email,

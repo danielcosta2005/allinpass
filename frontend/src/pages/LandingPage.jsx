@@ -11,7 +11,7 @@ import {
 import ConsentBanner from '@/components/landing/ConsentBanner';
 import PrivacyPolicyModal from '@/components/landing/PrivacyPolicyModal';
 import { useToast } from '@/components/ui/use-toast';
-import { resolvePromotionalCode } from '@/lib/affiliates';
+import { resolveAffiliateRef } from '@/lib/affiliates';
 import {
   Wallet,
   Smartphone,
@@ -37,7 +37,7 @@ import {
   buildSignupPath,
   fetchSubscriptionPlans,
   formatAffiliateDiscountPercent,
-  normalizePromoCode,
+  normalizeAffiliateRef,
   subscriptionPlans,
 } from '@/lib/subscriptionPlans';
 import PlanCard from '@/components/landing/PlanCard';
@@ -661,7 +661,7 @@ const HowItWorks = () => {
 };
 
 const Pricing = ({ plans, affiliateOffer = null }) => {
-  const promoCode = affiliateOffer?.valid ? affiliateOffer.code : '';
+  const affiliateRef = affiliateOffer?.valid ? affiliateOffer.code : '';
   const affiliateDiscountPercent = affiliateOffer?.valid
     ? formatAffiliateDiscountPercent(affiliateOffer)
     : '';
@@ -702,7 +702,7 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
             >
               <BadgePercent className="h-4 w-4" />
               <span>
-                Codigo promocional aplicado: {affiliateDiscountPercent}% de desconto no primeiro mes.
+                Condição especial aplicada: {affiliateDiscountPercent}% de desconto no primeiro mês pelo link de vendedor.
               </span>
             </motion.div>
           ) : null}
@@ -724,7 +724,7 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
             >
               <PlanCard
                 plan={p}
-                ctaTo={buildSignupPath(p.key, { promo: promoCode })}
+                ctaTo={buildSignupPath(p.key, { ref: affiliateRef })}
                 affiliateOffer={p.type === 'paid' ? affiliateOffer : null}
                 limitedPromotion={p.type === 'paid' ? LIMITED_FIRST_100_PROMOTION : null}
                 onCtaClick={() => {
@@ -739,8 +739,7 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
                     plan_code: p.code,
                     plan_name: p.name,
                     plan_price: Number(p.price) || 0,
-                    promo_code_present: Boolean(promoCode),
-                    affiliate_ref_present: Boolean(promoCode),
+                    affiliate_ref_present: Boolean(affiliateRef),
                   });
                 }}
               />
@@ -983,15 +982,12 @@ const LandingPage = () => {
 
   useEffect(() => {
     let mounted = true;
-    const searchParams = typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search)
-      : null;
-    const rawCode = searchParams
-      ? searchParams.get('promo') || searchParams.get('ref')
+    const rawRef = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('ref')
       : '';
-    const normalizedCode = normalizePromoCode(rawCode);
+    const normalizedRef = normalizeAffiliateRef(rawRef);
 
-    if (!normalizedCode) {
+    if (!normalizedRef) {
       setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
       return () => {
         mounted = false;
@@ -999,7 +995,7 @@ const LandingPage = () => {
     }
 
     const loadAffiliateOffer = async () => {
-      const result = await resolvePromotionalCode(normalizedCode);
+      const result = await resolveAffiliateRef(normalizedRef);
       if (!mounted) return;
       setAffiliateOffer(result?.valid ? result : { valid: false, code: '', discountBps: 0 });
     };

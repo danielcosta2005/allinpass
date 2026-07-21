@@ -231,16 +231,6 @@ function getMetadata(value: unknown) {
     : {};
 }
 
-function getAffiliateCommissionRateBps(
-  attribution: AffiliateAttributionWebhookMatch,
-) {
-  const metadata = getMetadata(attribution.metadata);
-  const rawRate = Number(metadata.commission_bps ?? metadata.commission_rate_bps);
-  if (!Number.isFinite(rawRate)) return AFFILIATE_COMMISSION_RATE_BPS;
-
-  return Math.max(0, Math.min(10000, Math.trunc(rawRate)));
-}
-
 function addDaysIso(value: string, days: number) {
   const date = new Date(value);
   date.setUTCDate(date.getUTCDate() + days);
@@ -1219,9 +1209,8 @@ async function createAffiliateCommission(
   const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
   if (eligibleAmountCents <= 0) return false;
 
-  const commissionRateBps = getAffiliateCommissionRateBps(attribution);
   const commissionCents = Math.round(
-    (eligibleAmountCents * commissionRateBps) / 10000,
+    (eligibleAmountCents * AFFILIATE_COMMISSION_RATE_BPS) / 10000,
   );
   const competenceMonth = getCompetenceMonth(options.paidAt);
   const billingCycleId = await findBillingCycleIdForCommission(
@@ -1248,7 +1237,7 @@ async function createAffiliateCommission(
       options.event,
     ),
     eligible_amount_cents: eligibleAmountCents,
-    commission_rate_bps: commissionRateBps,
+    commission_rate_bps: AFFILIATE_COMMISSION_RATE_BPS,
     commission_cents: commissionCents,
     currency: readString(subscription.currency || "BRL").toUpperCase() || "BRL",
     status: "pending",
@@ -1261,7 +1250,6 @@ async function createAffiliateCommission(
       provider_customer_id: options.providerCustomerId ?? null,
       payment_value_cents: paidAmountCents,
       subscription_base_price_cents: basePriceCents,
-      commission_bps: commissionRateBps,
       billing_cycle_id: billingCycleId,
     },
   };
