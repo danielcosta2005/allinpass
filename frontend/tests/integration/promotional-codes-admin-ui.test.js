@@ -94,6 +94,8 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("Etapa 2");
     expect(source).toContain("Criar vendedor e cupom");
     expect(source).toContain('placeholder="Nome, telefone ou email"');
+    expect(source).toContain("Sem validade");
+    expect(source).toContain("text-transparent");
     expect(source).not.toContain('htmlFor="affiliate-contact"');
     expect(source).not.toContain('id="affiliate-contact"');
     expect(source).not.toContain('handleSellerFormChange(\'contact\'');

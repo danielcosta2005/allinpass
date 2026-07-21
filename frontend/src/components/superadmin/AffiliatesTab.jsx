@@ -2118,13 +2118,21 @@ const AffiliatesTab = () => {
 
                   <div className="space-y-2">
                     <Label htmlFor="coupon-valid-until">Validade</Label>
-                    <Input
-                      id="coupon-valid-until"
-                      type="date"
-                      value={couponForm.validUntil}
-                      onChange={(event) => handleCouponFormChange('validUntil', event.target.value)}
-                      disabled={submitting}
-                    />
+                    <div className="relative">
+                      {!couponForm.validUntil && (
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                          Sem validade
+                        </span>
+                      )}
+                      <Input
+                        id="coupon-valid-until"
+                        type="date"
+                        value={couponForm.validUntil}
+                        onChange={(event) => handleCouponFormChange('validUntil', event.target.value)}
+                        disabled={submitting}
+                        className={!couponForm.validUntil ? 'text-transparent' : undefined}
+                      />
+                    </div>
                   </div>
                 </div>
 
