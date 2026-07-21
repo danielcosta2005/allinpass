@@ -65,8 +65,7 @@ describe("affiliate recurring commissions", () => {
     expect(webhookSource).toContain("PAYMENT_CONFIRMED");
     expect(webhookSource).toContain("PAYMENT_RECEIVED");
     expect(webhookSource).toContain("isPaidPaymentEvent(event, paymentStatus)");
-    expect(webhookSource).toContain("eligibleAmountCents");
-    expect(webhookSource).toContain("Math.min");
+    expect(webhookSource).toContain("const eligibleAmountCents = basePriceCents;");
     expect(webhookSource).toContain("commissionCents");
     expect(webhookSource).toContain("competenceMonth");
     expect(webhookSource).toContain("provider_payment_id");
@@ -74,6 +73,7 @@ describe("affiliate recurring commissions", () => {
     expect(webhookSource).toContain("status: \"pending\"");
     expect(webhookSource).toContain("status: \"void\"");
     expect(webhookSource).toContain("status: \"pending_finance_review\"");
+    expect(webhookSource).not.toContain("Math.min(paidAmountCents, basePriceCents)");
     expect(webhookSource).not.toContain("total_overage");
     expect(webhookSource).not.toContain("AFFILIATE_COMMISSION_RATE_BPS = 1000");
 

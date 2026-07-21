@@ -18,9 +18,18 @@ describe("billing usage dashboard", () => {
     expect(billingSource).toContain(".from('billing_invoices')");
     expect(billingSource).toContain(".from('billing_invoice_collection_batches')");
     expect(billingSource).toContain("updated_payment_cents");
+    expect(billingSource).toContain("subtotal_cents");
+    expect(billingSource).toContain("discount_cents");
+    expect(billingSource).toContain("metadata");
+    expect(billingSource).toContain("checkout_session_id");
+    expect(billingSource).toContain("function isFirstMonthDiscountedInvoice");
     expect(billingSource).toContain("totalInvoiceCents");
     expect(billingSource).toContain("basePriceCents");
     expect(billingSource).toContain("overageCents");
+    expect(billingSource).toContain("discountCents");
+    expect(billingSource).toContain("isFirstMonthDiscounted");
+    expect(billingSource).toContain("invoice?.isFirstMonthDiscounted");
+    expect(billingSource).toContain("firstMonthInvoice.amountPaidCents || firstMonthInvoice.totalCents");
 
     expect(hookSource).toContain("useBillingUsageDashboard");
     expect(hookSource).toContain("getBillingUsageDashboard");
@@ -38,6 +47,7 @@ describe("billing usage dashboard", () => {
     expect(dialogSource).toContain("Fatura em atraso");
     expect(dialogSource).toContain("Fatura sem excedente");
     expect(dialogSource).toContain("Assinatura");
+    expect(dialogSource).toContain("Desconto");
     expect(dialogSource).toContain("Excedente");
     expect(dialogSource).toContain("Total da fatura");
     expect(dialogSource).toContain("Ver fatura atual");

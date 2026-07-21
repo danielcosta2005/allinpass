@@ -1293,7 +1293,7 @@ async function createAffiliateCommission(
     | null;
   if (!attribution) return false;
 
-  const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
+  const eligibleAmountCents = basePriceCents;
   if (eligibleAmountCents <= 0) return false;
 
   const commissionRateBps = resolveAttributionCommissionBps(attribution);
@@ -1429,6 +1429,21 @@ async function handleAffiliateCommissionClawback(
     }
 
     if (commission.status === "paid" && commissionCents > 0) {
+      const { data: existingReversal, error: existingReversalError } =
+        await supabaseAdmin
+          .from("affiliate_commission_reversals")
+          .select("id")
+          .eq("commission_id", commission.id)
+          .eq("provider_payment_id", options.providerPaymentId)
+          .limit(1)
+          .maybeSingle();
+
+      if (existingReversalError) throw existingReversalError;
+      if (existingReversal) {
+        handled = true;
+        continue;
+      }
+
       const { error: reversalError } = await supabaseAdmin
         .from("affiliate_commission_reversals")
         .insert({

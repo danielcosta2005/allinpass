@@ -2,6 +2,24 @@ import { getBillingSubscriptionForAccess } from '@/lib/billing';
 import { supabase } from '@/lib/supabaseClient';
 
 const DEFAULT_HISTORY_LIMIT = 12;
+const BILLING_INVOICE_SELECT_FIELDS = [
+  'id',
+  'subscription_id',
+  'billing_cycle_id',
+  'collection_batch_id',
+  'invoice_number',
+  'status',
+  'currency',
+  'subtotal_cents',
+  'discount_cents',
+  'total_cents',
+  'amount_due_cents',
+  'amount_paid_cents',
+  'metadata',
+  'checkout_session_id',
+  'due_at',
+  'paid_at',
+].join(', ');
 
 function toNumber(value) {
   const numberValue = Number(value || 0);
@@ -21,6 +39,19 @@ function isSameInstant(left, right) {
 
 function normalizeStatus(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeMetadata(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function isFirstMonthDiscountedInvoice(row) {
+  const metadata = normalizeMetadata(row?.metadata);
+  const status = normalizeStatus(row?.status);
+  return (metadata.invoice_kind || row?.invoiceKind) === 'subscription_first_month'
+    && toNumber(row?.discount_cents ?? row?.discountCents) > 0
+    && !['canceled', 'failed'].includes(status)
+    && Boolean(row?.checkout_session_id ?? row?.checkoutSessionId);
 }
 
 function normalizeSummary(row) {
@@ -49,6 +80,9 @@ function normalizeSummary(row) {
 function normalizeInvoice(row) {
   if (!row) return null;
 
+  const metadata = normalizeMetadata(row.metadata);
+  const invoiceKind = metadata.invoice_kind || null;
+
   return {
     id: row.id,
     subscriptionId: row.subscription_id,
@@ -57,9 +91,13 @@ function normalizeInvoice(row) {
     invoiceNumber: row.invoice_number || null,
     status: normalizeStatus(row.status),
     currency: row.currency || 'BRL',
+    subtotalCents: toNumber(row.subtotal_cents),
+    discountCents: toNumber(row.discount_cents),
     totalCents: toNumber(row.total_cents),
     amountDueCents: toNumber(row.amount_due_cents || row.total_cents),
     amountPaidCents: toNumber(row.amount_paid_cents),
+    invoiceKind,
+    isFirstMonthDiscounted: isFirstMonthDiscountedInvoice(row),
     dueAt: row.due_at || null,
     paidAt: row.paid_at || null,
   };
@@ -110,6 +148,35 @@ function groupInvoicesByCycle(invoices) {
   }
 
   return grouped;
+}
+
+function dedupeInvoices(invoices) {
+  const deduped = new Map();
+
+  for (const invoice of invoices) {
+    if (!invoice?.id || deduped.has(invoice.id)) continue;
+    deduped.set(invoice.id, invoice);
+  }
+
+  return [...deduped.values()];
+}
+
+function findFirstMonthInvoiceForSummary(summary, invoices) {
+  const periodStart = toDateMs(summary.periodStart);
+  const periodEnd = toDateMs(summary.periodEnd);
+
+  return invoices.find((invoice) => {
+    if (!invoice?.isFirstMonthDiscounted) return false;
+    if (invoice.subscriptionId !== summary.subscriptionId) return false;
+    if (invoice.billingCycleId) return invoice.billingCycleId === summary.billingCycleId;
+
+    const paidAt = toDateMs(invoice.paidAt || invoice.dueAt);
+    return Number.isFinite(periodStart)
+      && Number.isFinite(periodEnd)
+      && Number.isFinite(paidAt)
+      && periodStart <= paidAt
+      && paidAt < periodEnd;
+  }) || null;
 }
 
 function getCurrentCycleMatch(summary, subscription) {
@@ -164,13 +231,36 @@ function buildSyntheticCurrentSummary(subscription, projectId) {
   };
 }
 
-function buildDashboardCycle(summary, { currentSubscription, invoice, batch, subscriptionSnapshot }) {
+function isRefundedInvoice(invoice) {
+  return normalizeStatus(invoice?.status) === 'refunded';
+}
+
+function buildDashboardCycle(summary, {
+  currentSubscription,
+  invoice,
+  firstMonthInvoice,
+  batch,
+  subscriptionSnapshot,
+}) {
   const isCurrent = getCurrentCycleMatch(summary, currentSubscription);
   const subscriptionBasePriceCents = isCurrent
     ? toNumber(currentSubscription?.basePriceCents)
     : toNumber(subscriptionSnapshot?.basePriceCents || currentSubscription?.basePriceCents);
   const batchBasePriceCents = toNumber(batch?.originalSubscriptionPaymentCents);
-  const basePriceCents = batchBasePriceCents > 0 ? batchBasePriceCents : subscriptionBasePriceCents;
+  const firstMonthBasePriceCents = firstMonthInvoice?.isFirstMonthDiscounted ? toNumber(firstMonthInvoice.subtotalCents) : 0;
+  const basePriceCents = firstMonthBasePriceCents > 0
+    ? firstMonthBasePriceCents
+    : batchBasePriceCents > 0
+      ? batchBasePriceCents
+      : subscriptionBasePriceCents;
+  const discountCents = firstMonthInvoice?.isFirstMonthDiscounted
+    ? toNumber(firstMonthInvoice.discountCents)
+    : 0;
+  const firstMonthChargeCents = firstMonthInvoice?.isFirstMonthDiscounted
+    ? isRefundedInvoice(firstMonthInvoice)
+      ? 0
+      : toNumber(firstMonthInvoice.amountPaidCents || firstMonthInvoice.totalCents)
+    : null;
   const invoiceOverageCents = toNumber(invoice?.amountDueCents || invoice?.totalCents);
   const batchOverageCents = toNumber(batch?.overageCents);
   const overageCents = isCurrent
@@ -181,21 +271,32 @@ function buildDashboardCycle(summary, { currentSubscription, invoice, batch, sub
         ? (invoiceOverageCents || summary.totalOverageCents)
         : summary.totalOverageCents;
   const updatedPaymentCents = toNumber(batch?.updatedPaymentCents);
-  const totalInvoiceCents = isCurrent
-    ? basePriceCents + summary.totalOverageCents
-    : updatedPaymentCents || basePriceCents + overageCents;
+  const baseWithDiscountCents = firstMonthChargeCents ?? Math.max(0, basePriceCents - discountCents);
+  const totalInvoiceCents = firstMonthInvoice?.isFirstMonthDiscounted
+    ? baseWithDiscountCents + overageCents
+    : isCurrent
+      ? basePriceCents + summary.totalOverageCents
+      : updatedPaymentCents || basePriceCents + overageCents;
 
   return {
     ...summary,
     isCurrent,
     invoice,
+    firstMonthInvoice: firstMonthInvoice
+      ? {
+        id: firstMonthInvoice.id,
+        status: firstMonthInvoice.status,
+        paidAt: firstMonthInvoice.paidAt,
+      }
+      : null,
     batch,
     basePriceCents,
+    discountCents,
     overageCents,
     totalInvoiceCents,
     currency: batch?.currency || invoice?.currency || subscriptionSnapshot?.currency || currentSubscription?.currency || 'BRL',
-    status: isCurrent ? 'current' : normalizeStatus(batch?.status || invoice?.status || ''),
-    title: getCycleTitle({ isCurrent, invoice, batch, overageCents }),
+    status: isCurrent ? 'current' : normalizeStatus(batch?.status || invoice?.status || firstMonthInvoice?.status || ''),
+    title: getCycleTitle({ isCurrent, invoice: invoice || firstMonthInvoice, batch, overageCents }),
   };
 }
 
@@ -250,25 +351,20 @@ export async function getBillingUsageDashboard(projectId) {
   const billingCycleIds = [...new Set(summaries.map((summary) => summary.billingCycleId).filter(Boolean))];
   const subscriptionIds = [...new Set(summaries.map((summary) => summary.subscriptionId).filter(Boolean))];
 
-  const [invoicesResult, subscriptionsResult] = await Promise.all([
+  const [cycleInvoicesResult, firstMonthInvoicesResult, subscriptionsResult] = await Promise.all([
     billingCycleIds.length > 0
       ? supabase
         .from('billing_invoices')
-        .select([
-          'id',
-          'subscription_id',
-          'billing_cycle_id',
-          'collection_batch_id',
-          'invoice_number',
-          'status',
-          'currency',
-          'total_cents',
-          'amount_due_cents',
-          'amount_paid_cents',
-          'due_at',
-          'paid_at',
-        ].join(', '))
+        .select(BILLING_INVOICE_SELECT_FIELDS)
         .in('billing_cycle_id', billingCycleIds)
+        .order('created_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    subscriptionIds.length > 0
+      ? supabase
+        .from('billing_invoices')
+        .select(BILLING_INVOICE_SELECT_FIELDS)
+        .in('subscription_id', subscriptionIds)
+        .eq('metadata->>invoice_kind', 'subscription_first_month')
         .order('created_at', { ascending: false })
       : Promise.resolve({ data: [], error: null }),
     subscriptionIds.length > 0
@@ -279,11 +375,17 @@ export async function getBillingUsageDashboard(projectId) {
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  if (invoicesResult.error) throw invoicesResult.error;
+  if (cycleInvoicesResult.error) throw cycleInvoicesResult.error;
+  if (firstMonthInvoicesResult.error) throw firstMonthInvoicesResult.error;
   if (subscriptionsResult.error) throw subscriptionsResult.error;
 
-  const invoices = (Array.isArray(invoicesResult.data) ? invoicesResult.data : []).map(normalizeInvoice);
-  const invoicesByCycle = groupInvoicesByCycle(invoices);
+  const invoices = dedupeInvoices([
+    ...(Array.isArray(cycleInvoicesResult.data) ? cycleInvoicesResult.data : []),
+    ...(Array.isArray(firstMonthInvoicesResult.data) ? firstMonthInvoicesResult.data : []),
+  ].map(normalizeInvoice));
+  const cycleInvoices = invoices.filter((invoice) => !invoice.isFirstMonthDiscounted);
+  const invoicesByCycle = groupInvoicesByCycle(cycleInvoices);
+  const firstMonthInvoices = invoices.filter((invoice) => invoice.isFirstMonthDiscounted);
   const collectionBatchIds = [...new Set(invoices.map((invoice) => invoice.collectionBatchId).filter(Boolean))];
   const batchesResult = collectionBatchIds.length > 0
     ? await supabase
@@ -318,10 +420,18 @@ export async function getBillingUsageDashboard(projectId) {
     }));
 
   const cycles = summaries.map((summary) => {
-    const invoice = invoicesByCycle.get(summary.billingCycleId) || null;
+    const invoice = invoicesByCycle.get(summary.billingCycleId)
+      || null;
+    const firstMonthInvoice = findFirstMonthInvoiceForSummary(summary, firstMonthInvoices);
     const batch = invoice?.collectionBatchId ? batchesById.get(invoice.collectionBatchId) || null : null;
     const subscriptionSnapshot = subscriptionsById.get(summary.subscriptionId) || null;
-    return buildDashboardCycle(summary, { currentSubscription, invoice, batch, subscriptionSnapshot });
+    return buildDashboardCycle(summary, {
+      currentSubscription,
+      invoice,
+      firstMonthInvoice,
+      batch,
+      subscriptionSnapshot,
+    });
   });
   const currentCycle = cycles.find((cycle) => cycle.isCurrent) || cycles[0] || null;
 

@@ -864,7 +864,92 @@ async function findBillingCycleIdForAffiliateCommission(
 
   if (error) throw error;
   const cycle = data as { id?: string } | null;
-  return cycle?.id ?? null;
+  if (cycle?.id) return cycle.id;
+
+  const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+    .from("billing_cycles")
+    .select("id")
+    .eq("subscription_id", subscriptionId)
+    .eq("cycle_type", "subscription")
+    .order("period_start", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallbackError) throw fallbackError;
+  const fallbackCycle = fallbackData as { id?: string } | null;
+  return fallbackCycle?.id ?? null;
+}
+
+function getFirstMonthInvoiceSnapshotAmounts(
+  plan: BillingPlan,
+  paidCheckoutSession: SignupCheckoutSessionRow,
+  promotionalRedemption: PromotionalRedemptionRow | null,
+) {
+  const basePriceCents = Math.max(
+    0,
+    Math.trunc(
+      Number(
+        promotionalRedemption?.base_amount_cents ??
+          paidCheckoutSession.affiliate_original_amount_cents ??
+          plan.base_price_cents ??
+          0,
+      ),
+    ),
+  );
+  const discountCents = Math.max(
+    0,
+    Math.trunc(
+      Number(
+        promotionalRedemption?.discount_cents ??
+          paidCheckoutSession.affiliate_discount_cents ??
+          0,
+      ),
+    ),
+  );
+  const invoiceTotalCents = Math.max(
+    0,
+    Math.trunc(
+      Number(
+        promotionalRedemption?.final_amount_cents ??
+          basePriceCents - discountCents,
+      ),
+    ),
+  );
+  const paidAmountCents = Math.max(
+    0,
+    Math.trunc(Number(paidCheckoutSession.amount_cents || 0)),
+  );
+
+  return { basePriceCents, discountCents, invoiceTotalCents, paidAmountCents };
+}
+
+function assertFirstMonthInvoiceSnapshotMatchesPaidCheckout(
+  plan: BillingPlan,
+  paidCheckoutSession: SignupCheckoutSessionRow,
+  promotionalRedemption: PromotionalRedemptionRow | null,
+) {
+  const amounts = getFirstMonthInvoiceSnapshotAmounts(
+    plan,
+    paidCheckoutSession,
+    promotionalRedemption,
+  );
+  const computedInvoiceTotalCents = Math.max(
+    0,
+    amounts.basePriceCents - amounts.discountCents,
+  );
+
+  if (
+    amounts.paidAmountCents !== amounts.invoiceTotalCents ||
+    computedInvoiceTotalCents !== amounts.invoiceTotalCents
+  ) {
+    throw new SignupFinalizeError(
+      "SIGNUP_FINALIZE_PAYMENT_AMOUNT_MISMATCH",
+      "Valor pago nao corresponde ao desconto confirmado.",
+      409,
+    );
+  }
+
+  return amounts;
 }
 
 async function createFirstMonthInvoice({
@@ -886,22 +971,12 @@ async function createFirstMonthInvoice({
 }): Promise<FirstMonthInvoiceRow | null> {
   if (!paidCheckoutSession?.paid_at) return null;
 
-  const basePriceCents = Math.max(
-    0,
-    Math.trunc(
-      Number(
-        promotionalRedemption?.base_amount_cents ?? plan.base_price_cents ?? 0,
-      ),
-    ),
-  );
-  const discountCents = Math.max(
-    0,
-    Math.trunc(Number(promotionalRedemption?.discount_cents ?? 0)),
-  );
-  const paidAmountCents = Math.max(
-    0,
-    Math.trunc(Number(paidCheckoutSession.amount_cents || 0)),
-  );
+  const { basePriceCents, discountCents, invoiceTotalCents } =
+    assertFirstMonthInvoiceSnapshotMatchesPaidCheckout(
+      plan,
+      paidCheckoutSession,
+      promotionalRedemption,
+    );
   const billingCycleId = await findBillingCycleIdForAffiliateCommission(
     supabaseAdmin,
     subscriptionId,
@@ -920,7 +995,7 @@ async function createFirstMonthInvoice({
     subtotal_cents: basePriceCents,
     tax_cents: 0,
     discount_cents: discountCents,
-    amount_paid_cents: paidAmountCents,
+    amount_paid_cents: invoiceTotalCents,
     amount_due_cents: 0,
     issued_at: paidCheckoutSession.paid_at,
     due_at: paidCheckoutSession.paid_at,
@@ -987,7 +1062,14 @@ async function confirmPromotionalCodeRedemption(
     },
   );
 
-  if (!error) return data;
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : data;
+    const result = row && typeof row === "object"
+      ? row as Record<string, unknown>
+      : {};
+
+    if (result.success === true) return data;
+  }
 
   throw new SignupFinalizeError(
     "SIGNUP_FINALIZE_PROMO_CONFIRMATION_FAILED",
@@ -1309,6 +1391,12 @@ Deno.serve(async (req) => {
           409,
         );
       }
+
+      assertFirstMonthInvoiceSnapshotMatchesPaidCheckout(
+        plan,
+        paidCheckoutSession,
+        promotionalRedemption,
+      );
     }
 
     const finalizationClaim = await claimSignupFinalization(
@@ -1638,6 +1726,11 @@ Deno.serve(async (req) => {
         );
       }
 
+      const promotionalCodeConfirmation =
+        await confirmPromotionalCodeRedemption(
+          supabaseAdmin,
+          paidCheckoutSession,
+        );
       const firstMonthInvoice = await createFirstMonthInvoice({
         supabaseAdmin,
         paidCheckoutSession,
@@ -1647,11 +1740,6 @@ Deno.serve(async (req) => {
         billingAccountId,
         plan,
       });
-      const promotionalCodeConfirmation =
-        await confirmPromotionalCodeRedemption(
-          supabaseAdmin,
-          paidCheckoutSession,
-        );
       const recurringPriceRestoreResult =
         await restoreAsaasSubscriptionBasePrice({
           plan,

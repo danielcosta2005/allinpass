@@ -89,7 +89,7 @@ describe("promotional code edge functions", () => {
     expect(source).not.toContain("AFFILIATE_COMMISSION_RATE_BPS = 1000");
 
     expectInOrder(source, "getPaidCheckoutSession", "getPromotionalRedemptionSnapshot");
-    expectInOrder(source, "createFirstMonthInvoice", "confirmPromotionalCodeRedemption");
+    expectInOrder(source, "const promotionalCodeConfirmation", "const firstMonthInvoice = await createFirstMonthInvoice");
   });
 
   test("asaas-webhook releases terminal checkout reservations and applies snapshot-based commission clawbacks", () => {

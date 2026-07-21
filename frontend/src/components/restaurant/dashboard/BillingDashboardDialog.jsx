@@ -250,7 +250,9 @@ function UsageBarChart({ cycle, icon: Icon, resource, title }) {
 function AmountTile({ label, value, tone = 'default' }) {
   const toneClass = tone === 'strong'
     ? 'border-primary/30 bg-primary/10 text-foreground'
-    : 'border-border bg-card text-foreground';
+    : tone === 'discount'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+      : 'border-border bg-card text-foreground';
 
   return (
     <div className={`rounded-lg border p-4 ${toneClass}`}>
@@ -618,8 +620,11 @@ function BillingDashboardDialog({
                     ) : null}
                   </div>
 
-                  <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className={`mt-5 grid gap-3 ${selectedCycle.discountCents > 0 ? 'md:grid-cols-4' : 'md:grid-cols-3'}`}>
                     <AmountTile label="Assinatura" value={selectedCycle.basePriceCents} />
+                    {selectedCycle.discountCents > 0 ? (
+                      <AmountTile label="Desconto" value={-selectedCycle.discountCents} tone="discount" />
+                    ) : null}
                     <AmountTile label="Excedente" value={selectedCycle.overageCents} />
                     <AmountTile label="Total da fatura" value={selectedCycle.totalInvoiceCents} tone="strong" />
                   </div>
