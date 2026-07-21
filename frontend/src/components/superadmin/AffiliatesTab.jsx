@@ -48,7 +48,6 @@ const COMMISSION_PAGE_SIZE = 25;
 const CLIENT_PAGE_SIZE = 20;
 const EMPTY_SELLER_FORM = {
   name: '',
-  contact: '',
   phone: '',
   email: '',
   pixKey: '',
@@ -518,7 +517,6 @@ const AffiliatesTab = () => {
   const openEditDialog = (seller) => {
     setSellerForm({
       name: seller.name || '',
-      contact: seller.contact || '',
       phone: seller.phone || '',
       email: seller.email || '',
       pixKey: seller.pixKey || '',
@@ -706,7 +704,7 @@ const AffiliatesTab = () => {
   };
 
   const validateSellerStep = () => {
-    const hasContactRoute = sellerForm.phone.trim() || sellerForm.email.trim() || sellerForm.contact.trim();
+    const hasContactRoute = sellerForm.phone.trim() || sellerForm.email.trim();
 
     if (!sellerForm.name.trim() || !sellerForm.pixKey.trim() || !hasContactRoute) {
       toast({
@@ -858,7 +856,7 @@ const AffiliatesTab = () => {
 
     const payload = {
       name: sellerForm.name.trim(),
-      contact: sellerForm.contact.trim(),
+      contact: sellerForm.email.trim() || sellerForm.phone.trim(),
       phone: sellerForm.phone.trim(),
       email: sellerForm.email.trim(),
       pixKey: sellerForm.pixKey.trim(),
@@ -866,10 +864,10 @@ const AffiliatesTab = () => {
     };
 
     if (!isCouponFormMode) {
-      if (!payload.name || !(payload.contact || payload.phone || payload.email) || !payload.pixKey) {
+      if (!payload.name || !(payload.phone || payload.email) || !payload.pixKey) {
       toast({
         title: 'Campos obrigatórios',
-        description: 'Preencha nome, contato e chave Pix para salvar.',
+        description: 'Preencha nome, telefone ou email, e chave Pix para salvar.',
         variant: 'destructive',
       });
       return;
@@ -1235,7 +1233,7 @@ const AffiliatesTab = () => {
                 id="affiliate-search"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Nome ou contato"
+                placeholder="Nome, telefone ou email"
                 className="pl-9"
               />
             </div>
@@ -1275,7 +1273,8 @@ const AffiliatesTab = () => {
               <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="whitespace-nowrap px-5 py-3">Vendedor</th>
-                  <th className="whitespace-nowrap px-5 py-3">Contato</th>
+                  <th className="whitespace-nowrap px-5 py-3">Telefone</th>
+                  <th className="whitespace-nowrap px-5 py-3">Email</th>
                   <th className="whitespace-nowrap px-5 py-3">Status</th>
                   <th className="whitespace-nowrap px-5 py-3">Cupom</th>
                   <th className="whitespace-nowrap px-5 py-3 text-center">Clientes</th>
@@ -1297,7 +1296,8 @@ const AffiliatesTab = () => {
                           <p className="whitespace-nowrap font-semibold text-foreground">{seller.name}</p>
                         </div>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.contact}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.phone || '-'}</td>
+                      <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.email || '-'}</td>
                       <td className="whitespace-nowrap px-5 py-4">
                         <StatusBadge status={seller.status} />
                       </td>
@@ -1946,16 +1946,6 @@ const AffiliatesTab = () => {
                 onChange={(event) => handleSellerFormChange('name', event.target.value)}
                 disabled={submitting}
                 required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="affiliate-contact">Contato</Label>
-              <Input
-                id="affiliate-contact"
-                value={sellerForm.contact}
-                onChange={(event) => handleSellerFormChange('contact', event.target.value)}
-                disabled={submitting}
               />
             </div>
 

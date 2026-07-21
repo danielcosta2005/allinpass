@@ -552,7 +552,7 @@ function validateRequiredFields(payload: any) {
     throw new HttpError(
       400,
       "AFFILIATE_VALIDATION_ERROR",
-      "Nome, contato e chave Pix sao obrigatorios.",
+      "Nome, telefone ou email, e chave Pix sao obrigatorios.",
     );
   }
 
@@ -690,7 +690,14 @@ async function listSellers(supabaseAdmin: any, payload: any) {
   }
 
   if (search) {
-    query = query.or(`name.ilike.%${search}%,contact.ilike.%${search}%`);
+    query = query.or(
+      [
+        `name.ilike.%${search}%`,
+        `phone.ilike.%${search}%`,
+        `email.ilike.%${search}%`,
+        `contact.ilike.%${search}%`,
+      ].join(","),
+    );
   }
 
   const { data: sellers, error, count } = await query;

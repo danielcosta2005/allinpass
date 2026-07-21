@@ -33,6 +33,7 @@ describe("promotional code admin UI", () => {
 
   test("AffiliatesTab has seller and coupon admin views with coupon filters", () => {
     const source = readSource("frontend/src/components/superadmin/AffiliatesTab.jsx");
+    const functionSource = readSource("supabase/functions/affiliate-admin/index.ts");
 
     expect(source).toContain("adminView");
     expect(source).toContain("setAdminView");
@@ -50,6 +51,8 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("Cupons");
     expect(source).toContain("Cupom de campanha");
     expect(source).toContain("Cupom de vendedor");
+    expect(functionSource).toContain("phone.ilike");
+    expect(functionSource).toContain("email.ilike");
   });
 
   test("seller rows render the promotional code inline and toggle coupon status", () => {
@@ -81,6 +84,8 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("couponForm");
     expect(source).toContain("phone");
     expect(source).toContain("email");
+    expect(source).toContain("Telefone");
+    expect(source).toContain("Email");
     expect(source).toContain("discountBps: 1000");
     expect(source).toContain("commissionBps: 1000");
     expect(source).toContain("negativeMarginAcknowledged");
@@ -88,6 +93,12 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("Etapa 1");
     expect(source).toContain("Etapa 2");
     expect(source).toContain("Criar vendedor e cupom");
+    expect(source).toContain('placeholder="Nome, telefone ou email"');
+    expect(source).not.toContain('htmlFor="affiliate-contact"');
+    expect(source).not.toContain('id="affiliate-contact"');
+    expect(source).not.toContain('handleSellerFormChange(\'contact\'');
+    expect(source).not.toContain('seller.contact');
+    expect(source).not.toContain(">Contato<");
   });
 
   test("coupon create and edit forms validate coupon rules without seller fields", () => {
