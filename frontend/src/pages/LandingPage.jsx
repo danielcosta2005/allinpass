@@ -724,7 +724,7 @@ const Pricing = ({ plans, affiliateOffer = null }) => {
             >
               <PlanCard
                 plan={p}
-                ctaTo={buildSignupPath(p.key, { ref: affiliateRef })}
+                ctaTo={buildSignupPath(p.key, { promo: affiliateRef })}
                 affiliateOffer={p.type === 'paid' ? affiliateOffer : null}
                 limitedPromotion={p.type === 'paid' ? LIMITED_FIRST_100_PROMOTION : null}
                 onCtaClick={() => {
@@ -982,8 +982,11 @@ const LandingPage = () => {
 
   useEffect(() => {
     let mounted = true;
-    const rawRef = typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('ref')
+    const searchParams = typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search)
+      : null;
+    const rawRef = searchParams
+      ? searchParams.get('promo') || searchParams.get('ref')
       : '';
     const normalizedRef = normalizeAffiliateRef(rawRef);
 

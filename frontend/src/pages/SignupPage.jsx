@@ -79,7 +79,7 @@ function SignupPage() {
   const contextPlanCode = String(existingCustomerSignupContext?.planCode || '').trim().toLowerCase();
   const currentAffiliateRef = useMemo(
     () => normalizeAffiliateRef(
-      searchParams.get('ref')
+      searchParams.get('promo') || searchParams.get('ref')
         || existingCustomerSignupContext?.affiliateRef
         || authSession?.user?.user_metadata?.affiliate_ref
         || '',
@@ -308,7 +308,7 @@ function SignupPage() {
     if (isPaidEmailPlan) params.set('checkout', 'pending');
     if (isExistingCustomer) params.set('existingCustomer', '1');
     if (establishmentName) params.set('establishmentName', establishmentName);
-    if (affiliateRef) params.set('ref', affiliateRef);
+    if (affiliateRef) params.set('promo', affiliateRef);
 
     return `${window.location.origin}/cadastro?${params.toString()}`;
   }, [currentAffiliateRef, selectedPlan, selectedPlanKey]);
@@ -939,7 +939,9 @@ function SignupPage() {
       try {
         const redirectEstablishmentName = String(searchParams.get('establishmentName') || '').trim();
         const redirectPlanCode = String(searchParams.get('planCode') || '').trim().toLowerCase();
-        const redirectAffiliateRef = normalizeAffiliateRef(searchParams.get('ref') || currentAffiliateRef);
+        const redirectAffiliateRef = normalizeAffiliateRef(
+          searchParams.get('promo') || searchParams.get('ref') || currentAffiliateRef,
+        );
         const metadataPlanCode = String(user.user_metadata?.plan_code || '').trim().toLowerCase();
         const contextPlanCode = String(existingCustomerContext?.planCode || '').trim().toLowerCase();
         const establishmentName = String(

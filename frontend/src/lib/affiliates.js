@@ -1,6 +1,9 @@
 import { supabase } from '@/lib/supabaseClient';
 import { AFFILIATE_DISCOUNT_BPS, normalizeAffiliateRef } from '@/lib/subscriptionPlans';
 
+const PROMOTIONAL_CODE_COLLECT_PAGE_SIZE = 50;
+const PROMOTIONAL_CODE_COLLECT_MAX_PAGES = 20;
+
 function mapLink(link = null) {
   if (!link) return null;
 
@@ -14,6 +17,30 @@ function mapLink(link = null) {
   };
 }
 
+function mapPromotionalCode(code = null) {
+  if (!code) return null;
+
+  return {
+    id: code.id,
+    sellerId: code.sellerId ?? code.seller_id,
+    affiliateLinkId: code.affiliateLinkId ?? code.affiliate_link_id,
+    code: code.code,
+    discountBps: code.discountBps ?? code.discount_bps ?? 0,
+    commissionBps: code.commissionBps ?? code.commission_bps ?? 0,
+    duration: code.duration || 'once',
+    maxUses: code.maxUses ?? code.max_uses ?? null,
+    redeemedUses: code.redeemedUses ?? code.redeemed_uses ?? 0,
+    reservedUses: code.reservedUses ?? code.reserved_uses ?? 0,
+    validUntil: code.validUntil ?? code.valid_until ?? null,
+    status: code.status,
+    metadata: code.metadata || {},
+    createdAt: code.createdAt ?? code.created_at,
+    updatedAt: code.updatedAt ?? code.updated_at,
+    seller: code.seller ?? code.affiliate_sellers ?? null,
+    affiliateLink: mapLink(code.affiliateLink ?? code.affiliate_link ?? code.affiliate_links),
+  };
+}
+
 function mapSeller(seller = {}) {
   const summary = seller.summary || {};
 
@@ -21,11 +48,14 @@ function mapSeller(seller = {}) {
     id: seller.id,
     name: seller.name,
     contact: seller.contact,
+    phone: seller.phone,
+    email: seller.email,
     pixKey: seller.pixKey ?? seller.pix_key,
     status: seller.status,
     createdAt: seller.createdAt ?? seller.created_at,
     updatedAt: seller.updatedAt ?? seller.updated_at,
     affiliateLink: mapLink(seller.affiliateLink ?? seller.affiliate_link),
+    promotionalCode: mapPromotionalCode(seller.promotionalCode ?? seller.promotional_code),
     summary: {
       attributedClientsCount: summary.attributedClientsCount ?? summary.attributed_clients_count ?? 0,
       pendingCommissionCents: summary.pendingCommissionCents ?? summary.pending_commission_cents ?? 0,
@@ -120,8 +150,12 @@ function mapCommissionClient(client = {}) {
 }
 
 export function buildAffiliateLinkUrl(code) {
+  return buildPromotionalLinkUrl(code);
+}
+
+export function buildPromotionalLinkUrl(code) {
   const cleanCode = String(code || '').trim();
-  const path = `/?ref=${encodeURIComponent(cleanCode)}#planos`;
+  const path = `/?promo=${encodeURIComponent(cleanCode)}#planos`;
 
   if (typeof window === 'undefined' || !window.location?.origin) {
     return path;
@@ -146,6 +180,81 @@ async function invokeAffiliateAdmin(body) {
   }
 
   return data.data || data;
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
+
+function filterPromotionalCodesByType(promotionalCodes, type) {
+  if (type === 'campaign') {
+    return promotionalCodes.filter((code) => !code.sellerId);
+  }
+
+  if (type === 'seller') {
+    return promotionalCodes.filter((code) => Boolean(code.sellerId));
+  }
+
+  return promotionalCodes;
+}
+
+async function fetchPromotionalCodesPage({
+  page,
+  pageSize,
+  status = '',
+  sellerId = '',
+  search = '',
+}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'listPromotionalCodes',
+    page,
+    pageSize,
+    status,
+    sellerId,
+    search,
+  });
+
+  return {
+    promotionalCodes: Array.isArray(data.promotionalCodes)
+      ? data.promotionalCodes.map(mapPromotionalCode)
+      : [],
+    page: data.page || page,
+    pageSize: data.pageSize || pageSize,
+    total: data.total || 0,
+  };
+}
+
+async function fetchAllPromotionalCodesForType({
+  type,
+  status = '',
+  sellerId = '',
+  search = '',
+}) {
+  const collectedPromotionalCodes = [];
+  let currentPage = 1;
+  let total = 0;
+
+  do {
+    const result = await fetchPromotionalCodesPage({
+      page: currentPage,
+      pageSize: PROMOTIONAL_CODE_COLLECT_PAGE_SIZE,
+      status,
+      sellerId,
+      search,
+    });
+
+    collectedPromotionalCodes.push(...result.promotionalCodes);
+    total = result.total;
+
+    if (result.promotionalCodes.length === 0 || collectedPromotionalCodes.length >= total) {
+      break;
+    }
+
+    currentPage += 1;
+  } while (currentPage <= PROMOTIONAL_CODE_COLLECT_MAX_PAGES);
+
+  return filterPromotionalCodesByType(collectedPromotionalCodes, type);
 }
 
 export async function resolveAffiliateRef(ref) {
@@ -178,8 +287,15 @@ export async function resolveAffiliateRef(ref) {
   };
 }
 
-export async function createAffiliateSeller({ name, contact, pixKey }) {
-  const data = await invokeAffiliateAdmin({ action: 'createSeller', name, contact, pixKey });
+export async function createAffiliateSeller({ name, contact, phone, email, pixKey }) {
+  const data = await invokeAffiliateAdmin({
+    action: 'createSeller',
+    name,
+    contact,
+    phone,
+    email,
+    pixKey,
+  });
 
   return mapSeller(data.seller);
 }
@@ -207,6 +323,50 @@ export async function listAffiliateSellers({
     page: data.page || page,
     pageSize: data.pageSize || pageSize,
     total: data.total || 0,
+  };
+}
+
+export async function listPromotionalCodes({
+  page = 1,
+  pageSize = 25,
+  status = '',
+  type = '',
+  sellerId = '',
+  search = '',
+} = {}) {
+  const normalizedPage = normalizePositiveInteger(page, 1);
+  const normalizedPageSize = normalizePositiveInteger(pageSize, 25);
+
+  if (type === 'campaign' || type === 'seller') {
+    const filteredPromotionalCodes = await fetchAllPromotionalCodesForType({
+      type,
+      status,
+      sellerId,
+      search,
+    });
+    const offset = (normalizedPage - 1) * normalizedPageSize;
+
+    return {
+      promotionalCodes: filteredPromotionalCodes.slice(offset, offset + normalizedPageSize),
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      total: filteredPromotionalCodes.length,
+    };
+  }
+
+  const data = await fetchPromotionalCodesPage({
+    page: normalizedPage,
+    pageSize: normalizedPageSize,
+    status,
+    sellerId,
+    search,
+  });
+
+  return {
+    promotionalCodes: data.promotionalCodes,
+    page: data.page,
+    pageSize: data.pageSize,
+    total: data.total,
   };
 }
 
@@ -284,12 +444,14 @@ export async function markAffiliateSellerCompetencePaid({
   };
 }
 
-export async function updateAffiliateSeller({ sellerId, name, contact, pixKey, status }) {
+export async function updateAffiliateSeller({ sellerId, name, contact, phone, email, pixKey, status }) {
   const data = await invokeAffiliateAdmin({
     action: 'updateSeller',
     sellerId,
     name,
     contact,
+    phone,
+    email,
     pixKey,
     status,
   });
@@ -304,4 +466,94 @@ export async function getOrCreateAffiliateLink({ sellerId }) {
   });
 
   return mapLink(data.link);
+}
+
+export async function createPromotionalCode({
+  code,
+  sellerId = '',
+  discountBps,
+  commissionBps = 0,
+  status = 'active',
+  duration = 'once',
+  maxUses = null,
+  validUntil = null,
+  marginWarningAcknowledged = false,
+}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'createPromotionalCode',
+    code,
+    sellerId,
+    discountBps,
+    commissionBps,
+    status,
+    duration,
+    maxUses,
+    validUntil,
+    marginWarningAcknowledged,
+  });
+
+  return mapPromotionalCode(data.promotionalCode);
+}
+
+export async function updatePromotionalCode({
+  promotionalCodeId,
+  promoCodeId,
+  id,
+  code,
+  discountBps,
+  commissionBps,
+  status,
+  duration,
+  maxUses,
+  validUntil,
+  marginWarningAcknowledged = false,
+}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'updatePromotionalCode',
+    promotionalCodeId: promotionalCodeId || promoCodeId || id,
+    code,
+    discountBps,
+    commissionBps,
+    status,
+    duration,
+    maxUses,
+    validUntil,
+    marginWarningAcknowledged,
+  });
+
+  return mapPromotionalCode(data.promotionalCode);
+}
+
+export async function createSellerWithCoupon({
+  name,
+  contact = '',
+  phone = '',
+  email = '',
+  pixKey,
+  coupon = {},
+  marginWarningAcknowledged = false,
+}) {
+  const data = await invokeAffiliateAdmin({
+    action: 'createSellerWithCoupon',
+    name,
+    contact,
+    phone,
+    email,
+    pixKey,
+    coupon: {
+      ...coupon,
+      marginWarningAcknowledged,
+    },
+    marginWarningAcknowledged,
+  });
+
+  return {
+    seller: mapSeller({
+      ...data.seller,
+      promotionalCode: data.promotionalCode,
+      affiliateLink: data.link,
+    }),
+    promotionalCode: mapPromotionalCode(data.promotionalCode),
+    link: mapLink(data.link),
+  };
 }

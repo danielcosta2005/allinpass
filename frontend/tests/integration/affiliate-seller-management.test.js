@@ -40,12 +40,12 @@ describe("affiliate seller management UI and backend", () => {
     expect(helperSource).toContain("pixKey");
   });
 
-  test("AffiliatesTab renders seller create/list/edit affordances without real links yet", () => {
+  test("AffiliatesTab renders seller wizard/list/edit affordances with inline coupons", () => {
     const tabSource = readIfExists(
       path.join(repoRoot, "frontend/src/components/superadmin/AffiliatesTab.jsx"),
     );
 
-    expect(tabSource).toContain("createAffiliateSeller");
+    expect(tabSource).toContain("createSellerWithCoupon");
     expect(tabSource).toContain("listAffiliateSellers");
     expect(tabSource).toContain("updateAffiliateSeller");
     expect(tabSource).toContain("Dialog");
@@ -53,10 +53,14 @@ describe("affiliate seller management UI and backend", () => {
     expect(tabSource).toContain("Label");
     expect(tabSource).toContain("Select");
     expect(tabSource).toContain("useToast");
+    expect(tabSource).toContain("phone");
+    expect(tabSource).toContain("email");
+    expect(tabSource).toContain("wizardStep");
     expect(tabSource).toContain("Novo vendedor");
     expect(tabSource).toContain("Editar vendedor");
-    expect(tabSource).toContain("Gerar link");
-    expect(tabSource).toContain("Copiar link");
+    expect(tabSource).toContain("Criar vendedor e cupom");
+    expect(tabSource).toContain("renderSellerCoupon");
+    expect(tabSource).toContain("Copiar cupom");
     expect(tabSource).toContain("Ativo");
     expect(tabSource).toContain("Inativo");
   });

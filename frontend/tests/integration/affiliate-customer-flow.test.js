@@ -69,11 +69,14 @@ describe("affiliate referred customer flow", () => {
     expect(plansSource).toContain("normalizeAffiliateRef");
     expect(plansSource).toContain("buildSignupPath");
     expect(plansSource).toContain("ref");
+    expect(plansSource).toContain("promo");
     expect(landingSource).toContain("resolveAffiliateRef");
     expect(landingSource).toContain("affiliateRef");
+    expect(landingSource).toContain("searchParams.get('promo')");
+    expect(landingSource).toContain("searchParams.get('ref')");
     expect(landingSource).toContain("Condição especial aplicada");
     expect(landingSource).toContain("formatAffiliateDiscountPercent");
-    expect(landingSource).toContain("buildSignupPath(p.key, { ref: affiliateRef })");
+    expect(landingSource).toContain("buildSignupPath(p.key, { promo: affiliateRef })");
     expect(planCardSource).toContain("affiliateOffer");
     expect(planCardSource).toContain("calculateAffiliateFirstMonthPrice");
     expect(planCardSource).toContain("line-through");
@@ -86,8 +89,10 @@ describe("affiliate referred customer flow", () => {
     const recoverySource = readIfExists(path.join(repoRoot, "frontend/src/hooks/usePaidSignupRecovery.js"));
 
     expect(signupPageSource).toContain("affiliateRef");
+    expect(signupPageSource).toContain("searchParams.get('promo')");
     expect(signupPageSource).toContain("searchParams.get('ref')");
-    expect(signupPageSource).toContain("params.set('ref', affiliateRef)");
+    expect(signupPageSource).toContain("params.set('promo', affiliateRef)");
+    expect(signupPageSource).toContain("searchParams.get('promo') || searchParams.get('ref')");
     expect(signupPageSource).toContain("affiliate_ref");
     expect(signupPageSource).toContain("resolveAffiliateRef");
     expect(signupPageSource).toContain("affiliateOffer");

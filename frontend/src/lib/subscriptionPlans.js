@@ -351,9 +351,9 @@ export const findPlanByKey = (planKey, plans = subscriptionPlans) =>
 
 export const isPaidPlan = (plan) => plan?.type === 'paid';
 
-export const buildSignupPath = (planKey, { ref = '' } = {}) => {
+export const buildSignupPath = (planKey, { promo = '', ref = '' } = {}) => {
   const params = new URLSearchParams({ plano: String(planKey || DEFAULT_PLAN_KEY) });
-  const affiliateRef = normalizeAffiliateRef(ref);
-  if (affiliateRef) params.set('ref', affiliateRef);
+  const affiliateRef = normalizeAffiliateRef(promo || ref);
+  if (affiliateRef) params.set('promo', affiliateRef);
   return `/cadastro?${params.toString()}`;
 };

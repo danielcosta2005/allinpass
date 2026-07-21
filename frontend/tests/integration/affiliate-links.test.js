@@ -88,18 +88,18 @@ describe("affiliate links admin lifecycle", () => {
     expect(helperSource).not.toContain('.from("affiliate_links")');
   });
 
-  test("AffiliatesTab renders generate and copy link affordances with inactive gating", () => {
+  test("AffiliatesTab renders canonical promotional link affordances from seller coupons", () => {
     const tabSource = readIfExists(
       path.join(repoRoot, "frontend/src/components/superadmin/AffiliatesTab.jsx"),
     );
 
-    expect(tabSource).toContain("getOrCreateAffiliateLink");
-    expect(tabSource).toContain("buildAffiliateLinkUrl");
+    expect(tabSource).toContain("renderSellerCoupon");
+    expect(tabSource).toContain("buildPromotionalLinkUrl");
     expect(tabSource).toContain("navigator.clipboard.writeText");
-    expect(tabSource).toContain("Gerar link");
-    expect(tabSource).toContain("Copiar link");
-    expect(tabSource).toContain("Vendedor inativo");
-    expect(tabSource).toContain("generatingLinkSellerId");
+    expect(tabSource).toContain("Copiar cupom");
+    expect(tabSource).toContain("handleToggleCouponStatus");
+    expect(tabSource).toContain("promotionalCode");
+    expect(tabSource).toContain("`/?promo=${promotionalCode.code}#planos`");
     expect(tabSource).toContain("Copy");
     expect(tabSource).toContain("Link");
     expect(tabSource).toContain("aria-label");
