@@ -30,6 +30,9 @@ function getCheckoutLocalStatus(event: string, checkoutStatus: string) {
   if (event === "CHECKOUT_EXPIRED" || checkoutStatus === "EXPIRED") {
     return "expired";
   }
+  if (event === "CHECKOUT_FAILED" || checkoutStatus === "FAILED") {
+    return "failed";
+  }
   if (event === "CHECKOUT_CREATED" || checkoutStatus === "ACTIVE") {
     return "created";
   }
@@ -61,7 +64,12 @@ const SUBSCRIPTION_EVENTS = new Set([
   "SUBSCRIPTION_DELETED",
 ]);
 
-const AFFILIATE_COMMISSION_RATE_BPS = 1000;
+const LEGACY_COMMISSION_RATE_BPS = 1000;
+const TERMINAL_SIGNUP_CHECKOUT_STATUSES = new Set([
+  "canceled",
+  "expired",
+  "failed",
+]);
 const NON_COMMISSIONABLE_SUBSCRIPTION_STATUSES = new Set([
   "canceled",
   "expired",
@@ -89,6 +97,20 @@ const NON_COMMISSIONABLE_PAYMENT_STATUSES = new Set([
   "CHARGEBACK_DISPUTE",
   "AWAITING_CHARGEBACK_REVERSAL",
 ]);
+const CLAWBACK_PAYMENT_EVENTS = new Set([
+  "PAYMENT_DELETED",
+  "PAYMENT_REFUNDED",
+  "PAYMENT_CHARGEBACK_REQUESTED",
+  "PAYMENT_CHARGEBACK_DISPUTE",
+  "PAYMENT_AWAITING_CHARGEBACK_REVERSAL",
+]);
+const CLAWBACK_PAYMENT_STATUSES = new Set([
+  "DELETED",
+  "REFUNDED",
+  "CHARGEBACK_REQUESTED",
+  "CHARGEBACK_DISPUTE",
+  "AWAITING_CHARGEBACK_REVERSAL",
+]);
 
 function isAffiliateCommissionPaidPaymentEvent(
   event: string,
@@ -97,6 +119,31 @@ function isAffiliateCommissionPaidPaymentEvent(
   return isPaidPaymentEvent(event, paymentStatus) &&
     !NON_COMMISSIONABLE_PAYMENT_EVENTS.has(event) &&
     !NON_COMMISSIONABLE_PAYMENT_STATUSES.has(paymentStatus);
+}
+
+function isAffiliateCommissionClawbackPaymentEvent(
+  event: string,
+  paymentStatus: string,
+) {
+  return CLAWBACK_PAYMENT_EVENTS.has(event) ||
+    CLAWBACK_PAYMENT_STATUSES.has(paymentStatus);
+}
+
+function resolveAttributionCommissionBps(
+  attribution: AffiliateAttributionWebhookMatch,
+) {
+  const snapshotBps = Math.trunc(
+    Number(attribution.commission_bps_snapshot ?? NaN),
+  );
+  if (
+    Number.isFinite(snapshotBps) &&
+    snapshotBps >= 0 &&
+    snapshotBps <= 10_000
+  ) {
+    return snapshotBps;
+  }
+
+  return LEGACY_COMMISSION_RATE_BPS;
 }
 
 function getDate(value: unknown) {
@@ -206,6 +253,10 @@ type AffiliateAttributionWebhookMatch = {
   subscription_id: string;
   plan_id: string | null;
   status: string;
+  promo_redemption_id?: string | null;
+  promo_code_snapshot?: string | null;
+  commission_bps_snapshot?: number | null;
+  seller_id_snapshot?: string | null;
   metadata: Record<string, unknown> | null;
 };
 
@@ -655,6 +706,29 @@ async function updatePlanChangeSessionFromProvider(
   }
 }
 
+async function releaseSignupPromotionalReservation(
+  supabaseAdmin: SupabaseAdmin,
+  checkoutSessionId: string,
+  reason: string,
+  payload: unknown,
+) {
+  const { error } = await supabaseAdmin.rpc(
+    "release_promotional_code_redemption",
+    {
+      p_checkout_session_id: checkoutSessionId,
+      p_reason: reason,
+      p_metadata: {
+        origin: "asaas_webhook",
+        last_asaas_webhook: payload,
+      },
+    },
+  );
+
+  if (error) {
+    console.error("asaas-webhook failed to release promotion", error);
+  }
+}
+
 async function handleSignupCheckoutWebhook(
   supabaseAdmin: SupabaseAdmin,
   providerCheckoutId: string,
@@ -687,6 +761,15 @@ async function handleSignupCheckoutWebhook(
     metadataKey: "last_asaas_webhook",
     payload,
   });
+
+  if (TERMINAL_SIGNUP_CHECKOUT_STATUSES.has(localStatus)) {
+    await releaseSignupPromotionalReservation(
+      supabaseAdmin,
+      session.id,
+      `checkout_${localStatus}`,
+      payload,
+    );
+  }
 
   return true;
 }
@@ -1194,6 +1277,10 @@ async function createAffiliateCommission(
       "subscription_id",
       "plan_id",
       "status",
+      "promo_redemption_id",
+      "promo_code_snapshot",
+      "commission_bps_snapshot",
+      "seller_id_snapshot",
       "metadata",
     ].join(", "))
     .eq("subscription_id", subscription.id)
@@ -1209,8 +1296,11 @@ async function createAffiliateCommission(
   const eligibleAmountCents = Math.min(paidAmountCents, basePriceCents);
   if (eligibleAmountCents <= 0) return false;
 
+  const commissionRateBps = resolveAttributionCommissionBps(attribution);
+  if (commissionRateBps <= 0) return false;
+
   const commissionCents = Math.round(
-    (eligibleAmountCents * AFFILIATE_COMMISSION_RATE_BPS) / 10000,
+    (eligibleAmountCents * commissionRateBps) / 10000,
   );
   const competenceMonth = getCompetenceMonth(options.paidAt);
   const billingCycleId = await findBillingCycleIdForCommission(
@@ -1221,7 +1311,7 @@ async function createAffiliateCommission(
 
   const insertPayload = {
     attribution_id: attribution.id,
-    seller_id: attribution.seller_id,
+    seller_id: attribution.seller_id_snapshot || attribution.seller_id,
     link_id: attribution.link_id,
     user_id: attribution.user_id,
     project_id: attribution.project_id || subscription.project_id,
@@ -1237,7 +1327,7 @@ async function createAffiliateCommission(
       options.event,
     ),
     eligible_amount_cents: eligibleAmountCents,
-    commission_rate_bps: AFFILIATE_COMMISSION_RATE_BPS,
+    commission_rate_bps: commissionRateBps,
     commission_cents: commissionCents,
     currency: readString(subscription.currency || "BRL").toUpperCase() || "BRL",
     status: "pending",
@@ -1248,6 +1338,9 @@ async function createAffiliateCommission(
       payment_status: options.paymentStatus,
       provider_subscription_id: options.providerSubscriptionId,
       provider_customer_id: options.providerCustomerId ?? null,
+      promo_redemption_id: attribution.promo_redemption_id ?? null,
+      promo_code_snapshot: attribution.promo_code_snapshot ?? null,
+      commission_bps_snapshot: attribution.commission_bps_snapshot ?? null,
       payment_value_cents: paidAmountCents,
       subscription_base_price_cents: basePriceCents,
       billing_cycle_id: billingCycleId,
@@ -1272,6 +1365,94 @@ async function createAffiliateCommission(
   }
 
   throw error;
+}
+
+async function handleAffiliateCommissionClawback(
+  supabaseAdmin: SupabaseAdmin,
+  options: {
+    event: string;
+    payload: unknown;
+    providerPaymentId?: string | null;
+    paymentStatus: string;
+  },
+) {
+  if (
+    !options.providerPaymentId ||
+    !isAffiliateCommissionClawbackPaymentEvent(
+      options.event,
+      options.paymentStatus,
+    )
+  ) {
+    return false;
+  }
+
+  const { data: commissions, error } = await supabaseAdmin
+    .from("affiliate_commissions")
+    .select(
+      "id, commission_cents, status, metadata, provider_payment_id",
+    )
+    .eq("provider_payment_id", options.providerPaymentId);
+
+  if (error) throw error;
+
+  let handled = false;
+  const providerEventId = readFirstString(
+    (options.payload as Record<string, unknown>)?.id,
+    (options.payload as Record<string, unknown>)?.eventId,
+    options.event,
+  ) || `${options.event}:${options.providerPaymentId}`;
+
+  for (const commission of commissions || []) {
+    const commissionCents = Math.max(
+      0,
+      Math.trunc(Number(commission.commission_cents || 0)),
+    );
+
+    if (commission.status === "pending") {
+      const { error: updateError } = await supabaseAdmin
+        .from("affiliate_commissions")
+        .update({
+          status: "void",
+          metadata: {
+            ...getMetadata(commission.metadata),
+            clawback_event: options.event,
+            clawback_payment_status: options.paymentStatus,
+            clawback_payload: options.payload,
+          },
+        })
+        .eq("id", commission.id)
+        .eq("status", "pending");
+
+      if (updateError) throw updateError;
+      handled = true;
+      continue;
+    }
+
+    if (commission.status === "paid" && commissionCents > 0) {
+      const { error: reversalError } = await supabaseAdmin
+        .from("affiliate_commission_reversals")
+        .insert({
+          commission_id: commission.id,
+          provider_event_id: providerEventId,
+          provider_payment_id: options.providerPaymentId,
+          reversal_cents: commissionCents,
+          status: "pending_finance_review",
+          reason: options.event.toLowerCase(),
+          metadata: {
+            origin: "asaas_webhook",
+            payment_status: options.paymentStatus,
+            payload: options.payload,
+          },
+        });
+
+      if (reversalError && !isUniqueViolation(reversalError)) {
+        throw reversalError;
+      }
+      handled = true;
+    }
+  }
+
+  return handled;
 }
 
 async function handlePaymentWebhook(
@@ -1315,6 +1496,16 @@ async function handlePaymentWebhook(
     !providerSubscriptionId
   ) return false;
 
+  const clawbackHandled = await handleAffiliateCommissionClawback(
+    supabaseAdmin,
+    {
+      event,
+      payload,
+      providerPaymentId,
+      paymentStatus,
+    },
+  );
+
   if (
     await handleOverageInvoicePaymentWebhook(
       supabaseAdmin,
@@ -1330,7 +1521,7 @@ async function handlePaymentWebhook(
     return true;
   }
 
-  let handled = false;
+  let handled = clawbackHandled;
   let commissionProviderSubscriptionId = providerSubscriptionId;
   let commissionProviderPaymentId = providerPaymentId;
   const identifiers = {

@@ -71,7 +71,8 @@ describe("affiliate seller management UI and backend", () => {
     expect(dashboardSource).toContain("value: 'affiliates'");
     expect(dashboardSource).toContain("label: 'Afiliados'");
     expect(dashboardSource).toContain("isSuperadmin");
-    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"><AffiliatesTab /></TabsContent>");
+    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"");
+    expect(dashboardSource).toContain("<AffiliatesTab />");
     expect(dashboardSource).not.toContain("projectTabs.push({ value: 'affiliates'");
   });
 });

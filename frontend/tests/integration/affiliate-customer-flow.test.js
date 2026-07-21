@@ -48,12 +48,15 @@ describe("affiliate referred customer flow", () => {
 
     expect(configSource).toContain("[functions.affiliate-public]");
     expect(configSource).toContain("verify_jwt = false");
+    expect(functionSource).toContain("resolvePromotionalCode");
     expect(functionSource).toContain("resolveAffiliateRef");
-    expect(functionSource).toContain("normalizeAffiliateRef");
-    expect(functionSource).toContain(".from(\"affiliate_links\")");
-    expect(functionSource).toContain(".from(\"affiliate_sellers\")");
+    expect(functionSource).toContain("normalizePromotionalCode");
+    expect(functionSource).toContain("resolve_public_promotional_code");
     expect(functionSource).toContain("discountBps");
-    expect(functionSource).toContain("valid: false");
+    expect(functionSource).toContain("reason");
+    expect(functionSource).toContain("valid?: boolean");
+    expect(functionSource).not.toContain(".from(\"affiliate_links\")");
+    expect(functionSource).not.toContain(".from(\"affiliate_sellers\")");
     expect(functionSource).not.toContain("pix_key");
     expect(functionSource).not.toContain("contact");
   });
@@ -100,15 +103,22 @@ describe("affiliate referred customer flow", () => {
   test("signup checkout applies affiliate discount server-side and audits it", () => {
     const checkoutSource = readIfExists(path.join(repoRoot, "supabase/functions/signup-start-checkout/index.ts"));
 
-    expect(checkoutSource).toContain("AFFILIATE_DISCOUNT_BPS = 1000");
-    expect(checkoutSource).toContain("resolveAffiliateContext");
-    expect(checkoutSource).toContain(".from(\"affiliate_links\")");
-    expect(checkoutSource).toContain(".from(\"affiliate_sellers\")");
+    expect(checkoutSource).toContain("normalizePromotionalCode");
+    expect(checkoutSource).toContain("reserve_promotional_code");
+    expect(checkoutSource).toContain("reservePromotionalCode");
+    expect(checkoutSource).toContain("payment_provider_requests");
+    expect(checkoutSource).toContain("upsertProviderRequest");
     expect(checkoutSource).toContain("affiliate_discount_cents");
     expect(checkoutSource).toContain("affiliate_original_amount_cents");
     expect(checkoutSource).toContain("checkoutAmountCents");
-    expect(checkoutSource).toContain("amount_cents: checkoutAmountCents");
+    expect(checkoutSource).toContain("amount_cents: plan.base_price_cents");
+    expect(checkoutSource).toContain("promotionReservation?.finalAmountCents ?? plan.base_price_cents");
+    expect(checkoutSource).toContain("promo_redemption_id");
     expect(checkoutSource).toContain("affiliateRef");
+    expect(checkoutSource).not.toContain("AFFILIATE_DISCOUNT_BPS = 1000");
+    expect(checkoutSource).not.toContain("resolveAffiliateContext");
+    expect(checkoutSource).not.toContain(".from(\"affiliate_links\")");
+    expect(checkoutSource).not.toContain(".from(\"affiliate_sellers\")");
     expect(checkoutSource).not.toContain("payload.amountCents");
     expect(checkoutSource).not.toContain("payload.discountCents");
   });
@@ -117,6 +127,10 @@ describe("affiliate referred customer flow", () => {
     const finalizeSource = readIfExists(path.join(repoRoot, "supabase/functions/signup-finalize/index.ts"));
 
     expect(finalizeSource).toContain("affiliate_attributions");
+    expect(finalizeSource).toContain("billing_promotional_code_redemptions");
+    expect(finalizeSource).toContain("confirm_promotional_code_redemption");
+    expect(finalizeSource).toContain("createFirstMonthInvoice");
+    expect(finalizeSource).toContain("billing_invoices");
     expect(finalizeSource).toContain("restoreAsaasSubscriptionBasePrice");
     expect(finalizeSource).toContain("SIGNUP_FINALIZE_AFFILIATE_ATTRIBUTION_FAILED");
     expect(finalizeSource).toContain("SIGNUP_FINALIZE_ASAAS_RECURRING_PRICE_RESTORE_FAILED");
@@ -125,5 +139,6 @@ describe("affiliate referred customer flow", () => {
     expect(finalizeSource).toContain("affiliate_original_amount_cents");
     expect(finalizeSource).toContain("expectedCheckoutAmountCents");
     expect(finalizeSource).toContain("checkout_session_id");
+    expect(finalizeSource).toContain("commission_bps_snapshot");
   });
 });

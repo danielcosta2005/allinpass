@@ -19,6 +19,8 @@ type CheckoutSession = {
   expires_at: string | null;
   status: string;
   amount_cents: number | null;
+  promo_code_id: string | null;
+  promo_redemption_id: string | null;
   affiliate_link_id: string | null;
   affiliate_seller_id: string | null;
   affiliate_code: string | null;
@@ -27,34 +29,26 @@ type CheckoutSession = {
   affiliate_original_amount_cents: number | null;
 };
 
-type AffiliateLinkRow = {
-  id: string;
-  seller_id: string;
-  code: string;
-  status: string;
-};
-
-type AffiliateSellerRow = {
-  id: string;
-  status: string;
-};
-
-type AffiliateContext = {
-  linkId: string;
-  sellerId: string;
+type PromotionalReservation = {
+  success: boolean;
+  reason: string;
+  promoCodeId: string | null;
+  redemptionId: string | null;
   code: string;
   discountBps: number;
   discountCents: number;
-  originalAmountCents: number;
-  checkoutAmountCents: number;
+  finalAmountCents: number;
+  commissionBps: number;
+  sellerId: string | null;
+  affiliateLinkId: string | null;
+  status: string;
 };
 
 type SupabaseAdminClient = SupabaseClient<any, "public", any>;
 
 const FREE_PLAN_CODE = "free_trial";
 const DEFAULT_CHECKOUT_EXPIRATION_MINUTES = 60;
-const AFFILIATE_DISCOUNT_BPS = 1000;
-const AFFILIATE_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
+const PROMOTIONAL_CODE_PATTERN = /^[a-z0-9]{5,10}$/;
 
 class SignupCheckoutError extends Error {
   code: string;
@@ -102,18 +96,19 @@ function normalizePlanCode(value: unknown) {
     .replace(/[^a-z0-9_]/g, "");
 }
 
-function normalizeAffiliateRef(value: unknown) {
+function normalizePromotionalCode(value: unknown) {
   const normalized = String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .slice(0, 40);
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 10);
 
-  return AFFILIATE_CODE_PATTERN.test(normalized) ? normalized : "";
+  return PROMOTIONAL_CODE_PATTERN.test(normalized) ? normalized : "";
 }
 
-function calculateDiscountCents(amountCents: number, discountBps: number) {
-  return Math.max(0, Math.floor((amountCents * discountBps) / 10_000));
+function toInteger(value: unknown, fallback = 0) {
+  const parsed = Math.trunc(Number(value));
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function getAsaasApiBaseUrl() {
@@ -190,7 +185,7 @@ function assertPublicHttpsAppBaseUrl(appBaseUrl: string) {
   ) {
     throw new SignupCheckoutError(
       "SIGNUP_CHECKOUT_INVALID_APP_BASE_URL",
-      "O Asaas nao aceita callbacks em localhost ou URL privada. Configure ASAAS_CALLBACK_BASE_URL ou APP_BASE_URL com uma URL publica HTTPS, como um dominio de staging ou tunnel HTTPS.",
+      "O Asaas nao aceita callbacks em localhost ou URL privada. Configure ASAAS_CALLBACK_BASE_URL ou APP_BASE_URL com uma URL publica HTTPS.",
       500,
     );
   }
@@ -220,69 +215,226 @@ function buildSignupRedirectUrl(
   return url.toString();
 }
 
-async function resolveAffiliateContext(
-  supabaseAdmin: SupabaseAdminClient,
-  affiliateRef: string,
-  plan: BillingPlan,
-): Promise<AffiliateContext | null> {
-  const code = normalizeAffiliateRef(affiliateRef);
-  if (!code) return null;
-
-  const { data: linkData, error: linkError } = await supabaseAdmin
-    .from("affiliate_links")
-    .select("id, seller_id, code, status")
-    .ilike("code", code)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (linkError) {
-    throw new SignupCheckoutError(
-      "SIGNUP_CHECKOUT_AFFILIATE_LOOKUP_FAILED",
-      "Nao foi possivel validar o link de afiliado.",
-      500,
-    );
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
   }
-
-  const link = linkData as AffiliateLinkRow | null;
-  if (!link?.id || !link.seller_id) return null;
-
-  const { data: sellerData, error: sellerError } = await supabaseAdmin
-    .from("affiliate_sellers")
-    .select("id, status")
-    .eq("id", link.seller_id)
-    .eq("status", "active")
-    .maybeSingle();
-
-  if (sellerError) {
-    throw new SignupCheckoutError(
-      "SIGNUP_CHECKOUT_AFFILIATE_LOOKUP_FAILED",
-      "Nao foi possivel validar o vendedor afiliado.",
-      500,
-    );
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) =>
+      `${JSON.stringify(key)}:${stableStringify((value as Record<string, unknown>)[key])}`
+    ).join(",")}}`;
   }
+  return JSON.stringify(value);
+}
 
-  const seller = sellerData as AffiliateSellerRow | null;
-  if (!seller?.id) return null;
+async function computeRequestHash(value: unknown) {
+  const data = new TextEncoder().encode(stableStringify(value));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
 
-  const originalAmountCents = Math.max(
-    0,
-    Math.trunc(Number(plan.base_price_cents || 0)),
-  );
-  const discountCents = calculateDiscountCents(
-    originalAmountCents,
-    AFFILIATE_DISCOUNT_BPS,
-  );
-  const checkoutAmountCents = Math.max(0, originalAmountCents - discountCents);
+function mapPromotionReservation(data: unknown): PromotionalReservation {
+  const row = Array.isArray(data) ? data[0] : data;
+  const item = row && typeof row === "object"
+    ? row as Record<string, unknown>
+    : {};
 
   return {
-    linkId: link.id,
-    sellerId: seller.id,
-    code: normalizeAffiliateRef(link.code) || code,
-    discountBps: AFFILIATE_DISCOUNT_BPS,
-    discountCents,
-    originalAmountCents,
-    checkoutAmountCents,
+    success: Boolean(item.success),
+    reason: String(item.reason || (item.success ? "reserved" : "invalid")),
+    promoCodeId: String(item.promo_code_id || "") || null,
+    redemptionId: String(item.redemption_id || "") || null,
+    code: normalizePromotionalCode(item.code),
+    discountBps: toInteger(item.discount_bps),
+    discountCents: toInteger(item.discount_cents),
+    finalAmountCents: toInteger(item.final_amount_cents),
+    commissionBps: toInteger(item.commission_bps),
+    sellerId: String(item.seller_id || "") || null,
+    affiliateLinkId: String(item.affiliate_link_id || "") || null,
+    status: String(item.status || ""),
   };
+}
+
+async function findReusableCheckoutSession(
+  supabaseAdmin: SupabaseAdminClient,
+  userId: string,
+  planId: string,
+  promotionalCode: string,
+) {
+  let reusableSessionQuery = supabaseAdmin
+    .from("signup_checkout_sessions")
+    .select(
+      [
+        "id",
+        "provider_checkout_id",
+        "checkout_url",
+        "expires_at",
+        "status",
+        "amount_cents",
+        "promo_code_id",
+        "promo_redemption_id",
+        "affiliate_link_id",
+        "affiliate_seller_id",
+        "affiliate_code",
+        "affiliate_discount_bps",
+        "affiliate_discount_cents",
+        "affiliate_original_amount_cents",
+      ].join(", "),
+    )
+    .eq("user_id", userId)
+    .eq("plan_id", planId)
+    .in("status", ["pending", "created"])
+    .gt("expires_at", new Date().toISOString());
+
+  reusableSessionQuery = promotionalCode
+    ? reusableSessionQuery.eq("affiliate_code", promotionalCode)
+    : reusableSessionQuery.is("promo_code_id", null);
+
+  const { data, error } = await reusableSessionQuery
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as CheckoutSession | null;
+}
+
+async function reservePromotionalCode(
+  supabaseAdmin: SupabaseAdminClient,
+  session: { id: string; expires_at: string },
+  plan: BillingPlan,
+  promotionalCode: string,
+) {
+  if (!promotionalCode) return null;
+
+  const { data, error } = await supabaseAdmin.rpc("reserve_promotional_code", {
+    p_code: promotionalCode,
+    p_checkout_session_id: session.id,
+    p_base_amount_cents: plan.base_price_cents,
+    p_expires_at: session.expires_at,
+    p_metadata: {
+      origin: "signup_start_checkout",
+      plan_code: plan.code,
+    },
+  });
+
+  if (error) throw error;
+  const reservation = mapPromotionReservation(data);
+
+  if (!reservation.success) {
+    throw new SignupCheckoutError(
+      "SIGNUP_CHECKOUT_PROMOTIONAL_CODE_INVALID",
+      "Codigo promocional invalido ou indisponivel.",
+      400,
+    );
+  }
+
+  return reservation;
+}
+
+async function releasePromotionalCodeReservation(
+  supabaseAdmin: SupabaseAdminClient,
+  checkoutSessionId: string,
+  reason: string,
+) {
+  const { error } = await supabaseAdmin.rpc(
+    "release_promotional_code_redemption",
+    {
+      p_checkout_session_id: checkoutSessionId,
+      p_reason: reason,
+      p_metadata: { origin: "signup_start_checkout" },
+    },
+  );
+
+  if (error) {
+    console.error("signup-start-checkout release promotion failed", error);
+  }
+}
+
+async function upsertProviderRequest(
+  supabaseAdmin: SupabaseAdminClient,
+  options: {
+    checkoutSessionId: string;
+    externalReference: string;
+    requestHash: string;
+    asaasPayload: unknown;
+  },
+) {
+  const { error } = await supabaseAdmin
+    .from("payment_provider_requests")
+    .upsert(
+      {
+        checkout_session_id: options.checkoutSessionId,
+        operation: "create_signup_checkout",
+        provider: "asaas",
+        external_reference: options.externalReference,
+        request_hash: options.requestHash,
+        status: "pending",
+        response_metadata: {
+          origin: "signup_start_checkout",
+          asaas_request: options.asaasPayload,
+        },
+        attempted_at: new Date().toISOString(),
+      },
+      { onConflict: "checkout_session_id,operation" },
+    );
+
+  if (error) throw error;
+}
+
+async function markProviderRequestSucceeded(
+  supabaseAdmin: SupabaseAdminClient,
+  options: {
+    checkoutSessionId: string;
+    providerCheckoutId: string;
+    checkoutUrl: string;
+    asaasBody: unknown;
+  },
+) {
+  const { error } = await supabaseAdmin
+    .from("payment_provider_requests")
+    .update({
+      status: "succeeded",
+      provider_request_id: options.providerCheckoutId,
+      provider_checkout_id: options.providerCheckoutId,
+      checkout_url: options.checkoutUrl,
+      response_metadata: {
+        origin: "signup_start_checkout",
+        asaas_response: options.asaasBody,
+      },
+      last_error: null,
+      succeeded_at: new Date().toISOString(),
+    })
+    .eq("checkout_session_id", options.checkoutSessionId)
+    .eq("operation", "create_signup_checkout");
+
+  if (error) throw error;
+}
+
+async function markProviderRequestFailed(
+  supabaseAdmin: SupabaseAdminClient,
+  options: {
+    checkoutSessionId: string;
+    message: string;
+    asaasBody: unknown;
+  },
+) {
+  const { error } = await supabaseAdmin
+    .from("payment_provider_requests")
+    .update({
+      status: "failed",
+      response_metadata: {
+        origin: "signup_start_checkout",
+        asaas_response: options.asaasBody,
+      },
+      last_error: options.message.slice(0, 500),
+    })
+    .eq("checkout_session_id", options.checkoutSessionId)
+    .eq("operation", "create_signup_checkout");
+
+  if (error) throw error;
 }
 
 function getAsaasErrorMessage(payload: unknown) {
@@ -368,8 +520,12 @@ Deno.serve(async (req) => {
     const planCode = normalizePlanCode(
       payload.planCode ?? user.user_metadata?.plan_code,
     );
-    const affiliateRef = normalizeAffiliateRef(
-      payload.affiliateRef ?? payload.ref ?? user.user_metadata?.affiliate_ref,
+    const affiliateRef = normalizePromotionalCode(
+      payload.promoCode ??
+        payload.promo ??
+        payload.affiliateRef ??
+        payload.ref ??
+        user.user_metadata?.affiliate_ref,
     );
     const email = String(user.email ?? "").trim().toLowerCase();
 
@@ -420,50 +576,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    const affiliateContext = await resolveAffiliateContext(
+    const reusableSession = await findReusableCheckoutSession(
       supabaseAdmin,
+      user.id,
+      plan.id,
       affiliateRef,
-      plan,
     );
-    const checkoutAmountCents = affiliateContext?.checkoutAmountCents ??
-      plan.base_price_cents;
 
-    let reusableSessionQuery = supabaseAdmin
-      .from("signup_checkout_sessions")
-      .select(
-        [
-          "id",
-          "provider_checkout_id",
-          "checkout_url",
-          "expires_at",
-          "status",
-          "amount_cents",
-          "affiliate_link_id",
-          "affiliate_seller_id",
-          "affiliate_code",
-          "affiliate_discount_bps",
-          "affiliate_discount_cents",
-          "affiliate_original_amount_cents",
-        ].join(", "),
-      )
-      .eq("user_id", user.id)
-      .eq("plan_id", plan.id)
-      .in("status", ["pending", "created"])
-      .gt("expires_at", new Date().toISOString());
-
-    reusableSessionQuery = affiliateContext
-      ? reusableSessionQuery.eq("affiliate_link_id", affiliateContext.linkId)
-      : reusableSessionQuery.is("affiliate_link_id", null);
-
-    const { data: reusableSessionData, error: reusableSessionError } =
-      await reusableSessionQuery
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-    if (reusableSessionError) throw reusableSessionError;
-
-    const reusableSession = reusableSessionData as CheckoutSession | null;
     if (reusableSession?.checkout_url) {
       return jsonResponse(origin, {
         success: true,
@@ -474,6 +593,9 @@ Deno.serve(async (req) => {
         expires_at: reusableSession.expires_at,
         reused: true,
         amount_cents: reusableSession.amount_cents,
+        promo_code_id: reusableSession.promo_code_id,
+        promo_redemption_id: reusableSession.promo_redemption_id,
+        promo_code: reusableSession.affiliate_code,
         affiliate_ref: reusableSession.affiliate_code,
         affiliate_discount_bps: reusableSession.affiliate_discount_bps ?? 0,
         affiliate_discount_cents: reusableSession.affiliate_discount_cents ?? 0,
@@ -507,26 +629,18 @@ Deno.serve(async (req) => {
         provider: "asaas",
         external_reference: crypto.randomUUID(),
         status: "pending",
-        amount_cents: checkoutAmountCents,
+        amount_cents: plan.base_price_cents,
         currency: "BRL",
-        affiliate_link_id: affiliateContext?.linkId ?? null,
-        affiliate_seller_id: affiliateContext?.sellerId ?? null,
-        affiliate_code: affiliateContext?.code ?? null,
-        affiliate_discount_bps: affiliateContext?.discountBps ?? 0,
-        affiliate_discount_cents: affiliateContext?.discountCents ?? 0,
-        affiliate_original_amount_cents:
-          affiliateContext?.originalAmountCents ?? null,
+        affiliate_link_id: null,
+        affiliate_seller_id: null,
+        affiliate_code: null,
+        affiliate_discount_bps: 0,
+        affiliate_discount_cents: 0,
+        affiliate_original_amount_cents: null,
         expires_at: expiresAt.toISOString(),
         metadata: {
           origin: "signup_start_checkout",
-          affiliate: affiliateContext
-            ? {
-              code: affiliateContext.code,
-              discount_bps: affiliateContext.discountBps,
-              discount_cents: affiliateContext.discountCents,
-              original_amount_cents: affiliateContext.originalAmountCents,
-            }
-            : null,
+          requested_promotional_code: affiliateRef || null,
         },
       })
       .select(
@@ -545,6 +659,17 @@ Deno.serve(async (req) => {
       expires_at: string;
     };
 
+    const promotionReservation = await reservePromotionalCode(
+      supabaseAdmin,
+      session,
+      plan,
+      affiliateRef,
+    );
+    const checkoutAmountCents = promotionReservation?.finalAmountCents ?? plan.base_price_cents;
+    const discountDescription = promotionReservation
+      ? `${promotionReservation.discountBps / 100}% de desconto no primeiro mes`
+      : "";
+
     const callbackUrls = {
       success_url: buildSignupRedirectUrl(appBaseUrl, {
         plano: plan.code,
@@ -552,21 +677,21 @@ Deno.serve(async (req) => {
         finalizar: "1",
         checkout: "success",
         checkoutSessionId: session.id,
-        ref: affiliateContext?.code ?? "",
+        ref: promotionReservation?.code ?? "",
       }),
       cancel_url: buildSignupRedirectUrl(appBaseUrl, {
         plano: plan.code,
         planCode: plan.code,
         checkout: "cancel",
         checkoutSessionId: session.id,
-        ref: affiliateContext?.code ?? "",
+        ref: promotionReservation?.code ?? "",
       }),
       expired_url: buildSignupRedirectUrl(appBaseUrl, {
         plano: plan.code,
         planCode: plan.code,
         checkout: "expired",
         checkoutSessionId: session.id,
-        ref: affiliateContext?.code ?? "",
+        ref: promotionReservation?.code ?? "",
       }),
     };
 
@@ -590,8 +715,8 @@ Deno.serve(async (req) => {
       items: [
         {
           name: plan.name,
-          description: affiliateContext
-            ? `Assinatura mensal AllinPass - ${plan.name} (10% de desconto no primeiro mes)`
+          description: promotionReservation
+            ? `Assinatura mensal AllinPass - ${plan.name} (${discountDescription})`
             : `Assinatura mensal AllinPass - ${plan.name}`,
           quantity: 1,
           value: checkoutAmountCents / 100,
@@ -602,6 +727,14 @@ Deno.serve(async (req) => {
         nextDueDate: formatAsaasDate(new Date()),
       },
     };
+
+    const requestHash = await computeRequestHash(asaasPayload);
+    await upsertProviderRequest(supabaseAdmin, {
+      checkoutSessionId: session.id,
+      externalReference: session.external_reference,
+      requestHash,
+      asaasPayload,
+    });
 
     const asaasResponse = await fetch(`${getAsaasApiBaseUrl()}/checkouts`, {
       method: "POST",
@@ -619,20 +752,25 @@ Deno.serve(async (req) => {
     if (!asaasResponse.ok) {
       const message = getAsaasErrorMessage(asaasBody) ||
         "Nao foi possivel criar checkout no Asaas.";
+
+      await markProviderRequestFailed(supabaseAdmin, {
+        checkoutSessionId: session.id,
+        message,
+        asaasBody,
+      });
+      await releasePromotionalCodeReservation(
+        supabaseAdmin,
+        session.id,
+        "asaas_checkout_failed",
+      );
       await supabaseAdmin
         .from("signup_checkout_sessions")
         .update({
           status: "failed",
           metadata: {
             origin: "signup_start_checkout",
-            affiliate: affiliateContext
-              ? {
-                code: affiliateContext.code,
-                discount_bps: affiliateContext.discountBps,
-                discount_cents: affiliateContext.discountCents,
-                original_amount_cents: affiliateContext.originalAmountCents,
-              }
-              : null,
+            requested_promotional_code: affiliateRef || null,
+            promotion: promotionReservation,
             asaas_request: asaasPayload,
             asaas_response: asaasBody,
           },
@@ -649,6 +787,11 @@ Deno.serve(async (req) => {
     const providerCheckoutId = String((asaasBody as { id?: unknown }).id ?? "")
       .trim();
     if (!providerCheckoutId) {
+      await releasePromotionalCodeReservation(
+        supabaseAdmin,
+        session.id,
+        "asaas_checkout_missing_id",
+      );
       throw new SignupCheckoutError(
         "SIGNUP_CHECKOUT_ASAAS_MISSING_ID",
         "Asaas nao retornou o ID do checkout.",
@@ -660,6 +803,13 @@ Deno.serve(async (req) => {
       String((asaasBody as { link?: unknown }).link ?? "").trim() ||
       buildCheckoutUrl(providerCheckoutId);
 
+    await markProviderRequestSucceeded(supabaseAdmin, {
+      checkoutSessionId: session.id,
+      providerCheckoutId,
+      checkoutUrl,
+      asaasBody,
+    });
+
     const { error: updateError } = await supabaseAdmin
       .from("signup_checkout_sessions")
       .update({
@@ -668,17 +818,12 @@ Deno.serve(async (req) => {
         status: "created",
         metadata: {
           origin: "signup_start_checkout",
-          affiliate: affiliateContext
-            ? {
-              code: affiliateContext.code,
-              discount_bps: affiliateContext.discountBps,
-              discount_cents: affiliateContext.discountCents,
-              original_amount_cents: affiliateContext.originalAmountCents,
-            }
-            : null,
+          requested_promotional_code: affiliateRef || null,
+          promotion: promotionReservation,
           asaas_request: asaasPayload,
           asaas_response: asaasBody,
           callback_urls: callbackUrls,
+          request_hash: requestHash,
         },
       })
       .eq("id", session.id);
@@ -690,7 +835,7 @@ Deno.serve(async (req) => {
         ...user.user_metadata,
         establishment_name: establishmentName,
         plan_code: plan.code,
-        affiliate_ref: affiliateContext?.code ??
+        affiliate_ref: promotionReservation?.code ??
           user.user_metadata?.affiliate_ref ?? "",
       },
     });
@@ -704,11 +849,15 @@ Deno.serve(async (req) => {
       expires_at: session.expires_at,
       reused: false,
       amount_cents: checkoutAmountCents,
-      affiliate_ref: affiliateContext?.code ?? null,
-      affiliate_discount_bps: affiliateContext?.discountBps ?? 0,
-      affiliate_discount_cents: affiliateContext?.discountCents ?? 0,
-      affiliate_original_amount_cents: affiliateContext?.originalAmountCents ??
-        null,
+      promo_code_id: promotionReservation?.promoCodeId ?? null,
+      promo_redemption_id: promotionReservation?.redemptionId ?? null,
+      promo_code: promotionReservation?.code ?? null,
+      affiliate_ref: promotionReservation?.code ?? null,
+      affiliate_discount_bps: promotionReservation?.discountBps ?? 0,
+      affiliate_discount_cents: promotionReservation?.discountCents ?? 0,
+      affiliate_original_amount_cents: promotionReservation
+        ? plan.base_price_cents
+        : null,
     });
   } catch (error) {
     console.error("signup-start-checkout error", error);

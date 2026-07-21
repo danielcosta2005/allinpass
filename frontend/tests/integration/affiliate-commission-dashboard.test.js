@@ -108,14 +108,14 @@ describe("affiliate commission dashboard and payouts", () => {
     expect(tabSource).toContain("commissionPage");
     expect(tabSource).toContain("clientPage");
     expect(tabSource).toContain("selectedCompetence");
-    expect(tabSource).toContain("Comissoes");
+    expect(tabSource).toContain("Comissões");
     expect(tabSource).toContain("Clientes indicados");
-    expect(tabSource).toContain("Competencia");
-    expect(tabSource).toContain("Mes atual");
+    expect(tabSource).toContain("Competência");
+    expect(tabSource).toContain("Mês atual");
     expect(tabSource).toContain("Pendente");
     expect(tabSource).toContain("Pago");
     expect(tabSource).toContain("Marcar como paga");
-    expect(tabSource).toContain("Marcar competencia");
+    expect(tabSource).toContain("Marcar competência");
     expect(tabSource).toContain("Sem pagamento confirmado");
     expect(tabSource).toContain("markedPaidAt");
     expect(tabSource).toContain("paymentNote");

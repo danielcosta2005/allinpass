@@ -1,15 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.30.0";
 import { corsHeaders, jsonResponse } from "./cors.ts";
 
-const AFFILIATE_DISCOUNT_BPS = 1000;
-const AFFILIATE_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
-
-type AffiliateLinkRow = {
-  id: string;
-  seller_id: string;
-  code: string;
-  status: string;
-};
+const PROMOTIONAL_CODE_PATTERN = /^[a-z0-9]{5,10}$/;
 
 function requiredEnv(name: string) {
   const value = Deno.env.get(name);
@@ -17,23 +9,57 @@ function requiredEnv(name: string) {
   return value;
 }
 
-export function normalizeAffiliateRef(value: unknown) {
+export function normalizePromotionalCode(value: unknown) {
   return String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "")
-    .slice(0, 40);
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 10);
 }
 
-function affiliateResponse(origin: string | null, valid = false, code = "") {
+function promotionResponse(
+  origin: string | null,
+  {
+    valid = false,
+    code = "",
+    discountBps = 0,
+    reason = "not_found",
+  }: {
+    valid?: boolean;
+    code?: string;
+    discountBps?: number;
+    reason?: string;
+  } = {},
+) {
   return jsonResponse(origin, {
     success: true,
     data: {
       valid,
       code: valid ? code : "",
-      discountBps: valid ? AFFILIATE_DISCOUNT_BPS : 0,
+      discountBps: valid ? discountBps : 0,
+      reason,
     },
   });
+}
+
+async function resolvePromotionalCode(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  code: string,
+) {
+  const { data, error } = await supabaseAdmin.rpc(
+    "resolve_public_promotional_code",
+    { p_code: code },
+  );
+
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+
+  return {
+    valid: Boolean(row?.valid),
+    code: normalizePromotionalCode(row?.code || code),
+    discountBps: Math.max(0, Math.trunc(Number(row?.discount_bps ?? 0))),
+    reason: String(row?.reason || (row?.valid ? "valid" : "not_found")),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -53,17 +79,21 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json().catch(() => ({}));
     const action = String(payload?.action ?? "").trim();
+    const isResolvePromotionalCode = action === "resolvePromotionalCode";
+    const isResolveAffiliateRef = action === "resolveAffiliateRef";
 
-    if (action !== "resolveAffiliateRef") {
+    if (!isResolvePromotionalCode && !isResolveAffiliateRef) {
       return jsonResponse(origin, {
         error: "Acao desconhecida.",
         code: "AFFILIATE_PUBLIC_UNKNOWN_ACTION",
       }, 400);
     }
 
-    const code = normalizeAffiliateRef(payload?.ref);
-    if (!AFFILIATE_CODE_PATTERN.test(code)) {
-      return affiliateResponse(origin);
+    const code = normalizePromotionalCode(
+      payload?.code ?? payload?.promoCode ?? payload?.ref,
+    );
+    if (!PROMOTIONAL_CODE_PATTERN.test(code)) {
+      return promotionResponse(origin, { reason: "invalid_format" });
     }
 
     const supabaseAdmin = createClient(
@@ -71,34 +101,11 @@ Deno.serve(async (req) => {
       requiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { autoRefreshToken: false, persistSession: false } },
     );
+    const resolved = await resolvePromotionalCode(supabaseAdmin, code);
 
-    const { data: linkData, error: linkError } = await supabaseAdmin
-      .from("affiliate_links")
-      .select("id, seller_id, code, status")
-      .ilike("code", code)
-      .eq("status", "active")
-      .maybeSingle();
-
-    if (linkError) throw linkError;
-    const link = linkData as AffiliateLinkRow | null;
-    if (!link) return affiliateResponse(origin);
-
-    const { data: sellerData, error: sellerError } = await supabaseAdmin
-      .from("affiliate_sellers")
-      .select("id, status")
-      .eq("id", link.seller_id)
-      .eq("status", "active")
-      .maybeSingle();
-
-    if (sellerError) throw sellerError;
-    if (!sellerData) return affiliateResponse(origin);
-
-    return affiliateResponse(origin, true, link.code);
+    return promotionResponse(origin, resolved);
   } catch (error) {
     console.error("affiliate-public error", error);
-    return jsonResponse(origin, {
-      success: true,
-      data: { valid: false, code: "", discountBps: 0 },
-    });
+    return promotionResponse(origin, { reason: "lookup_failed" });
   }
 });

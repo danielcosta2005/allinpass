@@ -12,6 +12,8 @@ type AffiliateSellerRow = {
   name: string;
   contact: string;
   pix_key: string;
+  phone: string | null;
+  email: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -26,10 +28,43 @@ type AffiliateLinkRow = {
   updated_at: string;
 };
 
+type PromotionalCodeRow = {
+  id: string;
+  seller_id: string | null;
+  affiliate_link_id: string | null;
+  code: string;
+  discount_bps: number;
+  commission_bps: number;
+  duration: string;
+  max_uses: number | null;
+  redeemed_uses: number;
+  valid_until: string | null;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const SELLER_SELECT_FIELDS =
-  "id, name, contact, pix_key, status, created_at, updated_at";
+  "id, name, contact, pix_key, phone, email, status, created_at, updated_at";
 const LINK_SELECT_FIELDS =
   "id, seller_id, code, status, created_at, updated_at";
+const PROMOTIONAL_CODE_SELECT_FIELDS = [
+  "id",
+  "seller_id",
+  "affiliate_link_id",
+  "code",
+  "discount_bps",
+  "commission_bps",
+  "duration",
+  "max_uses",
+  "redeemed_uses",
+  "valid_until",
+  "status",
+  "metadata",
+  "created_at",
+  "updated_at",
+].join(", ");
 const PAYOUT_SELECT_FIELDS = [
   "id",
   "seller_id",
@@ -80,6 +115,18 @@ const COMMISSION_ADMIN_SELECT_FIELDS = [
 ].join(", ");
 const VALID_SELLER_STATUSES = new Set(["active", "inactive"]);
 const VALID_COMMISSION_STATUSES = new Set(["pending", "paid", "void"]);
+const VALID_PROMOTIONAL_CODE_STATUSES = new Set([
+  "active",
+  "inactive",
+  "archived",
+]);
+const VALID_PROMOTIONAL_CODE_DURATIONS = new Set([
+  "once",
+  "forever",
+  "repeating",
+]);
+const PROMOTIONAL_CODE_PATTERN = /^[a-z0-9]{5,10}$/;
+const MAX_PROMOTIONAL_BPS = 10_000;
 const LINK_CODE_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const LINK_CODE_LENGTH = 10;
 const LINK_CODE_MAX_ATTEMPTS = 5;
@@ -167,6 +214,8 @@ function mapSeller(
     name: seller.name,
     contact: seller.contact,
     pixKey: seller.pix_key,
+    phone: seller.phone,
+    email: seller.email,
     status: seller.status,
     createdAt: seller.created_at,
     updatedAt: seller.updated_at,
@@ -179,6 +228,25 @@ function mapSeller(
       pendingCommissionCount: 0,
       paidCommissionCount: 0,
     },
+  };
+}
+
+function mapPromotionalCode(code: PromotionalCodeRow) {
+  return {
+    id: code.id,
+    sellerId: code.seller_id,
+    affiliateLinkId: code.affiliate_link_id,
+    code: code.code,
+    discountBps: code.discount_bps,
+    commissionBps: code.commission_bps,
+    duration: code.duration,
+    maxUses: code.max_uses,
+    redeemedUses: code.redeemed_uses,
+    validUntil: code.valid_until,
+    status: code.status,
+    metadata: code.metadata || {},
+    createdAt: code.created_at,
+    updatedAt: code.updated_at,
   };
 }
 
@@ -239,6 +307,158 @@ function normalizeCommissionStatus(value: unknown, { optional = false } = {}) {
   }
 
   return status;
+}
+
+function normalizePromotionalCode(value: unknown, { optional = false } = {}) {
+  const code = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .slice(0, 10);
+
+  if (optional && !code) return "";
+
+  if (!PROMOTIONAL_CODE_PATTERN.test(code)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_CODE",
+      "Codigo promocional invalido.",
+    );
+  }
+
+  return code;
+}
+
+function normalizePromotionalCodeStatus(value: unknown, { optional = false } = {}) {
+  const status = String(value ?? "").trim().toLowerCase();
+
+  if (optional && !status) return "";
+
+  if (!VALID_PROMOTIONAL_CODE_STATUSES.has(status)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_STATUS",
+      "Status do codigo promocional invalido.",
+    );
+  }
+
+  return status;
+}
+
+function normalizePromotionalCodeDuration(value: unknown, { optional = false } = {}) {
+  const duration = String(value ?? "").trim().toLowerCase();
+
+  if (optional && !duration) return "";
+
+  if (!VALID_PROMOTIONAL_CODE_DURATIONS.has(duration)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_DURATION",
+      "Duracao do codigo promocional invalida.",
+    );
+  }
+
+  return duration;
+}
+
+function normalizeBps(value: unknown, fieldName: string, { optional = false } = {}) {
+  if (optional && (value === null || value === undefined || value === "")) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  if (
+    !Number.isFinite(parsed) ||
+    !Number.isInteger(parsed) ||
+    parsed < 0 ||
+    parsed > MAX_PROMOTIONAL_BPS
+  ) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_BPS",
+      `${fieldName} invalido.`,
+    );
+  }
+
+  return parsed;
+}
+
+function normalizeOptionalPositiveInt(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_LIMIT",
+      "Limite de usos invalido.",
+    );
+  }
+
+  return parsed;
+}
+
+function normalizeOptionalValidUntil(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PROMOTIONAL_VALID_UNTIL",
+      "Data de validade invalida.",
+    );
+  }
+
+  return parsed.toISOString();
+}
+
+function normalizePhone(value: unknown) {
+  const phone = String(value ?? "").trim().replace(/[^\d+]/g, "");
+  if (!phone) return null;
+  const normalized = phone.startsWith("+") ? phone : `+55${phone}`;
+
+  if (!/^\+[0-9]{8,15}$/.test(normalized)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_PHONE",
+      "Telefone do vendedor invalido.",
+    );
+  }
+
+  return normalized;
+}
+
+function normalizeEmail(value: unknown) {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!email) return null;
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_INVALID_EMAIL",
+      "Email do vendedor invalido.",
+    );
+  }
+
+  return email;
+}
+
+function assertMarginWarningAcknowledged(payload: any) {
+  const discountBps = Number(payload?.discountBps ?? payload?.discount_bps ?? 0);
+  const commissionBps = Number(payload?.commissionBps ?? payload?.commission_bps ?? 0);
+  const marginWarningAcknowledged = Boolean(payload?.marginWarningAcknowledged);
+
+  if (discountBps + commissionBps > MAX_PROMOTIONAL_BPS && !marginWarningAcknowledged) {
+    throw new HttpError(
+      409,
+      "AFFILIATE_MARGIN_WARNING_REQUIRED",
+      "Confirme o alerta de margem antes de salvar este codigo promocional.",
+    );
+  }
+
+  return marginWarningAcknowledged;
 }
 
 function validateSellerId(value: unknown) {
@@ -321,9 +541,11 @@ function validateRequiredFields(payload: any) {
   const name = String(payload?.name ?? "");
   const contact = String(payload?.contact ?? "");
   const pixKey = String(payload?.pixKey ?? "");
+  const phone = normalizePhone(payload?.phone);
+  const email = normalizeEmail(payload?.email);
 
   const cleanName = name.trim();
-  const cleanContact = contact.trim();
+  const cleanContact = contact.trim() || email || phone || "";
   const cleanPixKey = pixKey.trim();
 
   if (!cleanName || !cleanContact || !cleanPixKey) {
@@ -334,11 +556,11 @@ function validateRequiredFields(payload: any) {
     );
   }
 
-  return { cleanName, cleanContact, cleanPixKey };
+  return { cleanName, cleanContact, cleanPixKey, phone, email };
 }
 
 async function createSeller(supabaseAdmin: any, caller: Caller, payload: any) {
-  const { cleanName, cleanContact, cleanPixKey } = validateRequiredFields(
+  const { cleanName, cleanContact, cleanPixKey, phone, email } = validateRequiredFields(
     payload,
   );
 
@@ -348,6 +570,8 @@ async function createSeller(supabaseAdmin: any, caller: Caller, payload: any) {
       name: cleanName,
       contact: cleanContact,
       pix_key: cleanPixKey,
+      phone,
+      email,
       created_by: caller.user.id,
       updated_by: caller.user.id,
     })
@@ -937,7 +1161,7 @@ async function updateSeller(
   payload: any,
 ) {
   const sellerId = validateSellerId(payload?.sellerId);
-  const { cleanName, cleanContact, cleanPixKey } = validateRequiredFields(
+  const { cleanName, cleanContact, cleanPixKey, phone, email } = validateRequiredFields(
     payload,
   );
   const status = normalizeStatus(payload?.status);
@@ -945,12 +1169,14 @@ async function updateSeller(
   const { data: seller, error } = await supabaseAdmin
     .from("affiliate_sellers")
     .update({
-      name: cleanName,
-      contact: cleanContact,
-      pix_key: cleanPixKey,
-      status,
-      updated_by: caller.user.id,
-    })
+        name: cleanName,
+        contact: cleanContact,
+        pix_key: cleanPixKey,
+        phone,
+        email,
+        status,
+        updated_by: caller.user.id,
+      })
     .eq("id", sellerId)
     .select(SELLER_SELECT_FIELDS)
     .maybeSingle();
@@ -969,6 +1195,354 @@ async function updateSeller(
     success: true,
     data: {
       seller: mapSeller(seller),
+    },
+  });
+}
+
+function validatePromotionalCodeId(value: unknown) {
+  const promoCodeId = String(value ?? "").trim();
+
+  if (!promoCodeId || !UUID_RE.test(promoCodeId)) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_PROMOTIONAL_CODE_INVALID",
+      "Codigo promocional invalido.",
+    );
+  }
+
+  return promoCodeId;
+}
+
+function readPromotionalCodePayload(payload: any, { partial = false } = {}) {
+  const discountBps = normalizeBps(
+    payload?.discountBps ?? payload?.discount_bps,
+    "Desconto",
+    { optional: partial },
+  );
+  const commissionBps = normalizeBps(
+    payload?.commissionBps ?? payload?.commission_bps,
+    "Comissao",
+    { optional: partial },
+  );
+  const duration = normalizePromotionalCodeDuration(
+    payload?.duration,
+    { optional: true },
+  );
+  const status = normalizePromotionalCodeStatus(
+    payload?.status,
+    { optional: true },
+  );
+  const code = normalizePromotionalCode(
+    payload?.code ?? payload?.promoCode,
+    { optional: true },
+  );
+
+  if (!partial) {
+    assertMarginWarningAcknowledged(payload);
+  } else if (
+    payload?.discountBps !== undefined ||
+    payload?.commissionBps !== undefined ||
+    payload?.discount_bps !== undefined ||
+    payload?.commission_bps !== undefined
+  ) {
+    assertMarginWarningAcknowledged(payload);
+  }
+
+  return {
+    code,
+    discountBps,
+    commissionBps,
+    duration,
+    status,
+    maxUses: normalizeOptionalPositiveInt(
+      payload?.maxUses ?? payload?.max_uses,
+    ),
+    validUntil: normalizeOptionalValidUntil(
+      payload?.validUntil ?? payload?.valid_until,
+    ),
+  };
+}
+
+async function listPromotionalCodes(supabaseAdmin: any, payload: any) {
+  const page = normalizePage(payload?.page);
+  const pageSize = normalizePageSize(payload?.pageSize);
+  const status = normalizePromotionalCodeStatus(payload?.status, {
+    optional: true,
+  });
+  const sellerId = validateOptionalSellerId(payload?.sellerId);
+  const search = normalizeSearch(payload?.search);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabaseAdmin
+    .from("billing_promotional_codes")
+    .select(PROMOTIONAL_CODE_SELECT_FIELDS, { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (status) query = query.eq("status", status);
+  if (sellerId) query = query.eq("seller_id", sellerId);
+  if (search) query = query.ilike("code", `%${search}%`);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      promotionalCodes: (data || []).map(mapPromotionalCode),
+      page,
+      pageSize,
+      total: count ?? 0,
+    },
+  });
+}
+
+async function createPromotionalCode(
+  supabaseAdmin: any,
+  caller: Caller,
+  payload: any,
+) {
+  const sellerId = validateOptionalSellerId(payload?.sellerId);
+  const {
+    code,
+    discountBps,
+    commissionBps,
+    duration,
+    status,
+    maxUses,
+    validUntil,
+  } = readPromotionalCodePayload(payload);
+
+  if (!sellerId && Number(commissionBps || 0) > 0) {
+    throw new HttpError(
+      400,
+      "AFFILIATE_CAMPAIGN_COMMISSION_NOT_ALLOWED",
+      "Cupons de campanha nao podem gerar comissao.",
+    );
+  }
+
+  let sellerLink: AffiliateLinkRow | null = null;
+  let couponCode = code || generateLinkCode();
+
+  if (sellerId) {
+    const { data: seller, error: sellerError } = await supabaseAdmin
+      .from("affiliate_sellers")
+      .select("id, status")
+      .eq("id", sellerId)
+      .maybeSingle();
+
+    if (sellerError) throw sellerError;
+    if (!seller) {
+      throw new HttpError(
+        404,
+        "AFFILIATE_SELLER_NOT_FOUND",
+        "Vendedor afiliado nao encontrado.",
+      );
+    }
+    if (seller.status !== "active") {
+      throw new HttpError(
+        409,
+        "AFFILIATE_SELLER_INACTIVE",
+        "Vendedor inativo nao pode receber cupom ativo.",
+      );
+    }
+
+    sellerLink = await findSellerLink(supabaseAdmin, sellerId);
+    if (sellerLink && code && sellerLink.code !== code) {
+      throw new HttpError(
+        409,
+        "AFFILIATE_PROMOTIONAL_CODE_LINK_MISMATCH",
+        "Cupom de vendedor deve espelhar o codigo do link afiliado.",
+      );
+    }
+
+    if (!sellerLink) {
+      const { data: link, error: linkError } = await supabaseAdmin
+        .from("affiliate_links")
+        .insert({
+          seller_id: sellerId,
+          code: couponCode,
+          status: "active",
+          created_by: caller.user.id,
+          updated_by: caller.user.id,
+        })
+        .select(LINK_SELECT_FIELDS)
+        .single();
+
+      if (linkError) throw linkError;
+      sellerLink = link as AffiliateLinkRow;
+    }
+
+    couponCode = sellerLink.code;
+  }
+
+  const insertPayload = {
+    seller_id: sellerId || null,
+    affiliate_link_id: sellerLink?.id ?? null,
+    code: couponCode,
+    discount_bps: discountBps,
+    commission_bps: sellerId ? commissionBps : 0,
+    duration: duration || "once",
+    max_uses: maxUses,
+    valid_until: validUntil,
+    status: status || "active",
+    metadata: {
+      origin: "affiliate_admin",
+      marginWarningAcknowledged: Boolean(payload?.marginWarningAcknowledged),
+    },
+    created_by: caller.user.id,
+    updated_by: caller.user.id,
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("billing_promotional_codes")
+    .insert(insertPayload)
+    .select(PROMOTIONAL_CODE_SELECT_FIELDS)
+    .single();
+
+  if (error) throw error;
+
+  return jsonResponse({
+    success: true,
+    data: { promotionalCode: mapPromotionalCode(data) },
+  });
+}
+
+async function updatePromotionalCode(
+  supabaseAdmin: any,
+  caller: Caller,
+  payload: any,
+) {
+  const promoCodeId = validatePromotionalCodeId(
+    payload?.promotionalCodeId ?? payload?.promoCodeId ?? payload?.id,
+  );
+  const values = readPromotionalCodePayload(payload, { partial: true });
+  const updatePayload: Record<string, unknown> = {
+    updated_by: caller.user.id,
+  };
+
+  if (values.code) updatePayload.code = values.code;
+  if (values.discountBps !== null) updatePayload.discount_bps = values.discountBps;
+  if (values.commissionBps !== null) updatePayload.commission_bps = values.commissionBps;
+  if (values.duration) updatePayload.duration = values.duration;
+  if (values.status) updatePayload.status = values.status;
+  if (payload?.maxUses !== undefined || payload?.max_uses !== undefined) {
+    updatePayload.max_uses = values.maxUses;
+  }
+  if (payload?.validUntil !== undefined || payload?.valid_until !== undefined) {
+    updatePayload.valid_until = values.validUntil;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("billing_promotional_codes")
+    .update(updatePayload)
+    .eq("id", promoCodeId)
+    .select(PROMOTIONAL_CODE_SELECT_FIELDS)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    throw new HttpError(
+      404,
+      "AFFILIATE_PROMOTIONAL_CODE_NOT_FOUND",
+      "Codigo promocional nao encontrado.",
+    );
+  }
+
+  return jsonResponse({
+    success: true,
+    data: { promotionalCode: mapPromotionalCode(data) },
+  });
+}
+
+async function createSellerWithCoupon(
+  supabaseAdmin: any,
+  caller: Caller,
+  payload: any,
+) {
+  const { cleanName, cleanContact, cleanPixKey, phone, email } =
+    validateRequiredFields(payload);
+  const couponPayload = {
+    ...payload,
+    ...(payload?.coupon && typeof payload.coupon === "object"
+      ? payload.coupon
+      : {}),
+  };
+  const {
+    code,
+    discountBps,
+    commissionBps,
+    duration,
+    status,
+    maxUses,
+    validUntil,
+  } = readPromotionalCodePayload(couponPayload);
+  const couponCode = code || generateLinkCode();
+
+  const { data: seller, error: sellerError } = await supabaseAdmin
+    .from("affiliate_sellers")
+    .insert({
+      name: cleanName,
+      contact: cleanContact,
+      pix_key: cleanPixKey,
+      phone,
+      email,
+      status: "active",
+      created_by: caller.user.id,
+      updated_by: caller.user.id,
+    })
+    .select(SELLER_SELECT_FIELDS)
+    .single();
+
+  if (sellerError) throw sellerError;
+
+  const { data: link, error: linkError } = await supabaseAdmin
+    .from("affiliate_links")
+    .insert({
+      seller_id: seller.id,
+      code: couponCode,
+      status: "active",
+      created_by: caller.user.id,
+      updated_by: caller.user.id,
+    })
+    .select(LINK_SELECT_FIELDS)
+    .single();
+
+  if (linkError) throw linkError;
+
+  const { data: promotionalCode, error: promoError } = await supabaseAdmin
+    .from("billing_promotional_codes")
+    .insert({
+      seller_id: seller.id,
+      affiliate_link_id: link.id,
+      code: couponCode,
+      discount_bps: discountBps,
+      commission_bps: commissionBps,
+      duration: duration || "once",
+      max_uses: maxUses,
+      valid_until: validUntil,
+      status: status || "active",
+      metadata: {
+        origin: "affiliate_admin_create_seller_with_coupon",
+        marginWarningAcknowledged: Boolean(
+          couponPayload?.marginWarningAcknowledged,
+        ),
+      },
+      created_by: caller.user.id,
+      updated_by: caller.user.id,
+    })
+    .select(PROMOTIONAL_CODE_SELECT_FIELDS)
+    .single();
+
+  if (promoError) throw promoError;
+
+  return jsonResponse({
+    success: true,
+    data: {
+      seller: mapSeller(seller, link),
+      link: mapLink(link),
+      promotionalCode: mapPromotionalCode(promotionalCode),
     },
   });
 }
@@ -1034,6 +1608,22 @@ Deno.serve(async (req) => {
 
     if (action === "updateSeller") {
       return await updateSeller(supabaseAdmin, caller, payload);
+    }
+
+    if (action === "listPromotionalCodes") {
+      return await listPromotionalCodes(supabaseAdmin, payload);
+    }
+
+    if (action === "createPromotionalCode") {
+      return await createPromotionalCode(supabaseAdmin, caller, payload);
+    }
+
+    if (action === "updatePromotionalCode") {
+      return await updatePromotionalCode(supabaseAdmin, caller, payload);
+    }
+
+    if (action === "createSellerWithCoupon") {
+      return await createSellerWithCoupon(supabaseAdmin, caller, payload);
     }
 
     throw new HttpError(

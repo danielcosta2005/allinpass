@@ -52,10 +52,14 @@ describe("affiliate recurring commissions", () => {
   test("asaas webhook creates commissions only for confirmed base subscription payments", () => {
     const webhookSource = readIfExists(path.join(repoRoot, "supabase/functions/asaas-webhook/index.ts"));
 
-    expect(webhookSource).toContain("AFFILIATE_COMMISSION_RATE_BPS = 1000");
+    expect(webhookSource).toContain("LEGACY_COMMISSION_RATE_BPS = 1000");
     expect(webhookSource).toContain("createAffiliateCommission");
     expect(webhookSource).toContain("affiliate_commissions");
     expect(webhookSource).toContain("affiliate_attributions");
+    expect(webhookSource).toContain("resolveAttributionCommissionBps");
+    expect(webhookSource).toContain("commission_bps_snapshot");
+    expect(webhookSource).toContain("affiliate_commission_reversals");
+    expect(webhookSource).toContain("handleAffiliateCommissionClawback");
     expect(webhookSource).toContain(".from(\"billing_subscriptions\")");
     expect(webhookSource).toContain("base_price_cents");
     expect(webhookSource).toContain("PAYMENT_CONFIRMED");
@@ -68,7 +72,10 @@ describe("affiliate recurring commissions", () => {
     expect(webhookSource).toContain("provider_payment_id");
     expect(webhookSource).toContain("isUniqueViolation");
     expect(webhookSource).toContain("status: \"pending\"");
+    expect(webhookSource).toContain("status: \"void\"");
+    expect(webhookSource).toContain("status: \"pending_finance_review\"");
     expect(webhookSource).not.toContain("total_overage");
+    expect(webhookSource).not.toContain("AFFILIATE_COMMISSION_RATE_BPS = 1000");
 
     const overageIndex = webhookSource.indexOf("handleOverageInvoicePaymentWebhook");
     const commissionIndex = webhookSource.indexOf("createAffiliateCommission");

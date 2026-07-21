@@ -7,6 +7,14 @@ function readIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
 }
 
+function sourceBetween(source, start, end) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+
+  if (startIndex < 0) return "";
+  return source.slice(startIndex, endIndex < 0 ? undefined : endIndex);
+}
+
 function readAffiliateLinkMigrations() {
   const migrationsDir = path.join(repoRoot, "supabase/migrations");
   if (!fs.existsSync(migrationsDir)) return "";
@@ -57,8 +65,13 @@ describe("affiliate links admin lifecycle", () => {
     expect(functionSource).toContain(".from(\"affiliate_sellers\")");
     expect(functionSource).toContain("updated_by: caller.user.id");
     expect(functionSource).toContain("action === \"getOrCreateSellerLink\"");
-    expect(functionSource).not.toContain("payload?.code");
-    expect(functionSource).not.toContain("code: payload");
+    const getOrCreateSource = sourceBetween(
+      functionSource,
+      "async function getOrCreateSellerLink",
+      "async function updateSeller",
+    );
+    expect(getOrCreateSource).not.toContain("payload?.code");
+    expect(getOrCreateSource).not.toContain("code: payload");
     expect(functionSource).not.toContain("auth.role()");
   });
 
@@ -102,7 +115,8 @@ describe("affiliate links admin lifecycle", () => {
     expect(dashboardSource).toContain("value: 'affiliates'");
     expect(dashboardSource).toContain("label: 'Afiliados'");
     expect(dashboardSource).toContain("isSuperadmin");
-    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"><AffiliatesTab /></TabsContent>");
+    expect(dashboardSource).toContain("<TabsContent value=\"affiliates\"");
+    expect(dashboardSource).toContain("<AffiliatesTab />");
     expect(dashboardSource).not.toContain("projectTabs.push({ value: 'affiliates'");
   });
 });
