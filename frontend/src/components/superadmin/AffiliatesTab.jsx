@@ -1026,7 +1026,7 @@ const AffiliatesTab = () => {
     const nextStatus = promotionalCode.status === 'inactive' ? 'active' : 'inactive';
 
     return (
-      <div className="min-w-[22rem] space-y-2">
+      <div className="min-w-[16rem]">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-semibold text-foreground">{promotionalCode.code}</span>
           <StatusBadge status={promotionalCode.status} />
@@ -1055,13 +1055,8 @@ const AffiliatesTab = () => {
             {nextStatus === 'active' ? 'Ativar' : 'Inativar'}
           </Button>
         </div>
-        <p className="truncate font-mono text-xs text-muted-foreground">
-          {`/?promo=${promotionalCode.code}#planos`}
-        </p>
-        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-          <span>Desconto {formatRateBps(promotionalCode.discountBps)}</span>
+        <div className="hidden">
           <span>Comissão {formatRateBps(promotionalCode.commissionBps)}</span>
-          <span>Usos {formatUses(promotionalCode)}</span>
         </div>
         <span className="sr-only">Copiar cupom</span>
       </div>
