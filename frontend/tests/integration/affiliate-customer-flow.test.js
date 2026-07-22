@@ -105,6 +105,27 @@ describe("affiliate referred customer flow", () => {
     expect(signupHelperSource).not.toContain("commissionRate");
   });
 
+  test("signup payment step lets customers enter or reuse a promotional code manually", () => {
+    const signupPageSource = readIfExists(path.join(repoRoot, "frontend/src/pages/SignupPage.jsx"));
+    const paymentStepSource = readIfExists(path.join(repoRoot, "frontend/src/pages/signup/SignupStatusCards.jsx"));
+
+    expect(signupPageSource).toContain("const [promotionalCodeInput, setPromotionalCodeInput]");
+    expect(signupPageSource).toContain("setPromotionalCodeInput(currentAffiliateRef)");
+    expect(signupPageSource).toContain("const appliedPromotionalCode = normalizeAffiliateRef(promotionalCodeInput)");
+    expect(signupPageSource).toContain("if (promotionalCodeInput.trim() && !appliedPromotionalCode)");
+    expect(signupPageSource).toContain("Cupom de desconto invalido.");
+    expect(signupPageSource).toContain("resolveAffiliateRef(appliedPromotionalCode)");
+    expect(signupPageSource).toContain("affiliateRef: appliedPromotionalCode");
+    expect(signupPageSource).toContain("promotionalCodeValue={promotionalCodeInput}");
+    expect(signupPageSource).toContain("onPromotionalCodeChange={setPromotionalCodeInput}");
+    expect(paymentStepSource).toContain("promotionalCodeValue");
+    expect(paymentStepSource).toContain("onPromotionalCodeChange");
+    expect(paymentStepSource).toContain('htmlFor="signup-promotional-code"');
+    expect(paymentStepSource).toContain('id="signup-promotional-code"');
+    expect(paymentStepSource).toContain("Cupom de desconto");
+    expect(paymentStepSource).toContain("placeholder=\"Digite seu cupom\"");
+  });
+
   test("signup checkout applies affiliate discount server-side and audits it", () => {
     const checkoutSource = readIfExists(path.join(repoRoot, "supabase/functions/signup-start-checkout/index.ts"));
 

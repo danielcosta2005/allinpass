@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabaseClient';
 export const DEFAULT_PLAN_KEY = 'starter';
 export const AFFILIATE_DISCOUNT_BPS = 1000;
 
-const AFFILIATE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{5,39}$/;
+const AFFILIATE_REF_PATTERN = /^[a-z0-9][a-z0-9-]{4,39}$/;
 
 export const normalizeAffiliateRef = (value) => {
   const normalized = String(value || '')

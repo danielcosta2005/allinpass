@@ -91,6 +91,8 @@ function SignupPage() {
     ],
   );
   const [affiliateOffer, setAffiliateOffer] = useState({ valid: false, code: '', discountBps: 0 });
+  const [promotionalCodeInput, setPromotionalCodeInput] = useState('');
+  const appliedPromotionalCode = normalizeAffiliateRef(promotionalCodeInput);
   const selectedPlanKey = useMemo(() => {
     const explicitPlanKey = String(searchParams.get('plano') || '').trim();
     if (explicitPlanKey) return explicitPlanKey;
@@ -732,10 +734,14 @@ function SignupPage() {
         throw new Error('Selecione um plano pago para continuar.');
       }
 
+      if (promotionalCodeInput.trim() && !appliedPromotionalCode) {
+        throw new Error('Cupom de desconto invalido.');
+      }
+
       const checkout = await startPaidSignupCheckout({
         establishmentName,
         planCode,
-        affiliateRef: currentAffiliateRef,
+        affiliateRef: appliedPromotionalCode,
       });
 
       trackSignupPaymentInfoAdded({
@@ -794,9 +800,13 @@ function SignupPage() {
   }, [signupCaptchaEnabled]);
 
   useEffect(() => {
+    setPromotionalCodeInput(currentAffiliateRef);
+  }, [currentAffiliateRef]);
+
+  useEffect(() => {
     let mounted = true;
 
-    if (!currentAffiliateRef) {
+    if (!appliedPromotionalCode) {
       setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
       return () => {
         mounted = false;
@@ -806,7 +816,7 @@ function SignupPage() {
     setAffiliateOffer({ valid: false, code: '', discountBps: 0 });
 
     const loadAffiliateOffer = async () => {
-      const result = await resolveAffiliateRef(currentAffiliateRef);
+      const result = await resolveAffiliateRef(appliedPromotionalCode);
       if (!mounted) return;
       setAffiliateOffer(result?.valid ? result : { valid: false, code: '', discountBps: 0 });
     };
@@ -816,7 +826,7 @@ function SignupPage() {
     return () => {
       mounted = false;
     };
-  }, [currentAffiliateRef]);
+  }, [appliedPromotionalCode]);
 
   useEffect(() => {
     let mounted = true;
@@ -1153,6 +1163,8 @@ function SignupPage() {
                     checkoutError={checkoutError}
                     checkoutLoading={checkoutLoading}
                     onContinue={handlePaymentContinue}
+                    onPromotionalCodeChange={setPromotionalCodeInput}
+                    promotionalCodeValue={promotionalCodeInput}
                     selectedPlan={selectedPlan}
                   />
                 )}

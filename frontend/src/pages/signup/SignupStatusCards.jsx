@@ -4,6 +4,8 @@ import { motion } from 'framer-motion';
 import { BadgePercent, CheckCircle2, CreditCard, Loader2, Lock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   calculateAffiliateFirstMonthPrice,
   formatAffiliateDiscountPercent,
@@ -73,6 +75,8 @@ export function PaymentStep({
   checkoutError,
   checkoutLoading,
   onContinue,
+  onPromotionalCodeChange = () => {},
+  promotionalCodeValue = '',
   selectedPlan,
 }) {
   const affiliateDiscountBps = getAffiliateDiscountBps(affiliateOffer);
@@ -120,6 +124,24 @@ export function PaymentStep({
               R$ {formatCurrencyBRL(selectedPlan.price)}/mês
             </p>
           )}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="space-y-2">
+          <Label htmlFor="signup-promotional-code">Cupom de desconto</Label>
+          <div className="relative">
+            <BadgePercent className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-600" />
+            <Input
+              id="signup-promotional-code"
+              type="text"
+              value={promotionalCodeValue}
+              onChange={(event) => onPromotionalCodeChange(event.target.value)}
+              placeholder="Digite seu cupom"
+              autoComplete="off"
+              className="h-12 pl-10"
+            />
+          </div>
         </div>
       </div>
 
