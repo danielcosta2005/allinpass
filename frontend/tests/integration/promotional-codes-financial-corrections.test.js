@@ -52,8 +52,11 @@ describe("promotional code financial corrections", () => {
     expect(source).toContain("discount_cents");
     expect(source).toContain("metadata");
     expect(source).toContain("checkout_session_id");
+    expect(source).toContain("'created_at'");
+    expect(source).toContain("createdAt: row.created_at || null");
     expect(source).toContain("isFirstMonthDiscounted");
-    expect(source).toContain("invoice?.isFirstMonthDiscounted");
+    expect(source).toContain("if (invoice.billingCycleId && summary.billingCycleId)");
+    expect(source).toContain("invoice.paidAt || invoice.dueAt || invoice.createdAt");
     expect(source).toContain("firstMonthInvoice.amountPaidCents || firstMonthInvoice.totalCents");
     expect(source).toContain("firstMonthInvoice");
     expect(source).toContain("baseWithDiscountCents + overageCents");

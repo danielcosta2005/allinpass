@@ -19,6 +19,7 @@ const BILLING_INVOICE_SELECT_FIELDS = [
   'checkout_session_id',
   'due_at',
   'paid_at',
+  'created_at',
 ].join(', ');
 
 function toNumber(value) {
@@ -100,6 +101,7 @@ function normalizeInvoice(row) {
     isFirstMonthDiscounted: isFirstMonthDiscountedInvoice(row),
     dueAt: row.due_at || null,
     paidAt: row.paid_at || null,
+    createdAt: row.created_at || null,
   };
 }
 
@@ -168,14 +170,23 @@ function findFirstMonthInvoiceForSummary(summary, invoices) {
   return invoices.find((invoice) => {
     if (!invoice?.isFirstMonthDiscounted) return false;
     if (invoice.subscriptionId !== summary.subscriptionId) return false;
-    if (invoice.billingCycleId) return invoice.billingCycleId === summary.billingCycleId;
+    if (invoice.billingCycleId && summary.billingCycleId) {
+      return invoice.billingCycleId === summary.billingCycleId;
+    }
 
-    const paidAt = toDateMs(invoice.paidAt || invoice.dueAt);
     return Number.isFinite(periodStart)
       && Number.isFinite(periodEnd)
-      && Number.isFinite(paidAt)
-      && periodStart <= paidAt
-      && paidAt < periodEnd;
+      && [
+        invoice.paidAt || invoice.dueAt || invoice.createdAt,
+        invoice.createdAt,
+        invoice.paidAt,
+        invoice.dueAt,
+      ].some((invoiceDate) => {
+        const invoiceAt = toDateMs(invoiceDate);
+        return Number.isFinite(invoiceAt)
+          && periodStart <= invoiceAt
+          && invoiceAt < periodEnd;
+      });
   }) || null;
 }
 
