@@ -801,7 +801,7 @@ async function listCommissionClients(supabaseAdmin: any, payload: any) {
         "metadata",
         "created_at",
         "updated_at",
-        "affiliate_sellers(id, name, contact, pix_key, status)",
+        "seller:affiliate_sellers!affiliate_attributions_seller_id_fkey(id, name, contact, pix_key, status)",
         "affiliate_links(id, code, status)",
         "projects(id, name, slug)",
         "billing_subscriptions(id, status, plan_id, base_price_cents, currency)",

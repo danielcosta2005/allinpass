@@ -163,4 +163,19 @@ describe("promotional code edge functions", () => {
     expect(listClientsSource).not.toContain('"affiliate_commissions(');
     expect(listClientsSource).not.toContain('"affiliate_payouts(');
   });
+
+  test("affiliate-admin disambiguates referred client seller embed from seller snapshots", () => {
+    const source = readSource("supabase/functions/affiliate-admin/index.ts");
+    const listClientsSource = source.slice(
+      source.indexOf("async function listCommissionClients"),
+      source.indexOf("async function getCommissionById"),
+    );
+
+    expect(listClientsSource).toContain(
+      '"seller:affiliate_sellers!affiliate_attributions_seller_id_fkey(id, name, contact, pix_key, status)"',
+    );
+    expect(listClientsSource).not.toContain(
+      '"affiliate_sellers(id, name, contact, pix_key, status)"',
+    );
+  });
 });
