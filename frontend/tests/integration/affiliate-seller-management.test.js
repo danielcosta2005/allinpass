@@ -37,6 +37,9 @@ describe("affiliate seller management UI and backend", () => {
     expect(helperSource).toContain("action: 'createSeller'");
     expect(helperSource).toContain("action: 'listSellers'");
     expect(helperSource).toContain("action: 'updateSeller'");
+    expect(helperSource).toContain("readAffiliateAdminError");
+    expect(helperSource).toContain("error.context");
+    expect(helperSource).toContain("await error.context.json()");
     expect(helperSource).toContain("pixKey");
   });
 

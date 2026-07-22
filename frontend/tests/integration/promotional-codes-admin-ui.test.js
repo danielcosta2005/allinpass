@@ -90,6 +90,8 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("commissionBps: 1000");
     expect(source).toContain("negativeMarginAcknowledged");
     expect(source).toContain("marginWarningAcknowledged");
+    expect(source).toContain("duration: 'first_month'");
+    expect(source).not.toContain("duration: 'once'");
     expect(source).toContain("Etapa 1");
     expect(source).toContain("Etapa 2");
     expect(source).toContain("Criar vendedor e cupom");
@@ -101,6 +103,19 @@ describe("promotional code admin UI", () => {
     expect(source).not.toContain('handleSellerFormChange(\'contact\'');
     expect(source).not.toContain('seller.contact');
     expect(source).not.toContain(">Contato<");
+  });
+
+  test("coupon setup form accepts 1000 bps values and does not expose creation status", () => {
+    const source = readSource("frontend/src/components/superadmin/AffiliatesTab.jsx");
+    const discountInput = source.match(/id="coupon-discount"[\s\S]*?value={couponForm\.discountBps}/)?.[0] || "";
+
+    expect(discountInput).toContain('id="coupon-discount"');
+    expect(discountInput).toContain('min="0"');
+    expect(discountInput).toContain('step="100"');
+    expect(source).toContain("status: couponForm.status");
+    expect(source).not.toContain('htmlFor="coupon-status"');
+    expect(source).not.toContain('id="coupon-status"');
+    expect(source).not.toContain("handleCouponFormChange('status'");
   });
 
   test("coupon create and edit forms validate coupon rules without seller fields", () => {

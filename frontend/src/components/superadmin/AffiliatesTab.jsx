@@ -836,7 +836,7 @@ const AffiliatesTab = () => {
     status: couponForm.status,
     maxUses: couponForm.maxUses ? Number(couponForm.maxUses) : null,
     validUntil: couponForm.validUntil || null,
-    duration: 'once',
+    duration: 'first_month',
     marginWarningAcknowledged: negativeMarginAcknowledged,
   });
 
@@ -2059,7 +2059,7 @@ const AffiliatesTab = () => {
                     <Input
                       id="coupon-discount"
                       type="number"
-                      min="1"
+                      min="0"
                       max="10000"
                       step="100"
                       value={couponForm.discountBps}
@@ -2085,24 +2085,7 @@ const AffiliatesTab = () => {
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label htmlFor="coupon-status">Status</Label>
-                    <Select
-                      value={couponForm.status}
-                      onValueChange={(value) => handleCouponFormChange('status', value)}
-                      disabled={submitting}
-                    >
-                      <SelectTrigger id="coupon-status">
-                        <SelectValue placeholder="Status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="active">Ativo</SelectItem>
-                        <SelectItem value="inactive">Inativo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="coupon-max-uses">Limite de usos</Label>
                     <Input

@@ -121,9 +121,7 @@ const VALID_PROMOTIONAL_CODE_STATUSES = new Set([
   "archived",
 ]);
 const VALID_PROMOTIONAL_CODE_DURATIONS = new Set([
-  "once",
-  "forever",
-  "repeating",
+  "first_month",
 ]);
 const PROMOTIONAL_CODE_PATTERN = /^[a-z0-9]{5,10}$/;
 const MAX_PROMOTIONAL_BPS = 10_000;
@@ -1390,7 +1388,7 @@ async function createPromotionalCode(
     code: couponCode,
     discount_bps: discountBps,
     commission_bps: sellerId ? commissionBps : 0,
-    duration: duration || "once",
+    duration: duration || "first_month",
     max_uses: maxUses,
     valid_until: validUntil,
     status: status || "active",
@@ -1526,7 +1524,7 @@ async function createSellerWithCoupon(
       code: couponCode,
       discount_bps: discountBps,
       commission_bps: commissionBps,
-      duration: duration || "once",
+      duration: duration || "first_month",
       max_uses: maxUses,
       valid_until: validUntil,
       status: status || "active",

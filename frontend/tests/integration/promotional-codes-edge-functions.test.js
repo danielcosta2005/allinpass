@@ -128,6 +128,8 @@ describe("promotional code edge functions", () => {
     expect(source).toContain("marginWarningAcknowledged");
     expect(source).toContain("discount_bps");
     expect(source).toContain("commission_bps");
+    expect(source).toContain('"first_month"');
+    expect(source).toContain('duration: duration || "first_month"');
     expect(source).toContain("max_uses");
     expect(source).toContain("valid_until");
     expect(source).toContain("affiliate_link_id");
@@ -136,6 +138,10 @@ describe("promotional code edge functions", () => {
     expect(source).toContain('action === "updatePromotionalCode"');
     expect(source).toContain('action === "createSellerWithCoupon"');
     expect(source).toContain("ensureSuperadmin");
+    expect(source).not.toContain('"once"');
+    expect(source).not.toContain('"forever"');
+    expect(source).not.toContain('"repeating"');
+    expect(source).not.toContain('duration: duration || "once"');
     expect(source).not.toContain("auth.role()");
   });
 });

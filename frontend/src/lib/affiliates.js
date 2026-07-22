@@ -27,7 +27,7 @@ function mapPromotionalCode(code = null) {
     code: code.code,
     discountBps: code.discountBps ?? code.discount_bps ?? 0,
     commissionBps: code.commissionBps ?? code.commission_bps ?? 0,
-    duration: code.duration || 'once',
+    duration: code.duration || 'first_month',
     maxUses: code.maxUses ?? code.max_uses ?? null,
     redeemedUses: code.redeemedUses ?? code.redeemed_uses ?? 0,
     reservedUses: code.reservedUses ?? code.reserved_uses ?? 0,
@@ -164,14 +164,28 @@ export function buildPromotionalLinkUrl(code) {
   return `${window.location.origin}${path}`;
 }
 
+async function readAffiliateAdminError(error) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const payload = await error.context.json();
+      return payload?.error || payload?.message || error.message;
+    } catch {
+      return error.message || 'Falha ao chamar edge function';
+    }
+  }
+
+  return error?.message || 'Falha ao chamar edge function';
+}
+
 async function invokeAffiliateAdmin(body) {
   const { data, error } = await supabase.functions.invoke('affiliate-admin', {
     body,
   });
 
   if (error) {
+    const message = await readAffiliateAdminError(error);
     console.error('invoke affiliate-admin error:', error);
-    throw new Error(error.message || 'Falha ao chamar edge function');
+    throw new Error(message);
   }
 
   if (!data || data.error) {
@@ -474,7 +488,7 @@ export async function createPromotionalCode({
   discountBps,
   commissionBps = 0,
   status = 'active',
-  duration = 'once',
+  duration = 'first_month',
   maxUses = null,
   validUntil = null,
   marginWarningAcknowledged = false,
