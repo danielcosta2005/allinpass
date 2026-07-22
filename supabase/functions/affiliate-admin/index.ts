@@ -804,8 +804,7 @@ async function listCommissionClients(supabaseAdmin: any, payload: any) {
         "affiliate_sellers(id, name, contact, pix_key, status)",
         "affiliate_links(id, code, status)",
         "projects(id, name, slug)",
-        "billing_subscriptions(id, status, plan_id, base_price_cents, currency, current_period_start, current_period_end)",
-        "affiliate_commissions(id, competence_month, paid_at, payout_id, marked_paid_at, marked_paid_by, payment_note, provider_payment_id, eligible_amount_cents, commission_rate_bps, commission_cents, currency, status, affiliate_payouts(id, paid_at, paid_by, note))",
+        "billing_subscriptions(id, status, plan_id, base_price_cents, currency)",
       ].join(", "),
       { count: "exact" },
     )
@@ -819,10 +818,93 @@ async function listCommissionClients(supabaseAdmin: any, payload: any) {
   const { data: clients, error, count } = await query;
   if (error) throw error;
 
+  const attributionIds = (clients || [])
+    .map((client: { id?: string | null }) => client.id)
+    .filter(Boolean);
+  const commissionsByAttributionId = new Map<string, any[]>();
+
+  if (attributionIds.length > 0) {
+    const { data: commissions, error: commissionsError } = await supabaseAdmin
+      .from("affiliate_commissions")
+      .select(
+        [
+          "id",
+          "attribution_id",
+          "seller_id",
+          "link_id",
+          "user_id",
+          "project_id",
+          "subscription_id",
+          "billing_cycle_id",
+          "plan_id",
+          "competence_month",
+          "paid_at",
+          "payout_id",
+          "marked_paid_at",
+          "marked_paid_by",
+          "payment_note",
+          "provider_payment_id",
+          "provider_event_id",
+          "eligible_amount_cents",
+          "commission_rate_bps",
+          "commission_cents",
+          "currency",
+          "status",
+          "source",
+          "metadata",
+          "created_at",
+          "updated_at",
+        ].join(", "),
+      )
+      .in("attribution_id", attributionIds)
+      .order("competence_month", { ascending: false });
+
+    if (commissionsError) throw commissionsError;
+
+    const payoutIds = Array.from(
+      new Set(
+        (commissions || [])
+          .map((commission: { payout_id?: string | null }) => commission.payout_id)
+          .filter(Boolean),
+      ),
+    );
+    let payoutsById = new Map<string, any>();
+
+    if (payoutIds.length > 0) {
+      const { data: payouts, error: payoutsError } = await supabaseAdmin
+        .from("affiliate_payouts")
+        .select("id, paid_at, paid_by, note")
+        .in("id", payoutIds);
+
+      if (payoutsError) throw payoutsError;
+      payoutsById = new Map((payouts || []).map((payout: any) => [payout.id, payout]));
+    }
+
+    for (const commission of commissions || []) {
+      const attributionId = commission.attribution_id;
+      const commissionWithPayout = {
+        ...commission,
+        affiliate_payouts: commission.payout_id
+          ? payoutsById.get(commission.payout_id) || null
+          : null,
+      };
+      const attributionCommissions =
+        commissionsByAttributionId.get(attributionId) || [];
+
+      attributionCommissions.push(commissionWithPayout);
+      commissionsByAttributionId.set(attributionId, attributionCommissions);
+    }
+  }
+
+  const clientsWithCommissions = (clients || []).map((client: any) => ({
+    ...client,
+    affiliate_commissions: commissionsByAttributionId.get(client.id) || [],
+  }));
+
   return jsonResponse({
     success: true,
     data: {
-      clients: clients || [],
+      clients: clientsWithCommissions,
       page,
       pageSize,
       total: count ?? 0,

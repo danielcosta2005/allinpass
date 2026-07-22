@@ -148,4 +148,19 @@ describe("promotional code edge functions", () => {
     expect(source).not.toContain('seller.status !== "active"');
     expect(source).not.toContain("auth.role()");
   });
+
+  test("affiliate-admin lists referred clients without deep commission payout embeds", () => {
+    const source = readSource("supabase/functions/affiliate-admin/index.ts");
+    const listClientsSource = source.slice(
+      source.indexOf("async function listCommissionClients"),
+      source.indexOf("async function getCommissionById"),
+    );
+
+    expect(listClientsSource).toContain('.from("affiliate_attributions")');
+    expect(listClientsSource).toContain('.from("affiliate_commissions")');
+    expect(listClientsSource).toContain('.from("affiliate_payouts")');
+    expect(listClientsSource).toContain("commissionsByAttributionId");
+    expect(listClientsSource).not.toContain('"affiliate_commissions(');
+    expect(listClientsSource).not.toContain('"affiliate_payouts(');
+  });
 });
