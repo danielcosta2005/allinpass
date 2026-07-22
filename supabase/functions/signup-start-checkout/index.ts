@@ -49,6 +49,25 @@ type SupabaseAdminClient = SupabaseClient<any, "public", any>;
 const FREE_PLAN_CODE = "free_trial";
 const DEFAULT_CHECKOUT_EXPIRATION_MINUTES = 60;
 const PROMOTIONAL_CODE_PATTERN = /^[a-z0-9]{5,10}$/;
+const ASAAS_REQUEST_TIMEOUT_MS = 20_000;
+
+// Bounds the external Asaas call so a slow/hanging provider never keeps the edge
+// function running until the runtime kills it. A killed function returns no CORS
+// headers, which the browser surfaces as a misleading "CORS policy" error; with
+// the timeout we always return a proper JSON error (with CORS) instead.
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 class SignupCheckoutError extends Error {
   code: string;
@@ -736,16 +755,59 @@ Deno.serve(async (req) => {
       asaasPayload,
     });
 
-    const asaasResponse = await fetch(`${getAsaasApiBaseUrl()}/checkouts`, {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "access_token": asaasApiKey,
-        "User-Agent": "AllinPass/1.0",
-      },
-      body: JSON.stringify(asaasPayload),
-    });
+    let asaasResponse: Response;
+    try {
+      asaasResponse = await fetchWithTimeout(
+        `${getAsaasApiBaseUrl()}/checkouts`,
+        {
+          method: "POST",
+          headers: {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "access_token": asaasApiKey,
+            "User-Agent": "AllinPass/1.0",
+          },
+          body: JSON.stringify(asaasPayload),
+        },
+        ASAAS_REQUEST_TIMEOUT_MS,
+      );
+    } catch (fetchError) {
+      const aborted = fetchError instanceof DOMException &&
+        fetchError.name === "AbortError";
+      const message = aborted
+        ? "O provedor de pagamento (Asaas) demorou demais para responder. Tente novamente em instantes."
+        : "Nao foi possivel conectar ao provedor de pagamento (Asaas). Tente novamente.";
+
+      await markProviderRequestFailed(supabaseAdmin, {
+        checkoutSessionId: session.id,
+        message,
+        asaasBody: { error: String(fetchError) },
+      });
+      await releasePromotionalCodeReservation(
+        supabaseAdmin,
+        session.id,
+        aborted ? "asaas_checkout_timeout" : "asaas_checkout_network_error",
+      );
+      await supabaseAdmin
+        .from("signup_checkout_sessions")
+        .update({
+          status: "failed",
+          metadata: {
+            origin: "signup_start_checkout",
+            requested_promotional_code: affiliateRef || null,
+            promotion: promotionReservation,
+            asaas_request: asaasPayload,
+            asaas_error: String(fetchError),
+          },
+        })
+        .eq("id", session.id);
+
+      throw new SignupCheckoutError(
+        "SIGNUP_CHECKOUT_ASAAS_TIMEOUT",
+        message,
+        504,
+      );
+    }
 
     const asaasBody = await asaasResponse.json().catch(() => ({}));
 
