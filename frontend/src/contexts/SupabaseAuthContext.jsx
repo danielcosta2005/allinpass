@@ -360,6 +360,7 @@ export const AuthProvider = ({ children }) => {
         : null
     );
     if (!pendingSignup) return null;
+    if (pendingSignup.planCode !== FREE_TRIAL_PLAN_CODE) return null;
 
     try {
       const finalizeResult = await finalizeFreeTrialSignup({

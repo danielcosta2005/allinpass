@@ -62,6 +62,22 @@ describe("signup finalize auth redirect", () => {
     expect(signupPageSource).toContain("shouldAttemptFinalize");
   });
 
+  test("auth auto-finalization refuses paid signup metadata without a checkout callback", () => {
+    const authContextSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/contexts/SupabaseAuthContext.jsx"),
+      "utf8"
+    );
+
+    const finalizeStart = authContextSource.indexOf("const finalizePendingSignupSession = useCallback");
+    const finalizeEnd = authContextSource.indexOf("useEffect(() =>", finalizeStart);
+    const finalizeBlock = authContextSource.slice(finalizeStart, finalizeEnd);
+
+    expect(finalizeBlock).toContain("pendingSignup.planCode !== FREE_TRIAL_PLAN_CODE");
+    expect(finalizeBlock).toContain("return null");
+    expect(finalizeBlock.indexOf("pendingSignup.planCode !== FREE_TRIAL_PLAN_CODE"))
+      .toBeLessThan(finalizeBlock.indexOf("finalizeFreeTrialSignup"));
+  });
+
   test("paid signup returns stay on /cadastro instead of using the generic /org redirect", () => {
     const authContextSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/contexts/SupabaseAuthContext.jsx"),

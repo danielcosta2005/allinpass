@@ -132,6 +132,21 @@ function NoProjectSignupState({
     const Icon = copy.icon;
     const planName = formatPlanName(status?.planCode);
     const handleAction = canFinalizeActivation ? onFinalizeActivation : onContinuePayment;
+    const existingCheckoutUrl = canContinuePayment
+      ? String(status?.checkoutUrl || '').trim()
+      : '';
+    const actionContent = (
+      <>
+        {actionLoading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : canFinalizeActivation ? (
+          <CheckCircle2 className="h-4 w-4" />
+        ) : (
+          <ExternalLink className="h-4 w-4" />
+        )}
+        {copy.actionLabel}
+      </>
+    );
 
     return (
       <motion.div
@@ -159,21 +174,29 @@ function NoProjectSignupState({
             </div>
           </div>
 
-          <Button
-            type="button"
-            onClick={handleAction}
-            disabled={actionLoading}
-            className={`min-w-[210px] gap-2 text-white ${toneClasses.button}`}
-          >
-            {actionLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : canFinalizeActivation ? (
-              <CheckCircle2 className="h-4 w-4" />
-            ) : (
-              <ExternalLink className="h-4 w-4" />
-            )}
-            {copy.actionLabel}
-          </Button>
+          {existingCheckoutUrl && !actionLoading ? (
+            <Button
+              asChild
+              className={`min-w-[210px] gap-2 text-white ${toneClasses.button}`}
+            >
+              <a
+                href={existingCheckoutUrl}
+                onClick={onContinuePayment}
+                target="_self"
+              >
+                {actionContent}
+              </a>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={handleAction}
+              disabled={actionLoading}
+              className={`min-w-[210px] gap-2 text-white ${toneClasses.button}`}
+            >
+              {actionContent}
+            </Button>
+          )}
         </div>
       </motion.div>
     );

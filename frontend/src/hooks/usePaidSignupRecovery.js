@@ -99,6 +99,7 @@ export function usePaidSignupRecovery({
     if (signupActionLoading) return;
 
     const { planCode, establishmentName, affiliateRef } = resolvePendingSignupData();
+    const existingCheckoutUrl = String(signupStatus?.checkoutUrl || '').trim();
     if (!planCode || planCode === 'free_trial' || !establishmentName) {
       toast({
         title: 'Nao foi possivel continuar',
@@ -111,6 +112,18 @@ export function usePaidSignupRecovery({
     setSignupActionLoading(true);
 
     try {
+      if (existingCheckoutUrl) {
+        trackSignupPaymentInfoAdded({
+          source: 'org_paid_signup_recovery',
+          planCode,
+          checkoutSessionId: signupStatus?.checkoutSessionId,
+          valueCents: signupStatus?.amount_cents,
+          currency: signupStatus?.currency || 'BRL',
+        });
+        window.location.assign(existingCheckoutUrl);
+        return;
+      }
+
       const checkout = await startPaidSignupCheckout({ establishmentName, planCode, affiliateRef });
       trackSignupPaymentInfoAdded({
         source: 'org_paid_signup_recovery',
@@ -135,6 +148,8 @@ export function usePaidSignupRecovery({
     resolvePendingSignupData,
     signupActionLoading,
     signupStatus?.amount_cents,
+    signupStatus?.checkoutSessionId,
+    signupStatus?.checkoutUrl,
     signupStatus?.currency,
     toast,
   ]);

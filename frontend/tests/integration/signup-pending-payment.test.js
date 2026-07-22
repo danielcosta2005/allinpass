@@ -78,4 +78,34 @@ describe("signup paid checkout recovery", () => {
     expect(noProjectStateSource).toContain("Continuar pagamento");
     expect(noProjectStateSource).toContain("Finalizar ativacao");
   });
+
+  test("/org paid signup recovery reuses an active checkout url before creating another checkout", () => {
+    const recoveryHookSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/hooks/usePaidSignupRecovery.js"),
+      "utf8"
+    );
+
+    const continuePaymentStart = recoveryHookSource.indexOf("const handleContinuePayment = useCallback");
+    const continuePaymentEnd = recoveryHookSource.indexOf("const handleFinalizeActivation = useCallback", continuePaymentStart);
+    const continuePaymentBlock = recoveryHookSource.slice(continuePaymentStart, continuePaymentEnd);
+
+    expect(continuePaymentBlock).toContain("existingCheckoutUrl");
+    expect(continuePaymentBlock).toContain("signupStatus?.checkoutUrl");
+    expect(continuePaymentBlock).toContain("window.location.assign(existingCheckoutUrl)");
+    expect(continuePaymentBlock.indexOf("window.location.assign(existingCheckoutUrl)"))
+      .toBeLessThan(continuePaymentBlock.indexOf("startPaidSignupCheckout"));
+  });
+
+  test("/org paid signup recovery renders an active checkout as a native link", () => {
+    const noProjectStateSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/components/restaurant/dashboard/NoProjectSignupState.jsx"),
+      "utf8"
+    );
+
+    expect(noProjectStateSource).toContain("const existingCheckoutUrl");
+    expect(noProjectStateSource).toContain("status?.checkoutUrl");
+    expect(noProjectStateSource).toContain("asChild");
+    expect(noProjectStateSource).toContain("href={existingCheckoutUrl}");
+    expect(noProjectStateSource).toContain("target=\"_self\"");
+  });
 });
