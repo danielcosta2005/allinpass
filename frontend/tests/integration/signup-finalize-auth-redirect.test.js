@@ -88,6 +88,34 @@ describe("signup finalize auth redirect", () => {
     );
   });
 
+  test("authenticated paid signups without a project resume at the checkout step via metadata", () => {
+    const authContextSource = fs.readFileSync(
+      path.join(repoRoot, "frontend/src/contexts/SupabaseAuthContext.jsx"),
+      "utf8"
+    );
+
+    // Detects a paid plan_code from user_metadata without depending on the return URL.
+    expect(authContextSource).toContain("function getPendingPaidSignup");
+    expect(authContextSource).toContain("const pendingPaidSignup = getPendingPaidSignup(currentUser)");
+
+    // The free-trial backend-intent probe must be skipped for paid signups.
+    expect(authContextSource).toContain("!pendingPaidSignup");
+
+    // Paid signups are routed to the checkout step, not /org.
+    expect(authContextSource).toContain("paidResumeParams.set('checkout', 'pending')");
+    expect(authContextSource).toContain(
+      "navigate(`/cadastro?${paidResumeParams.toString()}`, { replace: true })"
+    );
+
+    // The paid resume branch runs before the generic /org redirect.
+    expect(authContextSource.indexOf("paidResumeParams.set('checkout', 'pending')"))
+      .toBeLessThan(
+        authContextSource.indexOf(
+          "} else if ((event === 'SIGNED_IN' || didAutoFinalizeSignup) && !paidSignupReturn)"
+        )
+      );
+  });
+
   test("auth callback without a claim project falls back to signup finalization", () => {
     const authCallbackSource = fs.readFileSync(
       path.join(repoRoot, "frontend/src/pages/AuthCallback.jsx"),

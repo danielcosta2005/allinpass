@@ -156,6 +156,25 @@ function getPendingFreeTrialSignup(currentUser) {
   };
 }
 
+// Paid signup that authenticated (e.g. right after email confirmation) but has
+// not completed the Asaas checkout yet: metadata carries a paid plan_code and no
+// project was provisioned. These users must resume at the checkout step, not the
+// free-trial finalize path.
+function getPendingPaidSignup(currentUser) {
+  const metadata = currentUser?.user_metadata || {};
+  const appMetadata = currentUser?.app_metadata || {};
+
+  if (appMetadata.signup_project_id) return null;
+
+  const planCode = normalizePlanCode(metadata.plan_code || '');
+  if (!planCode || planCode === FREE_TRIAL_PLAN_CODE) return null;
+
+  return {
+    establishmentName: String(metadata.establishment_name || '').trim(),
+    planCode,
+  };
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -356,7 +375,10 @@ export const AuthProvider = ({ children }) => {
   ) => {
     const pendingSignup = getPendingFreeTrialSignup(currentUser) || (
       allowBackendIntentFallback
-        ? { establishmentName: '', planCode: FREE_TRIAL_PLAN_CODE }
+        ? {
+            establishmentName: '',
+            planCode: normalizePlanCode(currentUser?.user_metadata?.plan_code) || FREE_TRIAL_PLAN_CODE,
+          }
         : null
     );
     if (!pendingSignup) return null;
@@ -457,6 +479,7 @@ export const AuthProvider = ({ children }) => {
 
       if (currentUser) {
         const hasPendingSignup = Boolean(getPendingFreeTrialSignup(currentUser));
+        const pendingPaidSignup = getPendingPaidSignup(currentUser);
         const hasAuthReturn = isAuthReturnUrl();
         const paidSignupReturn = isPaidSignupReturnUrl();
         const canProbeBackendSignupIntent =
@@ -496,6 +519,7 @@ export const AuthProvider = ({ children }) => {
           const shouldProbeBackendSignupIntent =
             canProbeBackendSignupIntent &&
             !hasPendingSignup &&
+            !pendingPaidSignup &&
             newRole === 'customer' &&
             !newProjectId;
 
@@ -542,6 +566,25 @@ export const AuthProvider = ({ children }) => {
             if (shouldRedirectToUnauthorized) {
               navigate('/nao-autorizado', { replace: true });
             }
+          } else if (
+            pendingPaidSignup &&
+            !newProjectId &&
+            !paidSignupReturn &&
+            (event === 'SIGNED_IN' ||
+              (event === 'INITIAL_SESSION' && canProbeSignupIntentOnPath(currentPath)))
+          ) {
+            // Paid signup that just authenticated (typically returning from the
+            // email confirmation) but has not paid yet: resume directly at the
+            // checkout step instead of the generic /org redirect. Relying on the
+            // reliable user_metadata.plan_code keeps this working even when the
+            // paid context is missing from the return URL (implicit flow).
+            const paidResumeParams = new URLSearchParams();
+            paidResumeParams.set('planCode', pendingPaidSignup.planCode);
+            paidResumeParams.set('checkout', 'pending');
+            if (pendingPaidSignup.establishmentName) {
+              paidResumeParams.set('establishmentName', pendingPaidSignup.establishmentName);
+            }
+            navigate(`/cadastro?${paidResumeParams.toString()}`, { replace: true });
           } else if ((event === 'SIGNED_IN' || didAutoFinalizeSignup) && !paidSignupReturn) {
             const alreadyInAdmin = currentPath === '/admin' || currentPath.startsWith('/admin/');
             const alreadyInOrg = currentPath === '/org' || currentPath.startsWith('/org/');
