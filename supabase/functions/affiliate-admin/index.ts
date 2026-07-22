@@ -1087,7 +1087,7 @@ async function getOrCreateSellerLink(
 
   const { data: seller, error: sellerError } = await supabaseAdmin
     .from("affiliate_sellers")
-    .select("id, status")
+    .select("id")
     .eq("id", sellerId)
     .maybeSingle();
 
@@ -1098,14 +1098,6 @@ async function getOrCreateSellerLink(
       404,
       "AFFILIATE_SELLER_NOT_FOUND",
       "Vendedor afiliado nao encontrado.",
-    );
-  }
-
-  if (seller.status !== "active") {
-    throw new HttpError(
-      409,
-      "AFFILIATE_SELLER_INACTIVE",
-      "Vendedor inativo nao pode gerar link de afiliado.",
     );
   }
 
@@ -1169,7 +1161,6 @@ async function updateSeller(
   const { cleanName, cleanContact, cleanPixKey, phone, email } = validateRequiredFields(
     payload,
   );
-  const status = normalizeStatus(payload?.status);
 
   const { data: seller, error } = await supabaseAdmin
     .from("affiliate_sellers")
@@ -1179,7 +1170,6 @@ async function updateSeller(
         pix_key: cleanPixKey,
         phone,
         email,
-        status,
         updated_by: caller.user.id,
       })
     .eq("id", sellerId)
@@ -1333,7 +1323,7 @@ async function createPromotionalCode(
   if (sellerId) {
     const { data: seller, error: sellerError } = await supabaseAdmin
       .from("affiliate_sellers")
-      .select("id, status")
+      .select("id")
       .eq("id", sellerId)
       .maybeSingle();
 
@@ -1345,14 +1335,6 @@ async function createPromotionalCode(
         "Vendedor afiliado nao encontrado.",
       );
     }
-    if (seller.status !== "active") {
-      throw new HttpError(
-        409,
-        "AFFILIATE_SELLER_INACTIVE",
-        "Vendedor inativo nao pode receber cupom ativo.",
-      );
-    }
-
     sellerLink = await findSellerLink(supabaseAdmin, sellerId);
     if (sellerLink && code && sellerLink.code !== code) {
       throw new HttpError(
@@ -1414,6 +1396,45 @@ async function createPromotionalCode(
   });
 }
 
+async function syncSellerLinkCode(
+  supabaseAdmin: any,
+  caller: Caller,
+  promotionalCode: PromotionalCodeRow,
+  nextCode: string,
+) {
+  if (
+    !nextCode ||
+    !promotionalCode.seller_id ||
+    !promotionalCode.affiliate_link_id ||
+    promotionalCode.code === nextCode
+  ) {
+    return;
+  }
+
+  const { data: conflictingLink, error: conflictError } = await supabaseAdmin
+    .from("affiliate_links")
+    .select("id")
+    .eq("code", nextCode)
+    .neq("id", promotionalCode.affiliate_link_id)
+    .maybeSingle();
+
+  if (conflictError) throw conflictError;
+  if (conflictingLink) {
+    throw new HttpError(
+      409,
+      "AFFILIATE_LINK_CODE_COLLISION",
+      "Codigo ja usado por outro link de afiliado.",
+    );
+  }
+
+  const { error: linkError } = await supabaseAdmin
+    .from("affiliate_links")
+    .update({ code: nextCode, updated_by: caller.user.id })
+    .eq("id", promotionalCode.affiliate_link_id);
+
+  if (linkError) throw linkError;
+}
+
 async function updatePromotionalCode(
   supabaseAdmin: any,
   caller: Caller,
@@ -1439,6 +1460,26 @@ async function updatePromotionalCode(
     updatePayload.valid_until = values.validUntil;
   }
 
+  let currentPromotionalCode: PromotionalCodeRow | null = null;
+  if (values.code) {
+    const { data: current, error: currentError } = await supabaseAdmin
+      .from("billing_promotional_codes")
+      .select(PROMOTIONAL_CODE_SELECT_FIELDS)
+      .eq("id", promoCodeId)
+      .maybeSingle();
+
+    if (currentError) throw currentError;
+    if (!current) {
+      throw new HttpError(
+        404,
+        "AFFILIATE_PROMOTIONAL_CODE_NOT_FOUND",
+        "Codigo promocional nao encontrado.",
+      );
+    }
+
+    currentPromotionalCode = current;
+  }
+
   const { data, error } = await supabaseAdmin
     .from("billing_promotional_codes")
     .update(updatePayload)
@@ -1453,6 +1494,10 @@ async function updatePromotionalCode(
       "AFFILIATE_PROMOTIONAL_CODE_NOT_FOUND",
       "Codigo promocional nao encontrado.",
     );
+  }
+
+  if (currentPromotionalCode && values.code) {
+    await syncSellerLinkCode(supabaseAdmin, caller, currentPromotionalCode, values.code);
   }
 
   return jsonResponse({
@@ -1493,7 +1538,6 @@ async function createSellerWithCoupon(
       pix_key: cleanPixKey,
       phone,
       email,
-      status: "active",
       created_by: caller.user.id,
       updated_by: caller.user.id,
     })

@@ -59,12 +59,13 @@ describe("affiliate links admin lifecycle", () => {
     expect(functionSource).toContain("affiliateLink");
     expect(functionSource).toContain("generateLinkCode");
     expect(functionSource).toContain("getOrCreateSellerLink");
-    expect(functionSource).toContain("AFFILIATE_SELLER_INACTIVE");
     expect(functionSource).toContain("AFFILIATE_LINK_CODE_COLLISION");
     expect(functionSource).toContain(".from(\"affiliate_links\")");
     expect(functionSource).toContain(".from(\"affiliate_sellers\")");
     expect(functionSource).toContain("updated_by: caller.user.id");
     expect(functionSource).toContain("action === \"getOrCreateSellerLink\"");
+    expect(functionSource).not.toContain("AFFILIATE_SELLER_INACTIVE");
+    expect(functionSource).not.toContain("Vendedor inativo");
     const getOrCreateSource = sourceBetween(
       functionSource,
       "async function getOrCreateSellerLink",

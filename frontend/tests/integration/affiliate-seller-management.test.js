@@ -7,15 +7,27 @@ function readIfExists(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
 }
 
+function sourceBetween(source, start, end) {
+  const startIndex = source.indexOf(start);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+
+  if (startIndex < 0) return "";
+  return source.slice(startIndex, endIndex < 0 ? undefined : endIndex);
+}
+
 describe("affiliate seller management UI and backend", () => {
   test("affiliate-admin supports bounded seller listing and seller updates", () => {
     const functionSource = readIfExists(
       path.join(repoRoot, "supabase/functions/affiliate-admin/index.ts"),
     );
+    const updateSellerSource = sourceBetween(
+      functionSource,
+      "async function updateSeller",
+      "function validatePromotionalCodeId",
+    );
 
     expect(functionSource).toContain("listSellers");
     expect(functionSource).toContain("updateSeller");
-    expect(functionSource).toContain("AFFILIATE_INVALID_STATUS");
     expect(functionSource).toContain("AFFILIATE_SELLER_NOT_FOUND");
     expect(functionSource).toContain("pageSize");
     expect(functionSource).toContain(".range(from, to)");
@@ -24,6 +36,8 @@ describe("affiliate seller management UI and backend", () => {
     expect(functionSource).toContain("ensureSuperadmin");
     expect(functionSource).toContain("updated_by: caller.user.id");
     expect(functionSource).toContain(".eq(\"id\", sellerId)");
+    expect(updateSellerSource).not.toContain("const status = normalizeStatus(payload?.status)");
+    expect(updateSellerSource).not.toContain("status,");
     expect(functionSource).not.toContain("auth.role()");
   });
 

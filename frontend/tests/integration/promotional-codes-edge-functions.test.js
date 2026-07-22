@@ -122,6 +122,7 @@ describe("promotional code edge functions", () => {
     expect(source).toContain("createPromotionalCode");
     expect(source).toContain("updatePromotionalCode");
     expect(source).toContain("createSellerWithCoupon");
+    expect(source).toContain("syncSellerLinkCode");
     expect(source).toContain("normalizePromotionalCode");
     expect(source).toContain("normalizePhone");
     expect(source).toContain("normalizeEmail");
@@ -133,6 +134,7 @@ describe("promotional code edge functions", () => {
     expect(source).toContain("max_uses");
     expect(source).toContain("valid_until");
     expect(source).toContain("affiliate_link_id");
+    expect(source).toContain(".update({ code: nextCode");
     expect(source).toContain('action === "listPromotionalCodes"');
     expect(source).toContain('action === "createPromotionalCode"');
     expect(source).toContain('action === "updatePromotionalCode"');
@@ -142,6 +144,8 @@ describe("promotional code edge functions", () => {
     expect(source).not.toContain('"forever"');
     expect(source).not.toContain('"repeating"');
     expect(source).not.toContain('duration: duration || "once"');
+    expect(source).not.toContain("AFFILIATE_SELLER_INACTIVE");
+    expect(source).not.toContain('seller.status !== "active"');
     expect(source).not.toContain("auth.role()");
   });
 });

@@ -57,6 +57,9 @@ describe("promotional code admin UI", () => {
 
   test("seller rows render the promotional code inline and toggle coupon status", () => {
     const source = readSource("frontend/src/components/superadmin/AffiliatesTab.jsx");
+    const sellersViewStart = source.indexOf("{adminView === 'sellers'");
+    const couponsViewStart = source.indexOf("{adminView === 'coupons'", sellersViewStart);
+    const sellersView = source.slice(sellersViewStart, couponsViewStart);
 
     expect(source).toContain("renderSellerCoupon");
     expect(source).toContain("promotionalCode");
@@ -70,7 +73,29 @@ describe("promotional code admin UI", () => {
     expect(source).toContain("updatePromotionalCode({");
     expect(source).toContain("status: nextStatus");
     expect(source).toContain("refreshCouponListsAfterMutation");
+    expect(source).not.toContain("const [statusFilter");
+    expect(source).not.toContain("handleStatusFilterChange");
+    expect(source).not.toContain("sellerForm.status");
+    expect(source).not.toContain("status: sellerForm.status");
+    expect(sellersView).not.toContain("affiliate-status-filter");
+    expect(sellersView).not.toContain("{seller.status}");
+    expect(sellersView).not.toContain(">Status</th>");
     expect(source).not.toContain("Ative o vendedor antes de gerar um link de afiliado");
+  });
+
+  test("seller edit form updates seller data and the same linked coupon record", () => {
+    const source = readSource("frontend/src/components/superadmin/AffiliatesTab.jsx");
+
+    expect(source).toContain("const sellerCoupon = seller.promotionalCode || sellerCouponsBySellerId.get(seller.id)");
+    expect(source).toContain("setActivePromotionalCode(sellerCoupon)");
+    expect(source).toContain("Cupom do vendedor");
+    expect(source).toContain("formMode === 'edit' || (formMode === 'create' && wizardStep === 2)");
+    expect(source).toContain("formMode === 'edit' && activeSeller?.id");
+    expect(source).toContain("promotionalCodeId: activePromotionalCode.id");
+    expect(source).toContain("...buildCouponPayload({ sellerCoupon: true })");
+    expect(source).toContain("promotionalCode: updatedPromotionalCode");
+    expect(source).not.toContain('htmlFor="affiliate-status"');
+    expect(source).not.toContain('id="affiliate-status"');
   });
 
   test("seller creation is a two-step wizard that submits seller and coupon together", () => {
@@ -102,6 +127,8 @@ describe("promotional code admin UI", () => {
     expect(source).not.toContain('id="affiliate-contact"');
     expect(source).not.toContain('handleSellerFormChange(\'contact\'');
     expect(source).not.toContain('seller.contact');
+    expect(source).not.toContain('htmlFor="affiliate-status"');
+    expect(source).not.toContain('id="affiliate-status"');
     expect(source).not.toContain(">Contato<");
   });
 

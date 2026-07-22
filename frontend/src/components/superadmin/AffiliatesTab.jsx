@@ -31,7 +31,6 @@ import {
   buildPromotionalLinkUrl,
   createPromotionalCode,
   createSellerWithCoupon,
-  getOrCreateAffiliateLink,
   listAffiliateCommissionClients,
   listAffiliateCommissions,
   listPromotionalCodes,
@@ -51,7 +50,6 @@ const EMPTY_SELLER_FORM = {
   phone: '',
   email: '',
   pixKey: '',
-  status: 'active',
 };
 const EMPTY_COUPON_FORM = {
   code: '',
@@ -252,7 +250,6 @@ const AffiliatesTab = () => {
   const [sellers, setSellers] = useState([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
   const [search, setSearch] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -267,7 +264,6 @@ const AffiliatesTab = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [generatingLinkSellerId, setGeneratingLinkSellerId] = useState(null);
   const [copyingLinkSellerId, setCopyingLinkSellerId] = useState(null);
   const [copyingCouponId, setCopyingCouponId] = useState(null);
   const [togglingCouponId, setTogglingCouponId] = useState(null);
@@ -365,7 +361,6 @@ const AffiliatesTab = () => {
       const result = await listAffiliateSellers({
         page: nextPage,
         pageSize: PAGE_SIZE,
-        status: statusFilter,
         search,
         includeSummary: true,
         competenceMonth: selectedCompetenceForApi,
@@ -388,7 +383,7 @@ const AffiliatesTab = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [loadSellerPromotionalCodes, page, search, selectedCompetenceForApi, statusFilter, toast]);
+  }, [loadSellerPromotionalCodes, page, search, selectedCompetenceForApi, toast]);
 
   const fetchCoupons = useCallback(async (nextPage = couponPage, { quiet = false } = {}) => {
     if (!quiet) {
@@ -515,14 +510,30 @@ const AffiliatesTab = () => {
   };
 
   const openEditDialog = (seller) => {
+    const sellerCoupon = seller.promotionalCode || sellerCouponsBySellerId.get(seller.id) || null;
+
     setSellerForm({
       name: seller.name || '',
       phone: seller.phone || '',
       email: seller.email || '',
       pixKey: seller.pixKey || '',
-      status: seller.status === 'inactive' ? 'inactive' : 'active',
+    });
+    setCouponForm(sellerCoupon ? {
+      code: sellerCoupon.code || '',
+      sellerId: seller.id,
+      discountBps: Number(sellerCoupon.discountBps || 0),
+      commissionBps: Number(sellerCoupon.commissionBps || 0),
+      status: sellerCoupon.status === 'inactive' ? 'inactive' : 'active',
+      maxUses: sellerCoupon.maxUses || '',
+      validUntil: sellerCoupon.validUntil ? String(sellerCoupon.validUntil).slice(0, 10) : '',
+    } : {
+      ...EMPTY_COUPON_FORM,
+      sellerId: seller.id,
+      code: seller.affiliateLink?.code || generatePromotionalCode(),
     });
     setActiveSeller(seller);
+    setActivePromotionalCode(sellerCoupon);
+    setNegativeMarginAcknowledged(Boolean(sellerCoupon?.metadata?.marginWarningAcknowledged));
     setFormMode('edit');
   };
 
@@ -567,11 +578,6 @@ const AffiliatesTab = () => {
     event.preventDefault();
     setPage(1);
     setSearch(searchDraft.trim());
-  };
-
-  const handleStatusFilterChange = (value) => {
-    setPage(1);
-    setStatusFilter(value === 'all' ? '' : value);
   };
 
   const handleCouponSearchSubmit = (event) => {
@@ -619,57 +625,13 @@ const AffiliatesTab = () => {
     fetchClients();
   };
 
-  const updateSellerLink = (sellerId, affiliateLink) => {
-    setSellers((current) => current.map((seller) => (
-      seller.id === sellerId ? { ...seller, affiliateLink } : seller
-    )));
-  };
-
   const updateSellerPromotionalCode = (sellerId, promotionalCode) => {
     setSellers((current) => current.map((seller) => (
       seller.id === sellerId ? { ...seller, promotionalCode } : seller
     )));
   };
 
-  const handleGenerateLink = async (seller) => {
-    if (seller.status === 'inactive') {
-      toast({
-        title: 'Vendedor inativo',
-        description: 'Cupom inativo deve ser reativado antes de venda.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setGeneratingLinkSellerId(seller.id);
-    try {
-      const affiliateLink = await getOrCreateAffiliateLink({ sellerId: seller.id });
-      updateSellerLink(seller.id, affiliateLink);
-      toast({
-        title: 'Link gerado',
-        description: `Link de ${seller.name} pronto para copiar.`,
-      });
-    } catch (error) {
-      toast({
-        title: 'Erro ao gerar link',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setGeneratingLinkSellerId(null);
-    }
-  };
-
   const handleCopyLink = async (seller) => {
-    if (seller.status === 'inactive') {
-      toast({
-        title: 'Vendedor inativo',
-        description: 'Links de vendedores inativos não devem ser usados para venda.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     const code = seller.affiliateLink?.code;
     if (!code) {
       toast({
@@ -850,7 +812,7 @@ const AffiliatesTab = () => {
 
     const isCouponFormMode = formMode.startsWith('coupon');
 
-    if ((formMode === 'create' || isCouponFormMode) && !validateCouponForm()) {
+    if ((formMode === 'create' || formMode === 'edit' || isCouponFormMode) && !validateCouponForm()) {
       return;
     }
 
@@ -860,7 +822,6 @@ const AffiliatesTab = () => {
       phone: sellerForm.phone.trim(),
       email: sellerForm.email.trim(),
       pixKey: sellerForm.pixKey.trim(),
-      status: sellerForm.status,
     };
 
     if (!isCouponFormMode) {
@@ -882,14 +843,37 @@ const AffiliatesTab = () => {
           sellerId: activeSeller.id,
           ...payload,
         });
+        let updatedPromotionalCode = activePromotionalCode;
+
+        if (activePromotionalCode?.id) {
+          updatedPromotionalCode = await updatePromotionalCode({
+            promotionalCodeId: activePromotionalCode.id,
+            ...buildCouponPayload({ sellerCoupon: true }),
+          });
+        } else {
+          updatedPromotionalCode = await createPromotionalCode({
+            ...buildCouponPayload(),
+            sellerId: activeSeller.id,
+          });
+        }
 
         setSellers((current) => current.map((seller) => (
           seller.id === updatedSeller.id
-            ? { ...updatedSeller, promotionalCode: seller.promotionalCode }
+            ? { ...updatedSeller, promotionalCode: updatedPromotionalCode }
             : seller
         )));
+        setCoupons((current) => {
+          if (!updatedPromotionalCode) return current;
+          const exists = current.some((coupon) => coupon.id === updatedPromotionalCode.id);
+          if (exists) {
+            return current.map((coupon) => (
+              coupon.id === updatedPromotionalCode.id ? updatedPromotionalCode : coupon
+            ));
+          }
+          return [updatedPromotionalCode, ...current].slice(0, COUPON_PAGE_SIZE);
+        });
         toast({
-          title: 'Vendedor atualizado',
+          title: 'Vendedor e cupom atualizados',
           description: `${updatedSeller.name} foi salvo com sucesso.`,
         });
       } else if (formMode === 'coupon-edit' && activePromotionalCode?.id) {
@@ -1023,59 +1007,6 @@ const AffiliatesTab = () => {
     } finally {
       setMarkingSellerId(null);
     }
-  };
-
-  const renderSellerLink = (seller) => {
-    if (seller.status === 'inactive') {
-      return <span className="text-muted-foreground">Vendedor inativo</span>;
-    }
-
-    const affiliateLink = seller.affiliateLink;
-    if (!affiliateLink?.code) {
-      const isGenerating = generatingLinkSellerId === seller.id;
-
-      return (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => handleGenerateLink(seller)}
-          disabled={isGenerating}
-        >
-          {isGenerating ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <LinkIcon className="h-4 w-4" />
-          )}
-          Gerar link
-        </Button>
-      );
-    }
-
-    const isCopying = copyingLinkSellerId === seller.id;
-
-    return (
-      <div className="flex w-72 items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
-          {`/?ref=${affiliateLink.code}#planos`}
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={`Copiar link de ${seller.name}`}
-          onClick={() => handleCopyLink(seller)}
-          disabled={isCopying}
-        >
-          {isCopying ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-    );
   };
 
   const renderSellerCoupon = (seller) => {
@@ -1243,19 +1174,6 @@ const AffiliatesTab = () => {
           </Button>
         </form>
 
-        <div className="space-y-2 sm:w-48">
-          <Label htmlFor="affiliate-status-filter">Status</Label>
-          <Select value={statusFilter || 'all'} onValueChange={handleStatusFilterChange}>
-            <SelectTrigger id="affiliate-status-filter">
-              <SelectValue placeholder="Todos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="active">Ativo</SelectItem>
-              <SelectItem value="inactive">Inativo</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       <motion.div
@@ -1269,13 +1187,12 @@ const AffiliatesTab = () => {
           </div>
         ) : sellers.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="min-w-[1160px] w-full text-left text-sm">
+            <table className="min-w-[1040px] w-full text-left text-sm">
               <thead className="bg-muted text-xs uppercase text-muted-foreground">
                 <tr>
                   <th className="whitespace-nowrap px-5 py-3">Vendedor</th>
                   <th className="whitespace-nowrap px-5 py-3">Telefone</th>
                   <th className="whitespace-nowrap px-5 py-3">Email</th>
-                  <th className="whitespace-nowrap px-5 py-3">Status</th>
                   <th className="whitespace-nowrap px-5 py-3">Cupom</th>
                   <th className="whitespace-nowrap px-5 py-3 text-center">Clientes</th>
                   <th className="whitespace-nowrap px-5 py-3 text-right">Pendente</th>
@@ -1298,9 +1215,6 @@ const AffiliatesTab = () => {
                       </td>
                       <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.phone || '-'}</td>
                       <td className="whitespace-nowrap px-5 py-4 text-muted-foreground">{seller.email || '-'}</td>
-                      <td className="whitespace-nowrap px-5 py-4">
-                        <StatusBadge status={seller.status} />
-                      </td>
                       <td className="px-5 py-4">{renderSellerCoupon(seller)}</td>
                       <td className="px-5 py-4 text-center font-semibold text-foreground">
                         {summary.attributedClientsCount || 0}
@@ -1984,24 +1898,6 @@ const AffiliatesTab = () => {
               />
             </div>
 
-            {formMode === 'edit' && (
-              <div className="space-y-2">
-                <Label htmlFor="affiliate-status">Status</Label>
-                <Select
-                  value={sellerForm.status}
-                  onValueChange={(value) => handleSellerFormChange('status', value)}
-                  disabled={submitting}
-                >
-                  <SelectTrigger id="affiliate-status">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">Ativo</SelectItem>
-                    <SelectItem value="inactive">Inativo</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
               </>
             )}
 
@@ -2011,10 +1907,13 @@ const AffiliatesTab = () => {
               </div>
             )}
 
-            {(formMode.startsWith('coupon') || (formMode === 'create' && wizardStep === 2)) && (
+            {(formMode.startsWith('coupon') || formMode === 'edit' || (formMode === 'create' && wizardStep === 2)) && (
               <div className="space-y-4">
                 {formMode === 'create' && (
                   <p className="text-sm font-medium text-foreground">Etapa 2: configurar cupom</p>
+                )}
+                {formMode === 'edit' && (
+                  <p className="text-sm font-medium text-foreground">Cupom do vendedor</p>
                 )}
 
                 <div className="grid gap-3 sm:grid-cols-2">
